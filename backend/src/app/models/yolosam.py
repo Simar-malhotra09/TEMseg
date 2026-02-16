@@ -9,7 +9,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 
-from base_model import Model, SegmentationResult, ModelConfig
+from app.models.base_model import Model, SegmentationResult, ModelConfig
 
 
 class YoloSam(Model):
@@ -38,7 +38,7 @@ class YoloSam(Model):
         return components
 
     def load_image(self, image_path: str) -> np.ndarray:
-        img = cv.imread(image_path, cv.IMREAD_COLOR)
+        img = cv.imread(image_path.as_posix(), cv.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Failed to load image: {image_path}")
 
@@ -87,7 +87,7 @@ class YoloSam(Model):
         # Combine masks into single mask
         combined_mask = np.max(masks_np, axis=0)
 
-        self.plot(image, combined_mask)
+        # self.plot(image, combined_mask)
 
         return SegmentationResult(
             segmentation_mask=combined_mask,
