@@ -8,5 +8,5 @@ model.get_model_specs()
 
 img = model.load_image("./0032.tif")
 result = model.segment(img)
-
+model.plot(img, result.segmentation_mask)
 print(result.metadata)
