@@ -1,5 +1,5 @@
 from app.models.base_model import SubModelConfig, ModelConfig
-from app.models.settings import settings
+from app.models.helpers.settings import settings
 
 
 yolo_config = SubModelConfig("yolo", settings.YOLO_MODEL_PATH)
