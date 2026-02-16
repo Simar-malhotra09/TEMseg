@@ -1,7 +1,7 @@
 from pathlib import Path
 from app.models.base_model import SubModelConfig, ModelConfig
-from app.models.yolosam import YoloSam
-from app.models.config import nano_config
+from app.models.impls.yolosam import YoloSam
+from app.models.helpers.config import nano_config
 
 
 #backend/src
