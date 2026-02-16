@@ -1,19 +1,22 @@
-from base_model import Model, SegmentationResult
 import cv2 as cv
 import numpy as np
+from typing import Dict, Any
+
+from base_model import Model, SegmentationResult, ModelConfig
+
 
 class YoloSam(Model):
-    def __init__(self, model_path: str):
-        super().__init__("YoloSam", model_path)
+    def __init__(self, config: ModelConfig):
+        super().__init__(config)
 
-        # load model weights here
-        # self.model = ...
+    def _load_components(self) -> Dict[str, Any]:
+        loaded = {}
 
-    def get_model_specs(self) -> dict:
-        return {
-            "model_name": self.model_name,
-            "model_path": self.model_path,
-        }
+        for sub_model in self.config.components:
+            print(f"Loading {sub_model.name} from {sub_model.path}")
+            loaded[sub_model.name] = f"loaded_from_{sub_model.path}"
+
+        return loaded
 
     def load_image(self, image_path: str) -> np.ndarray:
         img = cv.imread(image_path, cv.IMREAD_GRAYSCALE)
@@ -25,9 +28,9 @@ class YoloSam(Model):
         return img
 
     def segment(self, image: np.ndarray) -> SegmentationResult:
-        # dummy segmentation
-        mask = np.zeros(image.shape[:2], dtype=np.uint8)
-
-        return SegmentationResult(
-            segmentation_mask=mask,
-        )
+        # mask = np.zeros(image.shape[:2], dtype=np.uint8)
+        #
+        # return SegmentationResult(
+        #     segmentation_mask=mask,
+        #     metadata={"pipeline": self.config.name}
+        # )
