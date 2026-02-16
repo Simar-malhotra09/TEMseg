@@ -2,6 +2,9 @@ import cv2 as cv
 import numpy as np
 import torch
 from typing import Dict, Any
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
@@ -84,7 +87,28 @@ class YoloSam(Model):
         # Combine masks into single mask
         combined_mask = np.max(masks_np, axis=0)
 
+        self.plot(image, combined_mask)
+
         return SegmentationResult(
             segmentation_mask=combined_mask,
             metadata={"detections": len(boxes)}
         )
+
+    def plot(self, image, combined_mask):
+        if combined_mask is None:
+            print("Warning: No masks to visualize.")
+            return None
+
+        # squeeze extra dimensions
+        mask_to_plot = combined_mask.squeeze()
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.imshow(image)  # show original image
+
+        # overlay mask
+        ax.imshow(np.ma.masked_where(mask_to_plot == 0, mask_to_plot),
+                  cmap='nipy_spectral', alpha=0.5)
+
+        ax.axis("off")
+        plt.tight_layout(pad=0)
+        plt.show()
