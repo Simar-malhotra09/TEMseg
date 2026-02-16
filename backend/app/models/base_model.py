@@ -2,26 +2,21 @@ from abc import ABC, abstractmethod
 import cv2 as cv
 import numpy as np
 from dataclasses import dataclass
-from typing import List
-
-'''
-A simple way to structure this would be defining x,y,width and height.
-But our objects are not uniform in any sense.
-What we could do is, return a numpy arr of same h,w as img with each
-pixel representing an object id.
-'''
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import List, Dict, Any
-import numpy as np
 
-
+''' Stores individual models'''
 @dataclass
 class SubModelConfig:
     name: str
     path: str
 
-
+''' 
+Stores multiple Sub models 
+example:
+    The nano pipeline uses
+    Yolo for object detection 
+    SAM for segmentation
+'''
 @dataclass
 class ModelConfig:
     name: str
