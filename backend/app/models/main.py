@@ -1,9 +1,12 @@
+from base_model import SubModelConfig, ModelConfig
 from yolosam import YoloSam
 from config import nano_config
 
-model = YoloSam(nano_config)
+model = YoloSam(nano_config, device="cpu")
 
 model.get_model_specs()
 
-# img = model.load_image("test.png")
-# result = model.segment(img)
+img = model.load_image("./0032.tif")
+result = model.segment(img)
+
+print(result.metadata)
