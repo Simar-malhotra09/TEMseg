@@ -3,6 +3,7 @@ __pycache__/
 .env
 *.pyc
 .next/
+.DS_Store
 backend/venv/
 backend/.DS_Store
 backend/src/data/
