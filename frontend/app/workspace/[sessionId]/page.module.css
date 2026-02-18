@@ -1,0 +1,197 @@
+.workspaceRoot {
+display: flex;
+flex-direction: column;
+height: 100vh;
+background: #0d0d0d;
+color: #e8e6e1;
+font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+font-size: 13px;
+}
+
+/* Top Bar */
+.topbar {
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 0 20px;
+height: 48px;
+border-bottom: 1px solid #222;
+background: #0d0d0d;
+flex-shrink: 0;
+}
+.topbarLeft { display: flex; align-items: center; gap: 16px; }
+.logo { font-size: 16px; font-weight: 700; letter-spacing: -0.5px; color: #e8e6e1; }
+.logoAccent { color: #7ee8a2; }
+.sessionTag { color: #555; font-size: 11px; }
+.statusPill {
+background: #161616;
+border: 1px solid #2a2a2a;
+padding: 4px 12px;
+border-radius: 100px;
+color: #888;
+font-size: 11px;
+}
+
+/* Body */
+.workspaceBody {
+display: flex;
+flex: 1;
+overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+width: 200px;
+flex-shrink: 0;
+border-right: 1px solid #1e1e1e;
+padding: 16px 12px;
+display: flex;
+flex-direction: column;
+gap: 24px;
+overflow-y: auto;
+}
+.sidebarSection { display: flex; flex-direction: column; gap: 6px; }
+.sidebarLabel {
+font-size: 10px;
+letter-spacing: 0.1em;
+text-transform: uppercase;
+color: #555;
+margin-bottom: 2px;
+}
+.sidebarHint { font-size: 11px; color: #444; line-height: 1.5; }
+
+/* Dropdown */
+.dropdownWrap { position: relative; }
+.dropdownBtn {
+width: 100%;
+display: flex;
+align-items: center;
+justify-content: space-between;
+padding: 6px 10px;
+background: #161616;
+border: 1px solid #2a2a2a;
+border-radius: 4px;
+color: #e8e6e1;
+cursor: pointer;
+font-family: inherit;
+font-size: 12px;
+}
+.dropdownBtn:hover { border-color: #3a3a3a; }
+.dropdownList {
+position: absolute;
+top: calc(100% + 4px);
+left: 0; right: 0;
+background: #161616;
+border: 1px solid #2a2a2a;
+border-radius: 4px;
+z-index: 10;
+overflow: hidden;
+}
+.dropdownItem {
+padding: 7px 10px;
+cursor: pointer;
+font-size: 12px;
+}
+.dropdownItem:hover { background: #1e1e1e; }
+.dropdownItemActive { color: #7ee8a2; }
+
+/* Buttons */
+.actionBtn {
+display: flex;
+align-items: center;
+gap: 7px;
+padding: 7px 10px;
+background: #161616;
+border: 1px solid #2a2a2a;
+border-radius: 4px;
+color: #ccc;
+cursor: pointer;
+font-family: inherit;
+font-size: 12px;
+transition: border-color 0.15s, color 0.15s;
+width: 100%;
+}
+.actionBtn:hover:not(:disabled) { border-color: #7ee8a2; color: #7ee8a2; }
+.actionBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+.actionBtnPrimary {
+background: #7ee8a2;
+border-color: #7ee8a2;
+color: #0d0d0d;
+font-weight: 600;
+}
+.actionBtnPrimary:hover:not(:disabled) { background: #9df0b6; border-color: #9df0b6; color: #0d0d0d; }
+
+/* Canvas */
+.canvasArea {
+flex: 1;
+display: flex;
+align-items: center;
+justify-content: center;
+background: #0a0a0a;
+overflow: hidden;
+position: relative;
+}
+.dropZone {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+gap: 12px;
+width: 380px;
+height: 260px;
+border: 1.5px dashed #2a2a2a;
+border-radius: 8px;
+cursor: pointer;
+transition: border-color 0.2s;
+color: #444;
+}
+.dropZone:hover, .dropZoneDragging { border-color: #7ee8a2; color: #7ee8a2; }
+.dropLabel { font-size: 13px; color: inherit; }
+.dropHint { font-size: 11px; color: #3a3a3a; }
+
+.imageViewport {
+position: relative;
+max-width: 100%;
+max-height: 100%;
+}
+.temImage {
+max-width: 100%;
+max-height: calc(100vh - 48px);
+display: block;
+object-fit: contain;
+}
+.maskOverlayPlaceholder {
+position: absolute;
+inset: 0;
+display: flex;
+align-items: flex-end;
+justify-content: flex-start;
+padding: 8px;
+pointer-events: none;
+}
+.overlayLabel {
+background: rgba(0,0,0,0.6);
+color: #7ee8a2;
+font-size: 10px;
+padding: 3px 8px;
+border-radius: 3px;
+border: 1px solid #7ee8a233;
+}
+
+/* Stats */
+.statsPanel {
+width: 180px;
+flex-shrink: 0;
+border-left: 1px solid #1e1e1e;
+padding: 16px 12px;
+overflow-y: auto;
+}
+.statsGrid { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+.statRow {
+display: flex;
+justify-content: space-between;
+padding: 7px 0;
+border-bottom: 1px solid #1a1a1a;
+}
+.statLabel { color: #555; font-size: 11px; }
+.statVal { color: #e8e6e1; font-size: 11px; }
