@@ -18,18 +18,51 @@ class YoloSam(Model):
         super().__init__(config)
 
     def _load_components(self) -> Dict[str, Any]:
-        components = {}
+        if not hasattr(self, "config") or not hasattr(self.config, "components"):
+            raise ValueError("Invalid config: missing 'components'")
+
+        if not self.config.components:
+            raise ValueError("Config contains no components")
+
+        components: Dict[str, Any] = {}
 
         for comp in self.config.components:
+            if not hasattr(comp, "name") or not hasattr(comp, "path"):
+                raise ValueError(f"Invalid component structure: {comp}")
 
-            if comp.name.lower() == "yolo":
-                print(f"Loading YOLO from {comp.path}")
-                components["yolo"] = YOLO(comp.path)
+            if not isinstance(comp.name, str):
+                raise TypeError("Component name must be a string")
 
-            elif comp.name.lower() == "sam":
-                print(f"Loading SAM from {comp.path}")
-                sam = sam_model_registry["vit_b"](checkpoint=comp.path)
-                sam.to(device=self.device)
+            name = comp.name.lower()
+            model_path = Path(comp.path)
+
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model file not found: {model_path}")
+
+            if not model_path.is_file():
+                raise ValueError(f"Model path is not a file: {model_path}")
+
+            if name == "yolo":
+                try:
+                    model = YOLO(str(model_path))
+                except Exception as e:
+                    raise RuntimeError(f"Failed to load YOLO: {e}") from e
+                components["yolo"] = model
+
+            elif name == "sam":
+                if "vit_b" not in sam_model_registry:
+                    raise ValueError("SAM registry missing 'vit_b'")
+
+                try:
+                    sam = sam_model_registry["vit_b"](checkpoint=str(model_path))
+                except Exception as e:
+                    raise RuntimeError(f"Failed to initialize SAM: {e}") from e
+
+                try:
+                    sam.to(device=self.device)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to move SAM to device {self.device}: {e}") from e
+
                 components["sam"] = sam
 
             else:
