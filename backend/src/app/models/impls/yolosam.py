@@ -5,7 +5,7 @@ from typing import Dict, Any
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-
+from pathlib import path 
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 
@@ -37,8 +37,8 @@ class YoloSam(Model):
 
         return components
 
-    def load_image(self, image_path: str) -> np.ndarray:
-        img = cv.imread(image_path.as_posix(), cv.IMREAD_COLOR)
+    def load_image(self, image_path: Path) -> np.ndarray:
+        img = cv.imread(str(image_path), cv.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Failed to load image: {image_path}")
 
