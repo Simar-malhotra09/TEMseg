@@ -2,7 +2,7 @@
 import styles from "./page.module.css"
 import { useState, useRef } from "react";
 import { Upload, Play, Download, Sliders, Eye, EyeOff, Trash2, ChevronDown } from "lucide-react";
-import { uploadImage } from "@/lib/api";
+import { BASE_URL, uploadImage, SegmentImage } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 const MODELS = ["YoloSAM", "Custom"];
@@ -18,6 +18,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
   const [masksVisible, setMasksVisible] = useState(true);
   const [status, setStatus] = useState<string>("Upload an image to begin.");
   const [segDone, setSegDone] = useState(false);
+  const [maskUrl, setMaskUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function onDrop(e: React.DragEvent) {
@@ -58,17 +59,29 @@ export default function Workspace({ params }: { params: { session_id: string } }
     if (file) handleFile(file);
   }
 
-  function handleRunSegmentation() {
-    if (!image) return;
-    setStatus(`Running ${selectedModel}...`);
-    // TODO: POST /segmentation/{session_id}/run; this makes a http request 
-    //       our backend thorugh the FastApi exposed endpoints. 
-    //
-    // Set timeout until I impl it.
-    setTimeout(() => {
+  async function handleRunSegmentation() {
+    if (!sessionId) {
+      console.warn("No session id — upload image first");
+      return;
+    }
+
+    try {
+      setStatus(`Running ${selectedModel}...`);
+
+      const result = await SegmentImage(sessionId);
+
+      console.log("Segmentation result:", result);
+      console.log("mask url: ", BASE_URL, result.mask_url)
+
+
+      setMaskUrl(`${BASE_URL}${result.mask_url}`);
       setSegDone(true);
       setStatus("Segmentation complete. Refine masks or export.");
-    }, 1800);
+
+    } catch (err) {
+      console.error("Segmentation failed:", err);
+      setStatus("Segmentation failed.");
+    }
   }
 
   return (
@@ -204,12 +217,8 @@ export default function Workspace({ params }: { params: { session_id: string } }
                 className={styles.temImage}
               />
 
-              {segDone && masksVisible && (
-                <div className={styles.maskOverlayPlaceholder}>
-                  <span className={styles.overlayLabel}>
-                    masks visible · konva canvas
-                  </span>
-                </div>
+              {segDone && masksVisible && maskUrl && (
+                <img src={maskUrl} className={styles.maskOverlay} />
               )}
             </div>
           )}
