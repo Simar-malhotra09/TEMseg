@@ -5,7 +5,7 @@ from typing import Dict, Any
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from pathlib import path 
+from pathlib import Path 
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 
