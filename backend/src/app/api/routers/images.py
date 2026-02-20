@@ -62,3 +62,9 @@ async def get_image(session_id: str):
         file.filename,
     )
     return FileResponse(files[0])
+
+
+@router.get("/{session_id}/mask")
+async def get_mask(session_id: str):
+    mask_path = SESSIONS_DIR / session_id / "mask.png"
+    return FileResponse(mask_path)
