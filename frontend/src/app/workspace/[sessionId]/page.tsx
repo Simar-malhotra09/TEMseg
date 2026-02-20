@@ -5,7 +5,9 @@ import { Upload, Play, Download, Sliders, Eye, EyeOff, Trash2, ChevronDown } fro
 import { BASE_URL, uploadImage, SegmentImage } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
-const MODELS = ["YoloSAM", "Custom"];
+// we should send an inital req to the backend to 
+// get all available models
+const MODELS = ["YoloSAM", "MaskRCNN"];
 
 export default function Workspace({ params }: { params: { session_id: string } }) {
 
