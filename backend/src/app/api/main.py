@@ -1,10 +1,25 @@
 from fastapi import FastAPI
 from app.api.routers import images
-from app.api.logger import get_route_logger
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+
+# parent logger for all routes
+routes_logger = logging.getLogger("routes")
+routes_logger.setLevel(logging.INFO)
+
+# file handler for routes
+file_handler = logging.FileHandler("routes.log")
+formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+file_handler.setFormatter(formatter)
+routes_logger.addHandler(file_handler)
 
 
 app = FastAPI()
-global_logger = get_route_logger()
 app.include_router(images.router)
 
 

@@ -3,10 +3,12 @@ import uuid, shutil
 from pathlib import Path 
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import FileResponse
+import logging
 
 
 
 router = APIRouter(prefix="/images")
+logger = logging.getLogger("routes.images")
 SESSIONS_DIR = Path("sessions")
 
 '''
@@ -36,6 +38,11 @@ async def upload_image(file: UploadFile = File(...)):
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     
+    logger.info(
+        "Tried to upload an image. session_id: %s, filename: %s",
+        session_id,
+        file.filename,
+    )
     return {"session_id": session_id, "filename": file.filename}
 
 
@@ -49,4 +56,9 @@ async def get_image(session_id: str):
     files = list(session_dir.glob("*"))
     if files is None:
         return {"No file exits for session id:": session_id}
+    logger.info(
+        "Tried to get an image. session_id: %s, filename: %s",
+        session_id,
+        file.filename,
+    )
     return FileResponse(files[0])
