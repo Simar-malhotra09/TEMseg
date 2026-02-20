@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8000";
+export const BASE_URL = "http://localhost:8000";
 
 export async function uploadImage(file: File) {
   console.log("[uploadImage] uploading:", file.name);
@@ -21,3 +21,23 @@ export async function uploadImage(file: File) {
 
   return data;
 }
+
+export async function SegmentImage(sessionId: string) {
+  console.log("[SegmentImage] trying to segment image with session id:", sessionId);
+
+  const res = await fetch(`${BASE_URL}/segment`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+      model: "yolosam",
+    }),
+  });
+
+  if (!res.ok) throw new Error("Segmentation failed");
+
+  return res.json();
+}
+
