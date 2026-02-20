@@ -6,6 +6,7 @@ load_dotenv()
 class Settings:
     YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH")
     SAM_MODEL_PATH = os.environ.get("SAM_MODEL_PATH")
+    MASKRCNN_MODEL_PATH= os.environ.get("MASKRCNN_MODEL_PATH")
 
 settings = Settings()
 
