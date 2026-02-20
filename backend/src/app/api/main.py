@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images
+from app.api.routers import segment
 import logging
 logging.basicConfig(
     level=logging.INFO,
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(images.router)
+app.include_router(segment.router)
 
 
 @app.get("/")
