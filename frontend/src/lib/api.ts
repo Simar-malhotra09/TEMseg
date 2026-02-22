@@ -1,10 +1,20 @@
 export const BASE_URL = "http://localhost:8000";
 
 
-export async function getLiveModels() {
+export async function getModels(): Promise<string[]> {
   const res = await fetch(`${BASE_URL}/models`);
-  if (!res.ok) throw new Error(`Failed to fetch models (${res.status})`);
-  return res.json();
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch models");
+  }
+
+  const data = await res.json();
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  return data.models ?? [];
 }
 
 export async function uploadImage(file: File) {
@@ -29,22 +39,19 @@ export async function uploadImage(file: File) {
   return data;
 }
 
-export async function SegmentImage(sessionId: string) {
-  console.log("[SegmentImage] trying to segment image with session id:", sessionId);
-
-  const res = await fetch(`${BASE_URL}/segment`, {
+export async function SegmentImage(
+  sessionId: string,
+  model:string
+) {
+  const res = await fetch(`${BASE_URL}/segment/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       session_id: sessionId,
-      model: "yolosam",
+      model, 
     }),
   });
 
   if (!res.ok) throw new Error("Segmentation failed");
-
   return res.json();
 }
-
