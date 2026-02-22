@@ -73,10 +73,13 @@ async def segment(req: SegmentRequest):
     mask_path = session_dir / "mask.png"
     success = cv.imwrite(str(mask_path), mask)
 
+    if req.model != result.model:
+        return {"error": "Mismatch between requested model :{req.model} and model which did the segmentation: {result.model}"}
     if not success:
         return {"error": "Failed to save mask"}
 
     return {
         "mask_url": f"/images/{req.session_id}/mask",
-        "metadata": result.metadata
+        "metadata": result.metadata,
+        "model": req.model
     }
