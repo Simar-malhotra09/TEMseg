@@ -8,3 +8,7 @@ backend/venv/
 backend/.DS_Store
 backend/src/data/
 *.egg-info/
+backend/src/routes.log
+backend/src/sessions/
+backend/uv.lock
+frontend/main.py
