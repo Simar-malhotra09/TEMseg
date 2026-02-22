@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images
 from app.api.routers import segment
+from app.api.live_models import AvailableModels
+from typing import List
 import logging
 logging.basicConfig(
     level=logging.INFO,
@@ -35,3 +37,7 @@ app.include_router(segment.router)
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
+
+@app.get("/models", response_model=List[str])
+def get_models():
+    return [model.value for model in AvailableModels]
