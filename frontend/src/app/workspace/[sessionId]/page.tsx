@@ -103,7 +103,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
             TEM<span className={styles.logoAccent}>seg</span>
           </span>
           <span className={styles.sessionTag}>
-            session · {String("1")}
+            session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
           </span>
         </div>
         <div className={styles.topbarRight}>
