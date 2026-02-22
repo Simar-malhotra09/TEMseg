@@ -97,7 +97,11 @@ export default function Workspace({
       setStatus("Segmentation failed.");
     }
   }
-
+  //
+  //we at this point visually black out the selected region  
+  //we want to send this to the backend as well, since that 
+  //will make sure the segmentation happends on this new state 
+  //and not the old one. 
   async function applyBlackout(regions: any[]) {
     setBlackoutMode(false);
     setStatus("Blackout applied — ready to segment.");
@@ -287,7 +291,19 @@ export default function Workspace({
           ) : (
             <div className={styles.imageViewport}>
               {blackoutMode ? (
+                // Konva element
+
+                // A big problem right now is that 
+                // this only works when the image is in 
+                // it's org state that is masks aren't overlayed
+                // since otherwise this condition translated to 
+                // the sencond statement/
+                // This means you cannot mask out regions 
+                // with overlays as your visual guide which 
+                // is obv required. 
+
                 <BlackoutCanvas
+
                   imageSrc={image}
                   width={800}
                   height={600}
