@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 import uuid, shutil
 from pathlib import Path 
 from fastapi import APIRouter, File, UploadFile
@@ -16,14 +16,18 @@ from app.api.live_models import AvailableModels
 from pydantic import BaseModel
 from enum import Enum
 
-# class AvailableModels(str, Enum):
-#     yolosam = "yolosam"
-#     maskrcnn = "maskrcnn"
 
+class Box(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
 
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
+    blackout_regions: List[Box]
+
 
 
 router = APIRouter(prefix="/segment")
@@ -40,8 +44,27 @@ def normalize_mask(mask) -> np.ndarray:
     assert mask.ndim == 2, f"Unexpected mask shape: {mask.shape}"
     return (mask > 0).astype("uint8") * 255
 
+def blackout_regions(img: np.ndarray, regions: List[Box]) -> np.ndarray:
+    """
+    Black out rectangular regions in an image.
+    Returns a modified copy of the image.
+    """
+    
+    img_out = img.copy()
 
+    h, w = img_out.shape[:2]
 
+    for box in regions:
+        mid_x= box.width // 2
+        mid_y= box.height // 2
+        x1 = max(0, min(box.x - mid_x - mid_y, w))
+        x2 = max(0, min(box.x + mid_x - mid_y, w))
+        y1 = max(0, min(box.y - mid_x - mid_y, w))
+        y2 = max(0, min(box.y + mid_x + mid_y, w))
+
+        img_out[y1:y2, x1:x2] = 0  
+
+    return img_out
 
 @router.post("/")
 async def segment(req: SegmentRequest):
@@ -65,7 +88,11 @@ async def segment(req: SegmentRequest):
     else:
         return {"error": "Unsupported model"}
 
+
+
     img = model_inst.load_image(image_path)
+    if req.blackout_regions:
+        img= blackout_regions(img, req.blackout_regions)
     result = model_inst.segment(img)
 
     mask = normalize_mask(result.segmentation_mask)
