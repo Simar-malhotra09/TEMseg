@@ -94,7 +94,8 @@ class YoloSam(Model):
         if boxes is None or len(boxes) == 0:
             return SegmentationResult(
                 segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                metadata={"detections": 0}
+                metadata={"detections": 0},
+                model= "YoloSAM"
             )
 
         # --- SAM Segmentation ---
@@ -124,7 +125,8 @@ class YoloSam(Model):
 
         return SegmentationResult(
             segmentation_mask=combined_mask,
-            metadata={"detections": len(boxes)}
+            metadata={"detections": len(boxes)},
+            model="YoloSAM"
         )
 
     def plot(self, image, combined_mask):

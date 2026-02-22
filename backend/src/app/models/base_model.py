@@ -26,6 +26,7 @@ class ModelConfig:
 @dataclass
 class SegmentationResult:
     segmentation_mask: np.ndarray
+    model: str
     metadata: Dict[str, Any] | None = None
 
 

@@ -107,7 +107,8 @@ class MaskRCNN(Model):
 
         return SegmentationResult(
             segmentation_mask=combined,
-            metadata={"detections": len(results['boxes'])}
+            metadata={"detections": len(results['boxes'])},
+            model="MaskRCNN"
         )
 
     def plot(self, image, combined_mask):
