@@ -1,5 +1,5 @@
 from enum import Enum
 
 class AvailableModels(str, Enum):
-    yolosam = "yolosam"
-    maskrcnn = "maskrcnn"
+    yolosam = "YoloSAM"
+    maskrcnn = "MaskRCNN"
