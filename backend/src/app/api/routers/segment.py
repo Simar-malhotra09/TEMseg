@@ -88,8 +88,6 @@ async def segment(req: SegmentRequest):
     else:
         return {"error": "Unsupported model"}
 
-
-
     img = model_inst.load_image(image_path)
     if req.blackout_regions:
         img= blackout_regions(img, req.blackout_regions)
