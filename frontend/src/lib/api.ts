@@ -39,7 +39,7 @@ export async function uploadImage(file: File) {
   return data;
 }
 
-export async function SegmentImage(
+export async function segmentImage(
   sessionId: string,
   model:string
 ) {
