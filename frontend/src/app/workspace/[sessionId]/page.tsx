@@ -85,8 +85,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
       console.log("Segmentation result:", result);
       console.log("mask url: ", BASE_URL, result.mask_url)
 
-
-      setMaskUrl(`${BASE_URL}${result.mask_url}`);
+      setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       setSegDone(true);
       setStatus("Segmentation complete. Refine masks or export.");
 
