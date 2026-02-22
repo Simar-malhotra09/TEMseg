@@ -11,17 +11,19 @@ from app.models.base_model import SubModelConfig, ModelConfig
 from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
+from app.api.live_models import AvailableModels
+
 from pydantic import BaseModel
 from enum import Enum
 
-class ModelType(str, Enum):
-    yolosam = "yolosam"
-    maskrcnn = "maskrcnn"
+# class AvailableModels(str, Enum):
+#     yolosam = "yolosam"
+#     maskrcnn = "maskrcnn"
 
 
 class SegmentRequest(BaseModel):
     session_id: str
-    model: ModelType
+    model: AvailableModels
 
 
 router = APIRouter(prefix="/segment")
@@ -39,6 +41,8 @@ def normalize_mask(mask) -> np.ndarray:
     return (mask > 0).astype("uint8") * 255
 
 
+
+
 @router.post("/")
 async def segment(req: SegmentRequest):
     session_dir = SESSIONS_DIR / req.session_id
@@ -52,10 +56,10 @@ async def segment(req: SegmentRequest):
 
     image_path = files[0]
 
-    if req.model == ModelType.yolosam:
+    if req.model == AvailableModels.yolosam:
         model_inst = YoloSam(nano_config, device="cpu")
 
-    elif req.model == ModelType.maskrcnn:
+    elif req.model == AvailableModels.maskrcnn:
         model_inst = MaskRCNN(house_config, device="cpu")
 
     else:
