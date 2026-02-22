@@ -1,27 +1,37 @@
 "use client";
 import styles from "./page.module.css"
-import { useState, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
 import { Upload, Play, Download, Sliders, Eye, EyeOff, Trash2, ChevronDown } from "lucide-react";
-import { BASE_URL, uploadImage, SegmentImage } from "@/lib/api";
+import { BASE_URL,getModels, uploadImage, SegmentImage } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
 // we should send an inital req to the backend to 
-// get all available models
-const MODELS = ["YoloSAM", "MaskRCNN"];
+// const MODELS = ["YoloSAM", "MaskRCNN"];
 
 export default function Workspace({ params }: { params: { session_id: string } }) {
 
   const router = useRouter();
+  const { data: models = [] } = useQuery({
+    queryKey: ["models"],
+    queryFn: getModels,
+  });
+
+
   const [image, setImage] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(MODELS[0]);
+  const [selectedModel, setSelectedModel] = useState(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [masksVisible, setMasksVisible] = useState(true);
   const [status, setStatus] = useState<string>("Upload an image to begin.");
   const [segDone, setSegDone] = useState(false);
   const [maskUrl, setMaskUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (models.length > 0) setSelectedModel(models[0]);
+  }, [models]); 
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -70,7 +80,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
     try {
       setStatus(`Running ${selectedModel}...`);
 
-      const result = await SegmentImage(sessionId);
+      const result = await SegmentImage(sessionId, selectedModel);
 
       console.log("Segmentation result:", result);
       console.log("mask url: ", BASE_URL, result.mask_url)
@@ -116,7 +126,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
               {modelDropdownOpen && (
                 <ul className={styles.dropdownList}>
-                  {MODELS.map(m => (
+                  {models.map(m => (
                     <li
                       key={m}
                       className={`${styles.dropdownItem} ${
