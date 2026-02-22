@@ -1,5 +1,12 @@
 export const BASE_URL = "http://localhost:8000";
 
+
+export async function getLiveModels() {
+  const res = await fetch(`${BASE_URL}/models`);
+  if (!res.ok) throw new Error(`Failed to fetch models (${res.status})`);
+  return res.json();
+}
+
 export async function uploadImage(file: File) {
   console.log("[uploadImage] uploading:", file.name);
 
