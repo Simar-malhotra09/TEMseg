@@ -2,7 +2,14 @@ from abc import ABC, abstractmethod
 import cv2 as cv
 import numpy as np
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
+from enum import Enum
+from app.models.helpers.compute_stats import (
+    compute_particle_count,
+    compute_avg_size,
+    compute_avg_circularity,
+    compute_coverage,
+)
 
 ''' Stores individual models'''
 @dataclass
@@ -28,6 +35,23 @@ class SegmentationResult:
     segmentation_mask: np.ndarray
     model: str
     metadata: Dict[str, Any] | None = None
+
+'''
+    List all available stats
+'''
+class StatType(str, Enum):
+    PARTICLE_COUNT = "particle_count"
+    AVG_SIZE = "avg_size"
+    AVG_CIRCULARITY = "avg_circularity"
+    COVERAGE = "coverage"
+    
+@dataclass
+class StatsConfig:
+    enabled: Set[StatType]
+
+@dataclass
+class StatsResult:
+    values: dict[StatType, float]
 
 
 class Model(ABC):
@@ -55,4 +79,19 @@ class Model(ABC):
             print(f"Path:      {comp.path}")
             print("-" * 40)
 
+    def compute_stats(self,mask, config: StatsConfig) -> StatsResult:
+        results = {}
 
+        if StatType.PARTICLE_COUNT in config.enabled:
+            results[StatType.PARTICLE_COUNT] = compute_particle_count(mask)
+
+        if StatType.AVG_SIZE in config.enabled:
+            results[StatType.AVG_SIZE] = compute_avg_size(mask)
+
+        if StatType.AVG_CIRCULARITY in config.enabled:
+            results[StatType.AVG_CIRCULARITY] = compute_avg_circularity(mask)
+
+        if StatType.COVERAGE in config.enabled:
+            results[StatType.COVERAGE] = compute_coverage(mask)
+
+        return StatsResult(values=results)
