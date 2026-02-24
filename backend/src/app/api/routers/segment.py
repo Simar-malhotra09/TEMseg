@@ -18,15 +18,16 @@ from enum import Enum
 
 
 class Box(BaseModel):
-    x: int
-    y: int
-    width: int
-    height: int
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
 
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
-    blackout_regions: List[Box]
+    blackout_regions: List[Box]=None
 
 
 
@@ -44,30 +45,33 @@ def normalize_mask(mask) -> np.ndarray:
     assert mask.ndim == 2, f"Unexpected mask shape: {mask.shape}"
     return (mask > 0).astype("uint8") * 255
 
-def blackout_regions(img: np.ndarray, regions: List[Box]) -> np.ndarray:
+def blackout_regions(img: np.ndarray, regions: List[Box], save_path: str | Path = None) -> np.ndarray:
     """
     Black out rectangular regions in an image.
-    Returns a modified copy of the image.
+    Optionally saves the result for verification.
     """
-    
     img_out = img.copy()
-
     h, w = img_out.shape[:2]
 
     for box in regions:
-        mid_x= box.width // 2
-        mid_y= box.height // 2
-        x1 = max(0, min(box.x - mid_x - mid_y, w))
-        x2 = max(0, min(box.x + mid_x - mid_y, w))
-        y1 = max(0, min(box.y - mid_x - mid_y, w))
-        y2 = max(0, min(box.y + mid_x + mid_y, w))
+        x1 = max(0, min(int(box.x), w))
+        x2 = max(0, min(int(box.x + box.width), w))
+        y1 = max(0, min(int(box.y), h))
+        y2 = max(0, min(int(box.y + box.height), h))
 
-        img_out[y1:y2, x1:x2] = 0  
+        img_out[y1:y2, x1:x2] = 0
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        cv.imwrite(str(save_path), img_out)
+        print(f"Blacked-out image saved to {save_path}")
 
     return img_out
 
 @router.post("/")
 async def segment(req: SegmentRequest):
+    print(f"Seg request:{req} ")
     session_dir = SESSIONS_DIR / req.session_id
 
     if not session_dir.exists():
@@ -92,7 +96,9 @@ async def segment(req: SegmentRequest):
 
     img = model_inst.load_image(image_path)
     if req.blackout_regions:
-        img= blackout_regions(img, req.blackout_regions)
+        print(f"Blacking out {len(req.blackout_regions)} regions! ")
+        img= blackout_regions(img, req.blackout_regions,  save_path=f"sessions/{req.session_id}/blackout_check.png")
+
     result = model_inst.segment(img)
 
     mask = normalize_mask(result.segmentation_mask)
