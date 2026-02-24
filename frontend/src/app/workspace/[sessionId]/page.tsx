@@ -23,19 +23,31 @@ export default function Workspace({
   params: { session_id: string };
 }) {
   const router = useRouter();
-
   const { data: models = [] } = useQuery({
     queryKey: ["models"],
     queryFn: getModels,
   });
 
+  const STAT_MAP: Record<string, string> = {
+    "Particles": "particle_count",
+    "Avg. Size": "avg_size",
+    "Avg. Circularity": "avg_circularity",
+    "Coverage": "coverage",
+  };
+
   const [image, setImage] = useState<string | null>(null);
+  const [imgSize, setImgSize] = useState({ width: 0, height: 0 });
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [masksVisible, setMasksVisible] = useState(true);
   const [status, setStatus] = useState<string>("Upload an image to begin.");
+  const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [segDone, setSegDone] = useState(false);
   const [maskUrl, setMaskUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -45,6 +57,26 @@ export default function Workspace({
   useEffect(() => {
     if (models.length > 0) setSelectedModel(models[0]);
   }, [models]);
+
+  useEffect(() => {
+    if (!viewportRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      console.log("viewportSize updated:", { width, height });
+      setViewportSize({ width, height });
+    });
+
+    observer.observe(viewportRef.current);
+    return () => observer.disconnect();
+  }, [image]); // run once on mount, observer handles updates
+
+  useEffect(() => {
+    if (imgSize.width && viewportSize.width) {
+      console.log("ImgSize:", imgSize);
+      console.log("ViewportSize:", viewportSize);
+    }
+  }, [imgSize, viewportSize]);
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -83,13 +115,13 @@ export default function Workspace({
 
     try {
       setStatus(`Running ${selectedModel}...`);
-
-      const result = await segmentImage(sessionId, selectedModel);
+      const resizedBlackoutRegions = blackoutRegions;
+      const result = await segmentImage(sessionId, selectedModel, resizedBlackoutRegions);
 
       setMaskUrl(
         `${BASE_URL}${result.mask_url}?t=${Date.now()}`
       );
-
+      setStats(result.stats);
       setSegDone(true);
       setStatus("Segmentation complete. Refine masks or export.");
     } catch (err) {
@@ -103,6 +135,8 @@ export default function Workspace({
   //will make sure the segmentation happends on this new state 
   //and not the old one. 
   async function applyBlackout(regions: any[]) {
+    console.log("Regions: ", regions );
+    setBlackoutRegions(regions);
     setBlackoutMode(false);
     setStatus("Blackout applied — ready to segment.");
   }
@@ -138,7 +172,7 @@ export default function Workspace({
                 }
               >
                 {selectedModel} <ChevronDown size={14} />
-              </button>
+             </button>
 
               {modelDropdownOpen && (
                 <ul className={styles.dropdownList}>
@@ -289,46 +323,42 @@ export default function Workspace({
               </p>
             </div>
           ) : (
-            <div className={styles.imageViewport}>
-              {blackoutMode ? (
-                // Konva element
-
-                // A big problem right now is that 
-                // this only works when the image is in 
-                // it's org state that is masks aren't overlayed
-                // since otherwise this condition translated to 
-                // the sencond statement/
-                // This means you cannot mask out regions 
-                // with overlays as your visual guide which 
-                // is obv required. 
-
-                <BlackoutCanvas
-
-                  imageSrc={image}
-                  width={800}
-                  height={600}
-                  onChange={setBlackoutRegions}
-                />
-              ) : (
-                <>
+              <div className={styles.imageViewport} ref={viewportRef} style={{ position: "relative" }}>
+                {image && (
                   <img
                     src={image}
                     alt="TEM input"
                     className={styles.temImage}
+                    style={{ display: "block", width: "100%", height: "100%" }}
+                    onLoad={(e) =>
+                      setImgSize({
+                        width: e.currentTarget.naturalWidth,
+                        height: e.currentTarget.naturalHeight,
+                      })
+                    }
                   />
-                  {segDone &&
-                    masksVisible &&
-                    maskUrl && (
-                      <img
-                        src={maskUrl}
-                        className={
-                          styles.maskOverlay
-                        }
-                      />
-                    )}
-                </>
-              )}
-            </div>
+                )}
+
+                {blackoutMode && imgSize.width && imgSize.height && (
+                  <div style={{ position: "absolute", top: 0, left: 0 }}>
+                    <BlackoutCanvas
+                      imageSrc={image}
+                      width={viewportSize.width}
+                      height={viewportSize.height}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      onChange={setBlackoutRegions}
+                    />
+                  </div>
+                )}
+
+                {segDone && masksVisible && maskUrl && (
+                  <img
+                    src={maskUrl}
+                    className={styles.maskOverlay}
+                  />
+                )}
+              </div>
           )}
 
           <input
@@ -351,34 +381,22 @@ export default function Workspace({
               statistics.
             </p>
           ) : (
+
             <div className={styles.statsGrid}>
-              {[
-                ["Particles", "—"],
-                ["Avg. Size", "—"],
-                ["Avg. Circularity", "—"],
-                ["Coverage", "—"],
-                ["GT Score", "—"],
-              ].map(([label, val]) => (
-                <div
-                  className={styles.statRow}
-                  key={label}
-                >
-                  <span
-                    className={styles.statLabel}
-                  >
-                    {label}
-                  </span>
-                  <span
-                    className={styles.statVal}
-                  >
-                    {val}
+              {Object.entries(STAT_MAP).map(([label, key]) => (
+                <div className={styles.statRow} key={label}>
+                  <span className={styles.statLabel}>{label}</span>
+                  <span className={styles.statVal}>
+                    {stats && key in stats ? stats[key].toFixed(3) : "—"}
                   </span>
                 </div>
               ))}
             </div>
+
           )}
         </aside>
+
       </div>
     </div>
   );
-}
+} 
