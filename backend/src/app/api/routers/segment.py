@@ -94,7 +94,6 @@ async def segment(req: SegmentRequest):
 
     img = model_inst.load_image(image_path)
     if req.blackout_regions:
-<<<<<<< HEAD
         print(f"Blacking out {len(req.blackout_regions)} regions! ")
         img= blackout_regions(img, req.blackout_regions,  save_path=f"sessions/{req.session_id}/blackout_check.png")
 
