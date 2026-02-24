@@ -1,26 +1,33 @@
 "use client";
-import { useRef, useState, useEffect } from "react";
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer } from "react-konva";
+
+import { useState, useRef, useEffect } from "react";
+import { Stage, Layer, Rect, Transformer, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 
-interface BlackoutRect {
+export interface BlackoutRect {
   id: string;
-  x: number; y: number;
-  width: number; height: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface Props {
   imageSrc: string;
-  width: number;
-  height: number;
+  imgWidth: number;   // original image width
+  imgHeight: number;  // original image height
+  width: number;      // viewport width
+  height: number;     // viewport height
   onChange: (regions: BlackoutRect[]) => void;
 }
 
-export default function BlackoutCanvas({ imageSrc, width, height, onChange }: Props) {
+
+export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, onChange }: Props) {
   const [image] = useImage(imageSrc);
   const [rects, setRects] = useState<BlackoutRect[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<BlackoutRect | null>(null);
+
   const transformerRef = useRef<any>(null);
   const stageRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
@@ -51,83 +58,124 @@ export default function BlackoutCanvas({ imageSrc, width, height, onChange }: Pr
     return () => window.removeEventListener("keydown", handler);
   }, [selectedId, rects]);
 
-  function handleMouseDown(e: any) {
-    // clicked on empty area — deselect or start drawing
+  // map viewport pointer -> image coordinates
+  const getPointerPos = (e: any) => {
+    const pos = e.target.getStage().getPointerPosition();
+    if (!pos) return { x: 0, y: 0 };
+    const scaleX = imgWidth / width;
+    const scaleY = imgHeight / height;
+    return { x: pos.x * scaleX, y: pos.y * scaleY };
+  };
+
+  const handleMouseDown = (e: any) => {
     if (e.target === e.target.getStage() || e.target.getClassName() === "Image") {
       setSelectedId(null);
-      const pos = e.target.getStage().getPointerPosition();
+      const pos = getPointerPos(e);
       setDrawing({ id: crypto.randomUUID(), x: pos.x, y: pos.y, width: 0, height: 0 });
     }
-  }
+  };
 
-  function handleMouseMove(e: any) {
+  const handleMouseMove = (e: any) => {
     if (!drawing) return;
-    const pos = e.target.getStage().getPointerPosition();
+    const pos = getPointerPos(e);
     setDrawing(d => d ? { ...d, width: pos.x - d.x, height: pos.y - d.y } : null);
-  }
+  };
 
-  function handleMouseUp() {
+  const handleMouseUp = () => {
     if (!drawing) return;
     if (Math.abs(drawing.width) > 5 && Math.abs(drawing.height) > 5) {
-      const updated = [...rects, drawing];
+      const finalized = {
+        ...drawing,
+        width: Math.abs(drawing.width),
+        height: Math.abs(drawing.height),
+        x: drawing.width < 0 ? drawing.x + drawing.width : drawing.x,
+        y: drawing.height < 0 ? drawing.y + drawing.height : drawing.y,
+      };
+      const updated = [...rects, finalized];
       setRects(updated);
-      setSelectedId(drawing.id);
+      setSelectedId(finalized.id);
       onChange(updated);
     }
     setDrawing(null);
-  }
+  };
+
+  const scaleToViewport = (rect: BlackoutRect) => ({
+    x: rect.x * (width / imgWidth),
+    y: rect.y * (height / imgHeight),
+    width: rect.width * (width / imgWidth),
+    height: rect.height * (height / imgHeight),
+  });
 
   return (
-    <Stage ref={stageRef} width={width} height={height}
+    <Stage
+      ref={stageRef}
+      width={width}
+      height={height}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
       <Layer ref={layerRef}>
-        <KonvaImage image={image} width={width} height={height} />
 
-        {rects.map(rect => (
-          <Rect
-            key={rect.id}
-            id={rect.id}
-            x={rect.x} y={rect.y}
-            width={rect.width} height={rect.height}
-            fill="rgba(255,50,50,0.35)"
-            stroke="#ff3232"
-            strokeWidth={1.5}
-            draggable
-            onClick={() => setSelectedId(rect.id)}
-            onDragEnd={e => {
-              const updated = rects.map(r => r.id === rect.id
-                ? { ...r, x: e.target.x(), y: e.target.y() } : r);
-              setRects(updated);
-              onChange(updated);
-            }}
-            onTransformEnd={e => {
-              const node = e.target;
-              const updated = rects.map(r => r.id === rect.id ? {
-                ...r,
-                x: node.x(), y: node.y(),
-                width: node.width() * node.scaleX(),
-                height: node.height() * node.scaleY(),
-              } : r);
-              node.scaleX(1); node.scaleY(1);
-              setRects(updated);
-              onChange(updated);
-            }}
-          />
-        ))}
+        {rects.map(rect => {
+          const scaled = scaleToViewport(rect);
+          return (
+            <Rect
+              key={rect.id}
+              id={rect.id}
+              x={scaled.x} y={scaled.y}
+              width={scaled.width} height={scaled.height}
+              fill="rgba(255,50,50,0.35)"
+              stroke="#ff3232"
+              strokeWidth={1.5}
+              draggable
+              onClick={() => setSelectedId(rect.id)}
+              onDragEnd={e => {
+                const updated = rects.map(r => r.id === rect.id
+                  ? { ...r, x: (e.target.x() / width) * imgWidth, y: (e.target.y() / height) * imgHeight }
+                  : r
+                );
+                setRects(updated);
+                onChange(updated);
+              }}
+              onTransformEnd={e => {
+                const node = e.target;
+                const updated = rects.map(r => r.id === rect.id
+                  ? {
+                      ...r,
+                      x: (node.x() / width) * imgWidth,
+                      y: (node.y() / height) * imgHeight,
+                      width: node.width() * node.scaleX() * (imgWidth / width),
+                      height: node.height() * node.scaleY() * (imgHeight / height),
+                    }
+                  : r
+                );
+                node.scaleX(1); node.scaleY(1);
+                setRects(updated);
+                onChange(updated);
+              }}
+            />
+          );
+        })}
 
         {drawing && (
-          <Rect x={drawing.x} y={drawing.y}
-            width={drawing.width} height={drawing.height}
-            fill="rgba(255,50,50,0.25)" stroke="#ff3232"
-            strokeWidth={1.5} dash={[6, 3]}
+          <Rect
+            x={drawing.x * (width / imgWidth)}
+            y={drawing.y * (height / imgHeight)}
+            width={drawing.width * (width / imgWidth)}
+            height={drawing.height * (height / imgHeight)}
+            fill="rgba(255,50,50,0.25)"
+            stroke="#ff3232"
+            strokeWidth={1.5}
+            dash={[6, 3]}
           />
         )}
 
-        <Transformer ref={transformerRef}
-          boundBoxFunc={(oldBox, newBox) => newBox.width < 5 || newBox.height < 5 ? oldBox : newBox}
+        <Transformer
+          ref={transformerRef}
+          boundBoxFunc={(oldBox, newBox) =>
+            newBox.width < 5 || newBox.height < 5 ? oldBox : newBox
+          }
         />
       </Layer>
     </Stage>
