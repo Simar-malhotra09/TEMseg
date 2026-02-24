@@ -79,7 +79,7 @@ class Model(ABC):
             print(f"Path:      {comp.path}")
             print("-" * 40)
 
-    def compute_stats(mask, config: StatsConfig) -> StatsResult:
+    def compute_stats(self,mask, config: StatsConfig) -> StatsResult:
         results = {}
 
         if StatType.PARTICLE_COUNT in config.enabled:

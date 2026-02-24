@@ -7,7 +7,7 @@ import logging
 import torch 
 import cv2 as cv
 import numpy as np
-from app.models.base_model import SubModelConfig, ModelConfig
+from app.models.base_model import SubModelConfig, ModelConfig, StatType, StatsConfig, StatsResult
 from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
@@ -26,7 +26,7 @@ class Box(BaseModel):
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
-    blackout_regions: List[Box]
+    blackout_regions: List[Box]=None
 
 
 
@@ -91,20 +91,56 @@ async def segment(req: SegmentRequest):
     img = model_inst.load_image(image_path)
     if req.blackout_regions:
         img= blackout_regions(img, req.blackout_regions)
+
     result = model_inst.segment(img)
 
+    if req.model != result.model:
+        return {"error": f"Mismatch between requested model {req.model} and model used {result.model}"}
+
+    if result.segmentation_mask is None:
+        return {"error": "Segmentation returned no mask"}
+
     mask = normalize_mask(result.segmentation_mask)
+
+    if mask is None or mask.size == 0:
+        return {"error": "Mask is empty"}
+
+    # check mask has foreground pixels
+    if not np.any(mask):
+        return {
+            "mask_url": None,
+            "metadata": result.metadata,
+            "stats": {},
+            "model": req.model,
+            "warning": "Mask contains no detected particles"
+        }
 
     mask_path = session_dir / "mask.png"
     success = cv.imwrite(str(mask_path), mask)
 
-    if req.model != result.model:
-        return {"error": "Mismatch between requested model :{req.model} and model which did the segmentation: {result.model}"}
     if not success:
         return {"error": "Failed to save mask"}
+
+
+    # Default stats config for now.
+    stats_config = StatsConfig(
+        enabled={
+            StatType.PARTICLE_COUNT,
+            StatType.AVG_SIZE,
+            StatType.AVG_CIRCULARITY,
+            StatType.COVERAGE,
+        }
+    )
+
+    stats_results = model_inst.compute_stats(mask, stats_config)
+
+
+    if not stats_results or not getattr(stats_results, "values", None):
+        return {"error": "Failed to compute stats"}
 
     return {
         "mask_url": f"/images/{req.session_id}/mask",
         "metadata": result.metadata,
+        "stats": stats_results.values,
         "model": req.model
     }
