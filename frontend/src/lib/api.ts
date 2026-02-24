@@ -41,17 +41,26 @@ export async function uploadImage(file: File) {
 
 export async function segmentImage(
   sessionId: string,
-  model:string
+  model:string, 
+  blackoutRegions: any [],
 ) {
+
+  console.log("Calling [segmentImage]", sessionId, model, blackoutRegions);
+
   const res = await fetch(`${BASE_URL}/segment/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      session_id: sessionId,
-      model, 
-    }),
+  body: JSON.stringify({
+    session_id: sessionId,
+    model: model,
+    blackout_regions: blackoutRegions || [],
+  })
   });
 
-  if (!res.ok) throw new Error("Segmentation failed");
+  if (!res.ok){
+    console.error("[segmentImage] failed:", res.status);
+    throw new Error("Segmentation failed");
+  } 
+  console.log("[segmentImage] success:", res);
   return res.json();
 }
