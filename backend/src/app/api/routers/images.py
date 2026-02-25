@@ -34,7 +34,7 @@ async def upload_image(file: UploadFile = File(...)):
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     
-    dest = session_dir / file.filename
+    dest = session_dir / f"org_{file.filename}"
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
     
@@ -67,3 +67,21 @@ async def get_image(session_id: str):
 async def get_mask(session_id: str):
     mask_path = SESSIONS_DIR / session_id / "mask.png"
     return FileResponse(mask_path)
+
+
+@router.post("/{session_id}/gt")
+async def upload_ground_truth(session_id:str, file:UploadFile=File(...)):
+    session_dir = SESSIONS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    
+    dest = session_dir / file.filename
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    logger.info(
+        "Tried to upload an ground truth for session_id: %s, filename: %s",
+        session_id,
+        file.filename,
+    )
+    return {"session_id": session_id, "filename": file.filename}
+
