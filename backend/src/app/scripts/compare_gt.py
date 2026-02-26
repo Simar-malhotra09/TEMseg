@@ -31,7 +31,7 @@ def compute_metrics(gt: np.ndarray, pred: np.ndarray) -> dict:
 
     return {
         "iou": iou_score(gt, pred),
-        # "dice": dice_coefficient(gt, pred),
+        "dice": dice_coefficient(gt, pred),
         # "hausdorff_95": hausdorff_95(gt, pred),
     }
 
