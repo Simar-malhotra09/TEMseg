@@ -56,7 +56,11 @@ export default function Workspace({
   const [blackoutRegions, setBlackoutRegions] = useState<any[]>([]);
   const [groundTruth, setGroundTruth]= useState(false);
   const [groundTruthStatus, setGroundTruthStatus] = useState<string>("Upload ground truth for current image! ");
-
+  const [groundTruthScore, setgroundTruthScore] = useState<{
+    iou?: number;
+    dice?: number;
+    pixel_acc?: number;
+  } | null>(null);
 
   useEffect(() => {
     if (models.length > 0) setSelectedModel(models[0]);
@@ -115,10 +119,10 @@ export default function Workspace({
       setGroundTruthStatus(`Warning: ${res.warnings[0]}`);
     } 
     setGroundTruth(true);
+    setgroundTruthScore(res.scores);
 
     if (segDone) {
       setGroundTruthStatus("GT uploaded — computing score...");
-      // TODO: trigger score computation
     } else {
       setGroundTruthStatus("GT uploaded — run segmentation to compute score.");
     }
@@ -410,19 +414,18 @@ export default function Workspace({
           />
         </main>
 
+        {/* stats sidebar */}
         <aside className={styles.statsPanel}>
-          <p className={styles.sidebarLabel}>
-            Stats
-          </p>
+          <p className={styles.sidebarLabel}>Stats</p>
 
           {!segDone ? (
             <p className={styles.sidebarHint}>
-              Run segmentation to see particle
-              statistics.
+              Run segmentation to see particle statistics.
             </p>
           ) : (
-
             <div className={styles.statsGrid}>
+
+              {/* segmentation stats */}
               {Object.entries(STAT_MAP).map(([label, key]) => (
                 <div className={styles.statRow} key={label}>
                   <span className={styles.statLabel}>{label}</span>
@@ -431,8 +434,33 @@ export default function Workspace({
                   </span>
                 </div>
               ))}
-            </div>
 
+              {/* Divider */}
+              <div className={styles.statDivider} />
+
+              {/* GT metrics */}
+              <div className={styles.statRow}>
+                <span className={styles.statLabel}>IoU</span>
+                <span className={styles.statVal}>
+                  {groundTruthScore?.iou?.toFixed(3) ?? "—"}
+                </span>
+              </div>
+
+              <div className={styles.statRow}>
+                <span className={styles.statLabel}>Dice</span>
+                <span className={styles.statVal}>
+                  {groundTruthScore?.dice?.toFixed(3) ?? "—"}
+                </span>
+              </div>
+
+              <div className={styles.statRow}>
+                <span className={styles.statLabel}>Pixel Acc</span>
+                <span className={styles.statVal}>
+                  {groundTruthScore?.pixel_acc?.toFixed(3) ?? "—"}
+                </span>
+              </div>
+
+            </div>
           )}
         </aside>
 
