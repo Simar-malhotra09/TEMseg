@@ -205,3 +205,19 @@ border-bottom: 1px solid #1a1a1a;
   opacity: 0.6;
   mix-blend-mode: screen; /* makes black transparent, shows colored mask */
 }
+
+.statusPill,
+.warnPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 4px 10px;
+  border-radius: 999px;
+
+  font-size: 12px;
+  font-weight: 500;
+
+  line-height: 1;
+  white-space: nowrap;
+}
