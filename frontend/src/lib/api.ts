@@ -64,3 +64,33 @@ export async function segmentImage(
   console.log("[segmentImage] success:", res);
   return res.json();
 }
+
+
+
+export async function uploadGroundTruth(
+  sessionId: string, 
+  file: File
+) {
+  console.log("[uploadGroundTruth] uploading:", file.name);
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(
+    `${BASE_URL}/gt/${sessionId}`,
+    {
+      method: "POST",
+      body: form,
+    }
+  );
+
+  if (!res.ok) {
+    console.error("[uploadGroundTruth] failed:", res.status);
+    throw new Error("Upload uploadGroundTruth failed");
+  }
+
+  const data = await res.json(); //{ session_id, filename } }
+  console.log("[uploadGroundTruth] success:", data);
+
+  return data;
+}
