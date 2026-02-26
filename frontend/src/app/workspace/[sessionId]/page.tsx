@@ -13,7 +13,7 @@ import {
   Trash2,
   ChevronDown,
 } from "lucide-react";
-import { BASE_URL, getModels, uploadImage, segmentImage } from "@/lib/api";
+import { BASE_URL, getModels, uploadImage, segmentImage, uploadGroundTruth} from "@/lib/api";
 import { useRouter } from "next/navigation";
 import BlackoutCanvas from "./components/BlackOutCanvas";
 
@@ -51,8 +51,12 @@ export default function Workspace({
   const [segDone, setSegDone] = useState(false);
   const [maskUrl, setMaskUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const gtFileRef = useRef<HTMLInputElement>(null);
   const [blackoutMode, setBlackoutMode] = useState(false);
   const [blackoutRegions, setBlackoutRegions] = useState<any[]>([]);
+  const [groundTruth, setGroundTruth]= useState(false);
+  const [groundTruthStatus, setGroundTruthStatus] = useState<string>("Upload ground truth for current image! ");
+
 
   useEffect(() => {
     if (models.length > 0) setSelectedModel(models[0]);
@@ -101,10 +105,38 @@ export default function Workspace({
 
     setStatus(`Loaded: ${file.name} — ready to segment.`);
   }
+  
+  async function handleGroundTruth(file: File) {
+    setGroundTruthStatus("Uploading ground truth...");
+    const res = await uploadGroundTruth(sessionId!, file);
+
+    
+    if (res.warnings?.length > 0) {
+      setGroundTruthStatus(`Warning: ${res.warnings[0]}`);
+    } 
+    setGroundTruth(true);
+
+    if (segDone) {
+      setGroundTruthStatus("GT uploaded — computing score...");
+      // TODO: trigger score computation
+    } else {
+      setGroundTruthStatus("GT uploaded — run segmentation to compute score.");
+    }
+  }
+
+  function onGroundTruthFileChange(e: React.ChangeEvent<HTMLInputElement>){
+    const file = e.target.files?.[0];
+    if (file) handleGroundTruth(file);
+    setStatus("Ground Truth File updated! ");
+    e.target.value = "";
+  }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    setStatus("File updated! ");
+    e.target.value = "";
+
   }
 
   async function handleRunSegmentation() {
@@ -278,18 +310,26 @@ export default function Workspace({
             <p className={styles.sidebarLabel}>
               Ground Truth
             </p>
-            <button
-              className={styles.actionBtn}
-              onClick={() =>
-                fileRef.current?.click()
-              }
-              disabled={!segDone}
+            <button 
+            className={styles.actionBtn} onClick={() => gtFileRef.current?.click()}
+            disabled={!segDone}
             >
               <Upload size={14} /> Upload GT
             </button>
+
+            <input
+              ref={gtFileRef}
+              type="file"
+              accept=".npy,.png,.tiff,.tif,.json"
+              hidden
+              onChange={onGroundTruthFileChange}
+            />
             <p className={styles.sidebarHint}>
-              Upload a ground truth mask to compute
-              accuracy scores.
+              {groundTruth ?
+                "Ground truth is ready! ":
+                "Upload a ground truth mask to compute accuracy scores."
+              }
+
             </p>
           </section>
         </aside>
