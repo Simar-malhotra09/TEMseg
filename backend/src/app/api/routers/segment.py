@@ -71,47 +71,77 @@ def blackout_regions(img: np.ndarray, regions: List[Box], save_path: str | Path 
 
 @router.post("/")
 async def segment(req: SegmentRequest):
-    print(f"Seg request:{req} ")
+
+    logger.info(f"[SEG] Request received for session: {req.session_id}")
+    logger.info(f"[SEG] Model requested: {req.model}")
+    logger.info(f"[SEG] Blackout regions: {len(req.blackout_regions)}")
+
     session_dir = SESSIONS_DIR / req.session_id
+    logger.info(f"[SEG] Session dir resolved to: {session_dir}")
 
     if not session_dir.exists():
+        logger.warning("[SEG] Invalid session directory")
         return {"error": "Invalid session"}
 
-    files = list(session_dir.iterdir())
-    if not files:
+    orig_files = list(session_dir.glob("org_*"))
+    logger.info(f"[SEG] Found original files: {orig_files}")
+
+    if not orig_files:
+        logger.warning("[SEG] No original image found")
         return {"error": "No image found"}
 
-    image_path = files[0]
+    image_path = orig_files[0]
+    logger.info(f"[SEG] Using image: {image_path}")
 
+    # Model selection
     if req.model == AvailableModels.yolosam:
+        logger.info("[SEG] Initializing YoloSAM model")
         model_inst = YoloSam(nano_config, device="cpu")
 
     elif req.model == AvailableModels.maskrcnn:
+        logger.info("[SEG] Initializing MaskRCNN model")
         model_inst = MaskRCNN(house_config, device="cpu")
 
     else:
+        logger.error(f"[SEG] Unsupported model requested: {req.model}")
         return {"error": "Unsupported model"}
 
+    # Load image
+    logger.info("[SEG] Loading image...")
     img = model_inst.load_image(image_path)
-    if req.blackout_regions:
-        print(f"Blacking out {len(req.blackout_regions)} regions! ")
-        img= blackout_regions(img, req.blackout_regions,  save_path=f"sessions/{req.session_id}/blackout_check.png")
 
+    # Apply blackout if needed
+    if req.blackout_regions:
+        logger.info(f"[SEG] Applying blackout to {len(req.blackout_regions)} regions")
+        img = blackout_regions(
+            img,
+            req.blackout_regions,
+            save_path=f"sessions/{req.session_id}/blackout_check.png"
+        )
+
+    # Run segmentation
+    logger.info("[SEG] Running segmentation...")
     result = model_inst.segment(img)
 
     if req.model != result.model:
-        return {"error": f"Mismatch between requested model {req.model} and model used {result.model}"}
+        logger.error("[SEG] Model mismatch between request and result")
+        return {
+            "error": f"Mismatch between requested model {req.model} and model used {result.model}"
+        }
 
     if result.segmentation_mask is None:
+        logger.error("[SEG] Segmentation returned no mask")
         return {"error": "Segmentation returned no mask"}
 
+    logger.info("[SEG] Normalizing mask...")
     mask = normalize_mask(result.segmentation_mask)
 
     if mask is None or mask.size == 0:
+        logger.error("[SEG] Mask normalization failed or mask empty")
         return {"error": "Mask is empty"}
 
-    # check mask has foreground pixels
     if not np.any(mask):
+        logger.warning("[SEG] Mask contains no foreground pixels")
         return {
             "mask_url": None,
             "metadata": result.metadata,
@@ -121,13 +151,15 @@ async def segment(req: SegmentRequest):
         }
 
     mask_path = session_dir / "mask.png"
+    logger.info(f"[SEG] Saving mask to: {mask_path}")
     success = cv.imwrite(str(mask_path), mask)
 
     if not success:
+        logger.error("[SEG] Failed to save mask")
         return {"error": "Failed to save mask"}
 
+    logger.info("[SEG] Computing stats...")
 
-    # Default stats config for now.
     stats_config = StatsConfig(
         enabled={
             StatType.PARTICLE_COUNT,
@@ -139,9 +171,12 @@ async def segment(req: SegmentRequest):
 
     stats_results = model_inst.compute_stats(mask, stats_config)
 
-
     if not stats_results or not getattr(stats_results, "values", None):
+        logger.error("[SEG] Failed to compute stats")
         return {"error": "Failed to compute stats"}
+
+    logger.info(f"[SEG] Stats computed: {stats_results.values}")
+    logger.info("[SEG] Segmentation completed successfully")
 
     return {
         "mask_url": f"/images/{req.session_id}/mask",
