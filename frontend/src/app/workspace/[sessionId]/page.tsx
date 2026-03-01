@@ -92,13 +92,12 @@ export default function Workspace({ params }: { params: { session_id: string } }
   }
 
   async function handleFile(file: File) {
-    const url = URL.createObjectURL(file);
-    setImage(url);
     setStatus("Uploading...");
     const result = await uploadImage(file);
     setSessionId(result.session_id);
+    setImage(`${BASE_URL}${result.preview_url}`); // use preview_url instead of createObjectURL
     window.history.replaceState(null, "", `/workspace/${result.session_id}`);
-    setStatus(`Loaded: ${file.name} — ready to segment.`);
+    setStatus(`Loaded: ${file.name} — ready to segment.`)
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -308,7 +307,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
               )}
             </div>
           )}
-          <input ref={fileRef} type="file" accept=".tif,.tiff,.jpg,.jpeg,.png"
+          <input ref={fileRef} type="file" accept=".tif,.tiff,.jpg,.jpeg,.png, .npy"
             hidden onChange={onFileChange} />
         </main>
 
