@@ -1,4 +1,5 @@
-from fastapi import APIRouter, UploadFile, File, Body
+from fastapi import APIRouter, UploadFile, File, Body 
+from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
@@ -70,8 +71,16 @@ async def compute_gt(session_id: str, regions: List[Box] = Body(default=[])):
     # apply same blackout regions to GT before comparing
     gt_mask = blackout_regions(gt_mask, regions,None)
 
-    cv.imwrite(f"sessions/{session_id}/gt_mask_blackout_check.png", 
-               (gt_mask > 0).astype(np.uint8) * 255)
+    preview = (gt_mask * 255).astype("uint8")
+    cv.imwrite(str(session_dir / "gt_preview.png"), preview)
 
     scores = compute_metrics(gt_mask, pred)
     return {"scores": scores}
+
+
+@router.get("/{session_id}/preview")
+async def gt_preview(session_id: str):
+    path = SESSIONS_DIR / session_id / "gt_preview.png"
+    if not path.exists():
+        return {"error": "No GT preview"}
+    return FileResponse(path)
