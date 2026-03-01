@@ -1,11 +1,13 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Body
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 import numpy as np
 import cv2 as cv 
+from app.api.utils import blackout_regions
 from app.scripts.compare_gt import normalize_mask, compute_metrics
 import logging
+from app.api.utils import Box,blackout_regions
 
 router = APIRouter(prefix="/gt")
 
@@ -19,57 +21,42 @@ class GTResponse(BaseModel):
     scores: Optional[dict] = None
 
 
+
 @router.post("/{session_id}")
 async def upload_gt(session_id: str, file: UploadFile = File(...)):
-    logger.info(f"[GT] Upload request for session: {session_id}")
-    logger.info(f"[GT] Filename received: {file.filename}")
-
     session_dir = SESSIONS_DIR / session_id
-    logger.info(f"[GT] Session dir resolved to: {session_dir}")
-
     if not session_dir.exists():
-        logger.warning(f"[GT] Session directory does not exist: {session_dir}")
         return {"error": "Invalid session"}
 
     warnings = []
-
-    # Normalize
-    logger.info("[GT] Normalizing mask...")
     gt_mask = normalize_mask(file)
-    logger.info(f"[GT] Mask shape: {gt_mask.shape}, dtype: {gt_mask.dtype}")
 
-    # Validate against original
     orig_files = list(session_dir.glob("org_*"))
-    logger.info(f"[GT] Found original files: {orig_files}")
-
     if orig_files:
         orig = cv.imread(str(orig_files[0]), cv.IMREAD_GRAYSCALE)
-        logger.info(f"[GT] Original image shape: {orig.shape}")
-
         if orig.shape != gt_mask.shape:
-            warning_msg = f"GT dimensions {gt_mask.shape} don't match image {orig.shape}"
-            warnings.append(warning_msg)
-            logger.warning(f"[GT] {warning_msg}")
-    else:
-        logger.warning("[GT] No original image found to validate against.")
+            warnings.append(f"GT dimensions {gt_mask.shape} don't match image {orig.shape}")
 
-    # Save GT
-    gt_path = session_dir / "gt_mask.npy"
-    np.save(str(gt_path), gt_mask)
-    logger.info(f"[GT] Saved ground truth to: {gt_path}")
+    np.save(str(session_dir / "gt_mask.npy"), gt_mask)
+    return GTResponse(warnings=warnings, scores=None)
 
-    # Check if segmentation already done
+
+@router.post("/{session_id}/compute")
+async def compute_gt(session_id: str, regions: List[Box] = Body(default=[])):
+    session_dir = SESSIONS_DIR / session_id
+    gt_path   = session_dir / "gt_mask.npy"
     mask_path = session_dir / "mask.png"
-    logger.info(f"[GT] Checking for existing prediction at: {mask_path}")
 
-    scores = None
-    if mask_path.exists():
-        logger.info("[GT] Prediction found. Computing metrics...")
-        pred = cv.imread(str(mask_path), cv.IMREAD_GRAYSCALE)
-        scores = compute_metrics(gt_mask, pred)
-        logger.info(f"[GT] Computed scores: {scores}")
-    else:
-        logger.info("[GT] No prediction mask found. Skipping metric computation.")
+    if not gt_path.exists():
+        return {"error": "No GT uploaded"}
+    if not mask_path.exists():
+        return {"error": "No segmentation mask found"}
 
-    logger.info("[GT] Upload completed successfully.")
-    return GTResponse(warnings=warnings, scores=scores)
+    gt_mask = np.load(str(gt_path))
+    pred    = cv.imread(str(mask_path), cv.IMREAD_GRAYSCALE)
+
+    # apply same blackout regions to GT before comparing
+    gt_mask = blackout_regions(gt_mask, regions, None)
+
+    scores = compute_metrics(gt_mask, pred)
+    return {"scores": scores}

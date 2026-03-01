@@ -1,10 +1,8 @@
-from typing import Annotated, List
-import uuid, shutil
+from typing import List
 from pathlib import Path 
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import FileResponse
 import logging
-import torch 
 import cv2 as cv
 import numpy as np
 from app.models.base_model import SubModelConfig, ModelConfig, StatType, StatsConfig, StatsResult
@@ -12,17 +10,10 @@ from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
 from app.api.live_models import AvailableModels
-
+from app.api.utils import Box, normalize_mask, blackout_regions
 from pydantic import BaseModel
-from enum import Enum
 
 
-class Box(BaseModel):
-    id: str
-    x: float
-    y: float
-    width: float
-    height: float
 
 class SegmentRequest(BaseModel):
     session_id: str
@@ -36,38 +27,6 @@ logger = logging.getLogger("routes.segment")
 SESSIONS_DIR = Path("sessions")
 
 
-def normalize_mask(mask) -> np.ndarray:
-    if mask.ndim == 3 and mask.shape[0] == 1:
-        mask = mask.squeeze(0)
-    elif mask.ndim == 3 and mask.shape[2] == 1:
-        mask = mask.squeeze(-1)
-
-    assert mask.ndim == 2, f"Unexpected mask shape: {mask.shape}"
-    return (mask > 0).astype("uint8") * 255
-
-def blackout_regions(img: np.ndarray, regions: List[Box], save_path: str | Path = None) -> np.ndarray:
-    """
-    Black out rectangular regions in an image.
-    Optionally saves the result for verification.
-    """
-    img_out = img.copy()
-    h, w = img_out.shape[:2]
-
-    for box in regions:
-        x1 = max(0, min(int(box.x), w))
-        x2 = max(0, min(int(box.x + box.width), w))
-        y1 = max(0, min(int(box.y), h))
-        y2 = max(0, min(int(box.y + box.height), h))
-
-        img_out[y1:y2, x1:x2] = 0
-
-    if save_path is not None:
-        save_path = Path(save_path)
-        save_path.parent.mkdir(parents=True, exist_ok=True)
-        cv.imwrite(str(save_path), img_out)
-        print(f"Blacked-out image saved to {save_path}")
-
-    return img_out
 
 @router.post("/")
 async def segment(req: SegmentRequest):
