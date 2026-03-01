@@ -71,11 +71,27 @@ class YoloSam(Model):
         return components
 
     def load_image(self, image_path: Path) -> np.ndarray:
-        img = cv.imread(str(image_path), cv.IMREAD_COLOR)
-        if img is None:
-            raise ValueError(f"Failed to load image: {image_path}")
+        if image_path.suffix == ".npy":
+            img = np.load(image_path)
+        else:
+            img = cv.imread(str(image_path), cv.IMREAD_COLOR)
+            if img is None:
+                raise ValueError(f"Failed to load image: {image_path}")
+            img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
 
-        img = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+        # normalize to (H, W, 3) uint8
+        if img.ndim == 2:
+            img = np.stack([img] * 3, axis=-1)       # grayscale → RGB
+        elif img.ndim == 3 and img.shape[0] in (1, 3):
+            img = np.transpose(img, (1, 2, 0))        # (C,H,W) → (H,W,C)
+        if img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=2)           # (H,W,1) → (H,W,3)
+        elif img.shape[2] == 4:
+            img = img[:, :, :3]                       # drop alpha
+
+        if img.dtype != np.uint8:
+            img = ((img - img.min()) / (img.max() - img.min() + 1e-8) * 255).astype("uint8")
+
         return img
 
     def segment(self, image: np.ndarray) -> SegmentationResult:
