@@ -18,13 +18,14 @@ interface Props {
   imgHeight: number;  // original image height
   width: number;      // viewport width
   height: number;     // viewport height
+  initalRegions?: BlackoutRect[]; // pre render regions if any stored in state
   onChange: (regions: BlackoutRect[]) => void;
 }
 
 
-export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, onChange }: Props) {
+export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, initialRegions, onChange }: Props) {
   const [image] = useImage(imageSrc);
-  const [rects, setRects] = useState<BlackoutRect[]>([]);
+  const [rects, setRects] = useState<BlackoutRect[]>(initialRegions ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<BlackoutRect | null>(null);
 
@@ -116,7 +117,6 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
       onMouseUp={handleMouseUp}
     >
       <Layer ref={layerRef}>
-
         {rects.map(rect => {
           const scaled = scaleToViewport(rect);
           return (
