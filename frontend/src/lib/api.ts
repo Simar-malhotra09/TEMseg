@@ -67,30 +67,20 @@ export async function segmentImage(
 
 
 
-export async function uploadGroundTruth(
-  sessionId: string, 
-  file: File
-) {
-  console.log("[uploadGroundTruth] uploading:", file.name);
-
+export async function uploadGroundTruth(sessionId: string, file: File) {
   const form = new FormData();
   form.append("file", file);
+  const res = await fetch(`${BASE_URL}/gt/${sessionId}`, { method: "POST", body: form });
+  if (!res.ok) throw new Error("GT upload failed");
+  return res.json();
+}
 
-  const res = await fetch(
-    `${BASE_URL}/gt/${sessionId}`,
-    {
-      method: "POST",
-      body: form,
-    }
-  );
-
-  if (!res.ok) {
-    console.error("[uploadGroundTruth] failed:", res.status);
-    throw new Error("Upload uploadGroundTruth failed");
-  }
-
-  const data = await res.json(); //{ session_id, filename } }
-  console.log("[uploadGroundTruth] success:", data);
-
-  return data;
+export async function computeGTScore(sessionId: string, committedRegions: any[]) {
+  const res = await fetch(`${BASE_URL}/gt/${sessionId}/compute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(committedRegions),
+  });
+  if (!res.ok) throw new Error("GT compute failed");
+  return res.json(); 
 }

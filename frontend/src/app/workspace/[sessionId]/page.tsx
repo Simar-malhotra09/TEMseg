@@ -14,7 +14,7 @@ import {
   ChevronDown,
   AlertTriangle,
 } from "lucide-react";
-import { BASE_URL, getModels, uploadImage, segmentImage, uploadGroundTruth} from "@/lib/api";
+import { BASE_URL, getModels, uploadImage, segmentImage, uploadGroundTruth, computeGTScore} from "@/lib/api";
 import { useRouter } from "next/navigation";
 import BlackoutCanvas from "./components/BlackOutCanvas";
 
@@ -116,11 +116,14 @@ export default function Workspace({ params }: { params: { session_id: string } }
       setStats(result.stats);
       setCommittedRegions(blackoutRegions); // lock regions to this seg result
       setSegDone(true);
+      setMasksVisible(true);
       setStatus("Segmentation complete. Refine masks or export.");
 
-      // if GT already uploaded, re-compute score against new mask
-      if (groundTruth && result.scores) {
-        setGroundTruthScore(result.scores);
+
+      if (groundTruth) {
+        const scored = await computeGTScore(sessionId!, blackoutRegions); 
+        setGroundTruthScore(scored.scores);
+        setGroundTruthStatus("GT score computed.");
       }
     } catch (err) {
       console.error("Segmentation failed:", err);
@@ -140,16 +143,16 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
   async function handleGroundTruth(file: File) {
     setGroundTruthStatus("Uploading ground truth...");
-    // always send committedRegions — these match the current mask
-    const res = await uploadGroundTruth(sessionId!, file, committedRegions);
-
+    const res = await uploadGroundTruth(sessionId!, file);
     setGroundTruth(true);
-    setGroundTruthScore(res.scores ?? null);
 
-    if (res.warnings?.length > 0) {
-      setGroundTruthStatus(`Warning: ${res.warnings[0]}`);
-    } else if (segDone) {
-      setGroundTruthStatus("GT uploaded — score computed.");
+    if (res.warnings?.length > 0) setGroundTruthStatus(`Warning: ${res.warnings[0]}`);
+
+    if (segDone) {
+      // seg already done — compute immediately with committed regions
+      const scored = await computeGTScore(sessionId!, committedRegions);
+      setGroundTruthScore(scored.scores);
+      setGroundTruthStatus("GT score computed.");
     } else {
       setGroundTruthStatus("GT uploaded — run segmentation to compute score.");
     }
