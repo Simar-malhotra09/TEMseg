@@ -67,6 +67,8 @@ export default function Workspace({ params }: { params: { session_id: string } }
   const [groundTruthScore,  setGroundTruthScore]  = useState<{
     iou?: number; dice?: number; pixel_acc?: number;
   } | null>(null);
+  const [gtUrl, setGtUrl] = useState<string | null>(null);
+  const [gtVisible, setGtVisible] = useState(false);
 
   // ── effects ──────────────────────────────────────────────────
   useEffect(() => {
@@ -123,6 +125,8 @@ export default function Workspace({ params }: { params: { session_id: string } }
         const scored = await computeGTScore(sessionId!, blackoutRegions); 
         setGroundTruthScore(scored.scores);
         setGroundTruthStatus("GT score computed.");
+        setGtUrl(`${BASE_URL}/gt/${sessionId}/preview`);
+        console.log(`GT preview url: ${BASE_URL}/gt/${sessionId}/preview`)
       }
     } catch (err) {
       console.error("Segmentation failed:", err);
@@ -152,6 +156,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
       const scored = await computeGTScore(sessionId!, committedRegions);
       setGroundTruthScore(scored.scores);
       setGroundTruthStatus("GT score computed.");
+      setGtUrl(`${BASE_URL}/gt/${sessionId}/preview`);
     } else {
       setGroundTruthStatus("GT uploaded — run segmentation to compute score.");
     }
@@ -229,26 +234,38 @@ export default function Workspace({ params }: { params: { session_id: string } }
           </section>
 
           <section className={styles.sidebarSection}>
+
             <p className={styles.sidebarLabel}>Blackout Regions</p>
-            <button className={styles.actionBtn} disabled={!image}
-              onClick={() => setBlackoutMode(b => !b)}>
-              <Trash2 size={14} /> {blackoutMode ? "Exit Blackout" : "Mask Regions"}
+            <button
+              className={styles.actionBtn}
+              disabled={!image}
+              onClick={() => {
+                setBlackoutMode(b => !b)
+                setMasksVisible(false)
+              }}
+            >
+              <Trash2 size={14} />
+              {blackoutMode ? "Exit Blackout" : "Mask Regions"}
             </button>
+
             {blackoutMode && (
               <button className={styles.actionBtn}
                 onClick={() => applyBlackout(blackoutRegions)}>
                 Apply Blackout
               </button>
             )}
+
             {blackoutRegions.length > 0 && !blackoutMode && (
               <button className={styles.actionBtn}
                 onClick={() => { setBlackoutRegions([]); setCommittedRegions([]); }}>
                 Clear All Regions
               </button>
             )}
+
             <p className={styles.sidebarHint}>
               Mask out regions to exclude before or after segmentation.
             </p>
+
           </section>
 
           <section className={styles.sidebarSection}>
@@ -263,6 +280,23 @@ export default function Workspace({ params }: { params: { session_id: string } }
             <p className={styles.sidebarHint}>
               {groundTruth ? groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
             </p>
+          </section>
+
+          <section className={styles.sidebarSection}>
+
+            {gtUrl && (
+              <>
+                <button className={styles.actionBtn} onClick={() => setGtVisible(v => !v)}>
+
+                  {gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {gtVisible ? "Hide GT" : "Show GT"}
+                </button>
+                <p className={styles.sidebarHint}>
+                  {gtVisible? "Ground truth overlayed! " :"Overlay ground truth to verify it's accuracy"}
+                </p>
+              </>
+            )}
+
           </section>
 
         </aside>
@@ -282,7 +316,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
               <p className={styles.dropHint}>TIF, JPEG, PNG supported</p>
             </div>
           ) : (
-            <div className={styles.imageViewport} ref={viewportRef} style={{ position: "relative" }}>
+            <div className={styles.imageViewport} ref={viewportRef} style={{ position: "relative", display:"inline-block", lineHeight:0 }}>
               <img src={image} alt="TEM input" className={styles.temImage}
                 style={{ display: "block", width: "100%", height: "100%" }}
                 onLoad={e => setImgSize({
@@ -298,13 +332,28 @@ export default function Workspace({ params }: { params: { session_id: string } }
                     height={viewportSize.height}
                     imgWidth={imgSize.width}
                     imgHeight={imgSize.height}
+                    initialRegions={blackoutRegions}
                     onChange={setBlackoutRegions}
                   />
                 </div>
               )}
-              {segDone && masksVisible && maskUrl && (
-                <img src={maskUrl} className={styles.maskOverlay} />
-              )}
+            {segDone && masksVisible && maskUrl && (
+              <img src={maskUrl} style={{
+                position: "absolute", top: 0, left: 0,
+                width: viewportSize.width, height: viewportSize.height,
+                opacity: 0.5, mixBlendMode: "screen",
+              }} />
+            )}
+            
+            {gtVisible && gtUrl && (
+              <img src={gtUrl} style={{
+                position: "absolute", top: 0, left: 0,
+                width: viewportSize.width, height: viewportSize.height,
+                opacity: 0.5, mixBlendMode: "screen",
+                filter: "hue-rotate(200deg)",
+              }} />
+            )}
+
             </div>
           )}
           <input ref={fileRef} type="file" accept=".tif,.tiff,.jpg,.jpeg,.png, .npy"
