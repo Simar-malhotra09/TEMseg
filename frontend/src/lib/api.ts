@@ -33,7 +33,7 @@ export async function uploadImage(file: File) {
     throw new Error("Upload failed");
   }
 
-  const data = await res.json(); //{ session_id, filename } }
+  const data = await res.json(); //{ session_id, filename, preview_url} }
   console.log("[uploadImage] success:", data);
 
   return data;
