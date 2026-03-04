@@ -8,7 +8,7 @@ import cv2 as cv
 from app.api.utils import blackout_regions
 from app.scripts.compare_gt import normalize_mask, compute_metrics
 import logging
-from app.api.utils import Box,blackout_regions
+from app.api.utils import Box,blackout_regions, inverse_blackout_regions
 
 router = APIRouter(prefix="/gt")
 
@@ -16,6 +16,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("routes.gt")
 
 SESSIONS_DIR = Path("sessions")
+
+class ComputeRequest(BaseModel):
+    blackout: bool = False
+    inverse_blackout: bool = False
+    regions: List[Box] = []
 
 class GTResponse(BaseModel):
     warnings: list[str] = []
@@ -55,7 +60,15 @@ async def upload_gt(session_id: str, file: UploadFile = File(...)):
 
 
 @router.post("/{session_id}/compute")
-async def compute_gt(session_id: str, regions: List[Box] = Body(default=[])):
+async def compute_gt(session_id: str, req: ComputeRequest):
+    blackout = req.blackout
+    inverse_blackout = req.inverse_blackout
+    regions = req.regions
+
+
+    if blackout and inverse_blackout:
+        raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
+
     session_dir = SESSIONS_DIR / session_id
     gt_path   = session_dir / "gt_mask.npy"
     mask_path = session_dir / "mask.png"
@@ -67,12 +80,20 @@ async def compute_gt(session_id: str, regions: List[Box] = Body(default=[])):
 
     gt_mask = np.load(str(gt_path))
     pred    = cv.imread(str(mask_path), cv.IMREAD_GRAYSCALE)
+    pred = (pred > 127).astype(np.uint8)   # convert 0/255 to 0/1
 
-    # apply same blackout regions to GT before comparing
-    gt_mask = blackout_regions(gt_mask, regions,None)
+    # apply same operations to gt before computing
+    if blackout:
+        gt_mask = blackout_regions(gt_mask, regions,None)
+
+    if inverse_blackout:
+        gt_mask = inverse_blackout_regions(gt_mask, regions,None)
 
     preview = (gt_mask * 255).astype("uint8")
     cv.imwrite(str(session_dir / "gt_preview.png"), preview)
+
+    logger.info("GT unique:", np.unique(gt_mask))
+    logger.info("Pred unique:", np.unique(pred))
 
     scores = compute_metrics(gt_mask, pred)
     return {"scores": scores}
