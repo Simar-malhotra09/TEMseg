@@ -41,20 +41,25 @@ export async function uploadImage(file: File) {
 
 export async function segmentImage(
   sessionId: string,
-  model:string, 
-  blackoutRegions: any [],
+  model: string,
+  regions: any[],
+  blackout: boolean = false,
+  inverseBlackout: boolean = false,
 ) {
 
-  console.log("Calling [segmentImage]", sessionId, model, blackoutRegions);
+  console.log("Calling [segmentImage]", sessionId, model, blackout, inverseBlackout, regions);
+  
 
   const res = await fetch(`${BASE_URL}/segment/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    session_id: sessionId,
-    model: model,
-    blackout_regions: blackoutRegions || [],
-  })
+    body: JSON.stringify({
+      session_id: sessionId,
+      model: model,
+      blackout: blackout,
+      inverse_blackout: inverseBlackout,
+      regions: regions ,
+    })
   });
 
   if (!res.ok){
@@ -67,7 +72,10 @@ export async function segmentImage(
 
 
 
-export async function uploadGroundTruth(sessionId: string, file: File) {
+export async function uploadGroundTruth(
+  sessionId: string, 
+  file: File,
+) {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(`${BASE_URL}/gt/${sessionId}`, { method: "POST", body: form });
@@ -75,11 +83,21 @@ export async function uploadGroundTruth(sessionId: string, file: File) {
   return res.json();
 }
 
-export async function computeGTScore(sessionId: string, committedRegions: any[]) {
+export async function computeGTScore(
+  sessionId: string, 
+  regions: any[],
+  blackout: boolean = false,
+  inverseBlackout: boolean = false,
+) {
   const res = await fetch(`${BASE_URL}/gt/${sessionId}/compute`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(committedRegions),
+    body: JSON.stringify({
+      session_id: sessionId,
+      regions: regions, 
+      blackout: blackout, 
+      inverse_blackout: inverseBlackout
+    }),
   });
   if (!res.ok) throw new Error("GT compute failed");
   return res.json(); 

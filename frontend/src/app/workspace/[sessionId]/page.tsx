@@ -58,8 +58,17 @@ export default function Workspace({ params }: { params: { session_id: string } }
   const [blackoutMode,      setBlackoutMode]      = useState(false);
   const [blackoutRegions,   setBlackoutRegions]   = useState<any[]>([]); // live, being edited
   const [committedRegions,  setCommittedRegions]  = useState<any[]>([]); // locked to last seg run
-  const regionsOutOfSync = segDone &&
-    JSON.stringify(blackoutRegions) !== JSON.stringify(committedRegions);
+
+  // ── inverse blackout ─────────────────────────────────────────────────
+  const [inverseBlackoutMode,      setInverseBlackoutMode]      = useState(false);
+  const [inverseBlackoutRegions,   setInverseBlackoutRegions]   = useState<any[]>([]); // live, being edited
+  const [inverseCommittedRegions,  setInverseCommittedRegions]  = useState<any[]>([]); // locked to last seg run
+
+  // make sure regions stay in sync
+  const regionsOutOfSync = segDone && (
+    JSON.stringify(blackoutRegions) !== JSON.stringify(committedRegions) ||
+    JSON.stringify(inverseBlackoutRegions) !== JSON.stringify(inverseCommittedRegions)
+  );
 
   // ── ground truth ─────────────────────────────────────────────
   const [groundTruth,       setGroundTruth]       = useState(false);
@@ -110,19 +119,43 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
   async function handleRunSegmentation() {
     if (!sessionId || !selectedModel) return;
+    console.log("blackout:", blackoutRegions );
+    console.log(" inverse blackout:",inverseBlackoutRegions );
+
+    // regions to act on 
+    const regions= inverseBlackoutMode ? inverseBlackoutRegions : blackoutRegions;
+    
     try {
       setStatus(`Running ${selectedModel}...`);
-      const result = await segmentImage(sessionId, selectedModel, blackoutRegions);
+
+      const result = await segmentImage(
+        sessionId,
+        selectedModel,
+        regions,
+        // ensure mutual exclusiveness
+        !inverseBlackoutMode && blackoutRegions.length > 0,   // blackout
+        inverseBlackoutMode && inverseBlackoutRegions.length > 0, // inverse
+      );
+
+      setCommittedRegions(blackoutRegions);
+      setInverseCommittedRegions(inverseBlackoutRegions);
+
       setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       setStats(result.stats);
-      setCommittedRegions(blackoutRegions); // lock regions to this seg result
       setSegDone(true);
       setMasksVisible(true);
       setStatus("Segmentation complete. Refine masks or export.");
 
 
       if (groundTruth) {
-        const scored = await computeGTScore(sessionId!, blackoutRegions); 
+        const scored = await computeGTScore(
+          sessionId!, 
+          regions, 
+          // ensure mutual exclusiveness
+          !inverseBlackoutMode && blackoutRegions.length > 0,   // blackout
+          inverseBlackoutMode && inverseBlackoutRegions.length > 0, // inverse
+        );
+
         setGroundTruthScore(scored.scores);
         setGroundTruthStatus("GT score computed.");
         setGtUrl(`${BASE_URL}/gt/${sessionId}/preview`);
@@ -132,10 +165,16 @@ export default function Workspace({ params }: { params: { session_id: string } }
       console.error("Segmentation failed:", err);
       setStatus("Segmentation failed.");
     }
-  }
+ }
 
   async function applyBlackout(regions: any[]) {
-    setBlackoutRegions(regions);
+    const mode= inverseBlackoutMode? "inverseBlackoutMode": "blackoutRegionsMode";
+    console.log("Applying regions to: ", mode );
+    if (inverseBlackoutMode) {
+      setInverseBlackoutRegions(regions);
+    } else {
+      setBlackoutRegions(regions);
+    }
     setBlackoutMode(false);
     setStatus(
       regionsOutOfSync
@@ -234,38 +273,44 @@ export default function Workspace({ params }: { params: { session_id: string } }
           </section>
 
           <section className={styles.sidebarSection}>
-
             <p className={styles.sidebarLabel}>Blackout Regions</p>
-            <button
-              className={styles.actionBtn}
-              disabled={!image}
-              onClick={() => {
-                setBlackoutMode(b => !b)
-                setMasksVisible(false)
-              }}
-            >
-              <Trash2 size={14} />
-              {blackoutMode ? "Exit Blackout" : "Mask Regions"}
+            
+            {/* mode toggle */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              <button className={`${styles.actionBtn} ${!inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                onClick={() => setInverseBlackoutMode(false)} disabled={!image}>
+                Exclude
+              </button>
+              <button className={`${styles.actionBtn} ${inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                onClick={() => setInverseBlackoutMode(true)} disabled={!image}>
+                Isolate
+              </button>
+            </div>
+
+            <button className={styles.actionBtn} disabled={!image}
+              onClick={() => setBlackoutMode(b => !b)}>
+              <Trash2 size={14} /> {blackoutMode ? "Exit" : "Draw Regions"}
             </button>
 
             {blackoutMode && (
-              <button className={styles.actionBtn}
-                onClick={() => applyBlackout(blackoutRegions)}>
-                Apply Blackout
+              <button className={styles.actionBtn} onClick={() => applyBlackout(blackoutRegions)}>
+                Apply
               </button>
             )}
 
-            {blackoutRegions.length > 0 && !blackoutMode && (
-              <button className={styles.actionBtn}
-                onClick={() => { setBlackoutRegions([]); setCommittedRegions([]); }}>
-                Clear All Regions
+            {(blackoutRegions.length > 0 || inverseBlackoutRegions.length > 0) && !blackoutMode && (
+              <button className={styles.actionBtn} onClick={() => {
+                setBlackoutRegions([]); setCommittedRegions([]);
+                setInverseBlackoutRegions([]); setInverseCommittedRegions([]);
+              }}>
+                Clear All
               </button>
             )}
-
             <p className={styles.sidebarHint}>
-              Mask out regions to exclude before or after segmentation.
+              {inverseBlackoutMode 
+                ? "Isolate: model only sees selected regions."
+                : "Exclude: model ignores selected regions."}
             </p>
-
           </section>
 
           <section className={styles.sidebarSection}>
