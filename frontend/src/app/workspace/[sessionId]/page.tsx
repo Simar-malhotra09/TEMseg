@@ -14,9 +14,10 @@ import {
   ChevronDown,
   AlertTriangle,
 } from "lucide-react";
-import { BASE_URL, getModels, uploadImage, segmentImage, uploadGroundTruth, computeGTScore} from "@/lib/api";
+import { BASE_URL, getModels, uploadImage, segmentImage, uploadGroundTruth, computeGTScore, getInstances,saveInstances } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import BlackoutCanvas from "./components/BlackOutCanvas";
+import RefineCanvas from "./components/RefineCanvas.tsx";
 
 export default function Workspace({ params }: { params: { session_id: string } }) {
   const router = useRouter();
@@ -80,6 +81,10 @@ export default function Workspace({ params }: { params: { session_id: string } }
   } | null>(null);
   const [gtUrl, setGtUrl] = useState<string | null>(null);
   const [gtVisible, setGtVisible] = useState(false);
+
+  // - refine masks 
+  const [refineMode, setRefineMode] = useState(false);
+  const [instances, setInstances] = useState<Instance[]>([]);
 
   // ── effects ──────────────────────────────────────────────────
   useEffect(() => {
@@ -217,6 +222,17 @@ export default function Workspace({ params }: { params: { session_id: string } }
     e.target.value = "";
   }
 
+  async function enterRefineMode() {
+    const res = await getInstances(sessionId!);
+    setInstances(res.instances);
+    setRefineMode(true);
+  }
+
+  async function saveRefinements() {
+    const result = await saveInstances(sessionId!, instances);
+    setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+    setRefineMode(false);
+  }
   // ── render ───────────────────────────────────────────────────
   return (
     <div className={styles.workspaceRoot}>
@@ -288,17 +304,24 @@ export default function Workspace({ params }: { params: { session_id: string } }
             {/* mode toggle */}
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               <button className={`${styles.actionBtn} ${!inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => setInverseBlackoutMode(false)} disabled={!image}>
+                onClick={() =>{
+                  setInverseBlackoutMode(false);}}
+                  disabled={!image}>
                 Exclude
               </button>
               <button className={`${styles.actionBtn} ${inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => setInverseBlackoutMode(true)} disabled={!image}>
+                onClick={() => {
+                  setInverseBlackoutMode(true);}}
+                  disabled={!image}>
                 Isolate
               </button>
             </div>
 
             <button className={styles.actionBtn} disabled={!image}
-              onClick={() => setBlackoutMode(b => !b)}>
+              onClick={() => {
+                setMasksVisible(false);
+                setBlackoutMode(b => !b);}
+              }>
               <Trash2 size={14} /> {blackoutMode ? "Exit" : "Draw Regions"}
             </button>
 
@@ -339,7 +362,19 @@ export default function Workspace({ params }: { params: { session_id: string } }
                 : "Exclude: model ignores selected regions."}
             </p>
           </section>
-
+          
+          <section className= {styles.sidebarSection}>
+            <button className={styles.actionBtn} disabled={!segDone}
+              onClick={refineMode ? saveRefinements : enterRefineMode}>
+              <Sliders size={14} /> {refineMode ? "Save Refinements" : "Refine Masks"}
+            </button>
+            {refineMode && (
+              <button className={styles.actionBtn} onClick={() => setRefineMode(false)}>
+                Cancel
+              </button>
+            )}
+          </section>
+          
           <section className={styles.sidebarSection}>
             <p className={styles.sidebarLabel}>Ground Truth</p>
             <button className={styles.actionBtn}
@@ -415,6 +450,19 @@ export default function Workspace({ params }: { params: { session_id: string } }
                       setBlackoutRegions(regions);
                     }
                   }}
+                />
+              </div>
+            )}
+            {refineMode && imgSize.width > 0 && (
+              <div style={{ position: "absolute", top: 0, left: 0 }}>
+                <RefineCanvas
+                  imageSrc={image!}
+                  width={viewportSize.width}
+                  height={viewportSize.height}
+                  imgWidth={imgSize.width}
+                  imgHeight={imgSize.height}
+                  instances={instances}
+                  onChange={setInstances}
                 />
               </div>
             )}
