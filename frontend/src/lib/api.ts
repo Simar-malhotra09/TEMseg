@@ -45,6 +45,7 @@ export async function segmentImage(
   regions: any[],
   blackout: boolean = false,
   inverseBlackout: boolean = false,
+  colorize: boolean= true
 ) {
 
   console.log("Calling [segmentImage]", sessionId, model, blackout, inverseBlackout, regions);
@@ -59,6 +60,7 @@ export async function segmentImage(
       blackout: blackout,
       inverse_blackout: inverseBlackout,
       regions: regions ,
+      colorize: colorize,
     })
   });
 
