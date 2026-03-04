@@ -10,15 +10,20 @@ from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
 from app.api.live_models import AvailableModels
-from app.api.utils import Box, normalize_mask, blackout_regions
+from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions
 from pydantic import BaseModel
 
 
 
+# need to change this later
+# pass only one List a enum or bool
+# for blackout or inverse.
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
-    blackout_regions: List[Box]=None
+    regions:List[Box]= None
+    blackout: bool = False
+    inverse_blackout: bool = False
 
 
 
@@ -31,9 +36,14 @@ SESSIONS_DIR = Path("sessions")
 @router.post("/")
 async def segment(req: SegmentRequest):
 
+    if req.blackout and req.inverse_blackout:
+        raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
+
     logger.info(f"[SEG] Request received for session: {req.session_id}")
     logger.info(f"[SEG] Model requested: {req.model}")
-    logger.info(f"[SEG] Blackout regions: {len(req.blackout_regions)}")
+    logger.info(f"[SEG] Regions selected : {len(req.regions)}")
+    mode = "blacked_out" if req.blackout else "kept"
+    logger.info(f"[SEG] Regions are being {mode}")
 
     session_dir = SESSIONS_DIR / req.session_id
     logger.info(f"[SEG] Session dir resolved to: {session_dir}")
@@ -69,13 +79,23 @@ async def segment(req: SegmentRequest):
     logger.info("[SEG] Loading image...")
     img = model_inst.load_image(image_path)
 
+
     # Apply blackout if needed
-    if req.blackout_regions:
-        logger.info(f"[SEG] Applying blackout to {len(req.blackout_regions)} regions")
+    if req.blackout:
+        logger.info(f"[SEG] Applying blackout to {len(req.regions)} regions")
         img = blackout_regions(
             img,
-            req.blackout_regions,
+            req.regions,
             save_path=f"sessions/{req.session_id}/blackout_check.png"
+        )
+
+    # Apply inverse blackout if needed
+    if req.inverse_blackout:
+        logger.info(f"[SEG] Applying inverse blackout to {len(req.regions)} regions")
+        img = inverse_blackout_regions(
+            img,
+            req.regions,
+            save_path=f"sessions/{req.session_id}/inverse_blackout_check.png"
         )
 
     # Run segmentation

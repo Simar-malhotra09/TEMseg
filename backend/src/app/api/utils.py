@@ -44,3 +44,38 @@ def blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str) 
         print(f"Blacked-out image saved to {save_path}")
 
     return img_out
+
+def inverse_blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str)-> np.ndarray:
+    """
+    Inverse of the blackout_regions function: 
+    So there's two ways you can go about this:
+    a. Black out everything else, 
+    b. Seperate each as patches, and batch run seg. 
+
+    I assume b. will work much better across models. 
+    This same applied to blackout function as well. 
+
+    For now, we will just get the a. working. 
+    """
+
+    img_out= np.zeros_like(img)
+    h, w = img_out.shape[:2]
+    for box in regions:
+        x1 = max(0, min(int(box.x), w))
+        x2 = max(0, min(int(box.x + box.width), w))
+        y1 = max(0, min(int(box.y), h))
+        y2 = max(0, min(int(box.y + box.height), h))
+        img_out[y1:y2, x1:x2] = img[y1:y2, x1:x2]  # copy original pixels back in
+
+    if save_path is not None:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        save_img = img_out.copy()
+        if save_img.dtype in (np.float32, np.float64):
+            mn, mx = save_img.min(), save_img.max()
+            save_img = ((save_img - mn) / (mx - mn + 1e-8) * 255).astype("uint8") if mx > mn else np.zeros_like(save_img, dtype="uint8")
+        cv.imwrite(str(save_path), save_img)
+        print(f"Inverse blacked-out image saved to {save_path}")
+
+    return img_out
+
