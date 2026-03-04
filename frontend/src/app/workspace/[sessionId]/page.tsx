@@ -290,9 +290,15 @@ export default function Workspace({ params }: { params: { session_id: string } }
               {masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
               {masksVisible ? "Hide Masks" : "Show Masks"}
             </button>
-            <button className={styles.actionBtn} disabled={!segDone}>
-              <Sliders size={14} /> Refine Masks
+            <button className={styles.actionBtn} disabled={!segDone}
+              onClick={refineMode ? saveRefinements : enterRefineMode}>
+              <Sliders size={14} /> {refineMode ? "Save Refinements" : "Refine Masks"}
             </button>
+            {refineMode && (
+              <button className={styles.actionBtn} onClick={() => setRefineMode(false)}>
+                Cancel
+              </button>
+            )}
             <button className={styles.actionBtn} disabled={!segDone}>
               <Download size={14} /> Export
             </button>
@@ -363,17 +369,6 @@ export default function Workspace({ params }: { params: { session_id: string } }
             </p>
           </section>
           
-          <section className= {styles.sidebarSection}>
-            <button className={styles.actionBtn} disabled={!segDone}
-              onClick={refineMode ? saveRefinements : enterRefineMode}>
-              <Sliders size={14} /> {refineMode ? "Save Refinements" : "Refine Masks"}
-            </button>
-            {refineMode && (
-              <button className={styles.actionBtn} onClick={() => setRefineMode(false)}>
-                Cancel
-              </button>
-            )}
-          </section>
           
           <section className={styles.sidebarSection}>
             <p className={styles.sidebarLabel}>Ground Truth</p>
