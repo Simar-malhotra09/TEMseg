@@ -19,11 +19,12 @@ interface Props {
   width: number;      // viewport width
   height: number;     // viewport height
   initalRegions?: BlackoutRect[]; // pre render regions if any stored in state
+  isInverse: boolean; // true if inverse blackout 
   onChange: (regions: BlackoutRect[]) => void;
 }
 
 
-export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, initialRegions, onChange }: Props) {
+export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, isInverse, initialRegions, onChange }: Props) {
   const [image] = useImage(imageSrc);
   const [rects, setRects] = useState<BlackoutRect[]>(initialRegions ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -125,8 +126,11 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
               id={rect.id}
               x={scaled.x} y={scaled.y}
               width={scaled.width} height={scaled.height}
-              fill="rgba(255,50,50,0.35)"
-              stroke="#ff3232"
+              fill={!isInverse
+                ? "rgba(255, 120, 120, 0.4)"
+                : "rgba(120, 255, 160, 0.4)"
+              }
+              stroke={!isInverse? "#ff3232" : " #32CD32"}
               strokeWidth={1.5}
               draggable
               onClick={() => setSelectedId(rect.id)}
@@ -164,8 +168,11 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
             y={drawing.y * (height / imgHeight)}
             width={drawing.width * (width / imgWidth)}
             height={drawing.height * (height / imgHeight)}
-            fill="rgba(255,50,50,0.25)"
-            stroke="#ff3232"
+            fill={!isInverse
+                ? "rgba(255, 120, 120, 0.4)"
+                : "rgba(120, 255, 160, 0.4)"
+              }
+            stroke={!isInverse? "#ff3232" : " #32CD32"}
             strokeWidth={1.5}
             dash={[6, 3]}
           />

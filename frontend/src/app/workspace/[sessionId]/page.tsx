@@ -298,12 +298,18 @@ export default function Workspace({ params }: { params: { session_id: string } }
               </button>
             )}
 
-            {(blackoutRegions.length > 0 || inverseBlackoutRegions.length > 0) && !blackoutMode && (
+            {/* Only clear for the current mode*/}
+            {((inverseBlackoutMode ? inverseBlackoutRegions : blackoutRegions).length > 0) && !blackoutMode && (
               <button className={styles.actionBtn} onClick={() => {
-                setBlackoutRegions([]); setCommittedRegions([]);
-                setInverseBlackoutRegions([]); setInverseCommittedRegions([]);
+                if (inverseBlackoutMode) {
+                  setInverseBlackoutRegions([]);
+                  setInverseCommittedRegions([]);
+                } else {
+                  setBlackoutRegions([]);
+                  setCommittedRegions([]);
+                }
               }}>
-                Clear All
+                Clear Regions
               </button>
             )}
             <p className={styles.sidebarHint}>
@@ -369,19 +375,20 @@ export default function Workspace({ params }: { params: { session_id: string } }
                   height: e.currentTarget.naturalHeight,
                 })}
               />
-              {blackoutMode && imgSize.width > 0 && (
-                <div style={{ position: "absolute", top: 0, left: 0 }}>
-                  <BlackoutCanvas
-                    imageSrc={image}
-                    width={viewportSize.width}
-                    height={viewportSize.height}
-                    imgWidth={imgSize.width}
-                    imgHeight={imgSize.height}
-                    initialRegions={blackoutRegions}
-                    onChange={setBlackoutRegions}
-                  />
-                </div>
-              )}
+            {blackoutMode && imgSize.width > 0 && (
+              <div style={{ position: "absolute", top: 0, left: 0 }}>
+                <BlackoutCanvas
+                  imageSrc={image}
+                  width={viewportSize.width}
+                  height={viewportSize.height}
+                  imgWidth={imgSize.width}
+                  imgHeight={imgSize.height}
+                  isInverse={inverseBlackoutMode}
+                  initialRegions={inverseBlackoutMode ? inverseBlackoutRegions : blackoutRegions}
+                  onChange={inverseBlackoutMode ? setInverseBlackoutRegions : setBlackoutRegions}
+                />
+              </div>
+            )}
             {segDone && masksVisible && maskUrl && (
               <img src={maskUrl} style={{
                 position: "absolute", top: 0, left: 0,
