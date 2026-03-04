@@ -104,3 +104,21 @@ export async function computeGTScore(
   if (!res.ok) throw new Error("GT compute failed");
   return res.json(); 
 }
+
+
+export async function getInstances(sessionId: string) {
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/instances`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to get instances");
+  return res.json();
+}
+
+export async function saveInstances(sessionId: string, instances: any[]) {
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/instances`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, instances }),
+  });
+  if (!res.ok) throw new Error("Failed to save instances");
+  return res.json();
+}
+
