@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routers import images, segment, ground_truths
+from app.api.routers import images, segment, ground_truths, masks
 from app.api.live_models import AvailableModels
 from typing import List
 import logging
@@ -32,7 +32,7 @@ app.add_middleware(
 app.include_router(images.router)
 app.include_router(segment.router)
 app.include_router(ground_truths.router)
-
+app.include_router(masks.router)
 
 @app.get("/")
 async def root():
