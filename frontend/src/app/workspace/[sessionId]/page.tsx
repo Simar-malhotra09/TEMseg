@@ -32,6 +32,8 @@ export default function Workspace({ params }: { params: { session_id: string } }
     "Coverage":         "coverage",
   };
 
+  const liveRegionsRef = useRef<any[]>([]);
+  const liveInverseRegionsRef = useRef<any[]>([]);
   // ── image / session ──────────────────────────────────────────
   const [image,       setImage]      = useState<string | null>(null);
   const [imgSize,     setImgSize]    = useState({ width: 0, height: 0 });
@@ -119,11 +121,14 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
   async function handleRunSegmentation() {
     if (!sessionId || !selectedModel) return;
-    console.log("blackout:", blackoutRegions );
-    console.log(" inverse blackout:",inverseBlackoutRegions );
-
+    console.log("blackout:", blackoutRegions);
+    console.log("inverse blackout:", inverseBlackoutRegions);
     // regions to act on 
-    const regions= inverseBlackoutMode ? inverseBlackoutRegions : blackoutRegions;
+    const activeRegions = inverseBlackoutMode 
+      ? liveInverseRegionsRef.current 
+      : liveRegionsRef.current;
+
+    console.log("regions being sent:", activeRegions);
     
     try {
       setStatus(`Running ${selectedModel}...`);
@@ -131,10 +136,9 @@ export default function Workspace({ params }: { params: { session_id: string } }
       const result = await segmentImage(
         sessionId,
         selectedModel,
-        regions,
-        // ensure mutual exclusiveness
-        !inverseBlackoutMode && blackoutRegions.length > 0,   // blackout
-        inverseBlackoutMode && inverseBlackoutRegions.length > 0, // inverse
+        activeRegions,
+        !inverseBlackoutMode && liveRegionsRef.current.length > 0,
+        inverseBlackoutMode && liveInverseRegionsRef.current.length > 0,
       );
 
       setCommittedRegions(blackoutRegions);
@@ -150,7 +154,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
       if (groundTruth) {
         const scored = await computeGTScore(
           sessionId!, 
-          regions, 
+          activeRegions, 
           // ensure mutual exclusiveness
           !inverseBlackoutMode && blackoutRegions.length > 0,   // blackout
           inverseBlackoutMode && inverseBlackoutRegions.length > 0, // inverse
@@ -158,7 +162,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
         setGroundTruthScore(scored.scores);
         setGroundTruthStatus("GT score computed.");
-        setGtUrl(`${BASE_URL}/gt/${sessionId}/preview`);
+        setGtUrl(`${BASE_URL}/gt/${sessionId}/preview?t=${Date.now()}`);
         console.log(`GT preview url: ${BASE_URL}/gt/${sessionId}/preview`)
       }
     } catch (err) {
@@ -167,20 +171,18 @@ export default function Workspace({ params }: { params: { session_id: string } }
     }
  }
 
-  async function applyBlackout(regions: any[]) {
-    const mode= inverseBlackoutMode? "inverseBlackoutMode": "blackoutRegionsMode";
-    console.log("Applying regions to: ", mode );
+  async function applyBlackout() {
+    const regions = inverseBlackoutMode 
+      ? liveInverseRegionsRef.current 
+      : liveRegionsRef.current;
+    console.log("applyBlackout called, regions:", regions.length, "inverseMode:", inverseBlackoutMode);
     if (inverseBlackoutMode) {
       setInverseBlackoutRegions(regions);
     } else {
       setBlackoutRegions(regions);
     }
     setBlackoutMode(false);
-    setStatus(
-      regionsOutOfSync
-        ? "Blackout regions modified — re-run segmentation to update mask."
-        : "Blackout applied — ready to segment."
-    );
+    setStatus("Regions applied — ready to segment.");
   }
 
   async function handleGroundTruth(file: File) {
@@ -191,8 +193,16 @@ export default function Workspace({ params }: { params: { session_id: string } }
     if (res.warnings?.length > 0) setGroundTruthStatus(`Warning: ${res.warnings[0]}`);
 
     if (segDone) {
-      // seg already done — compute immediately with committed regions
-      const scored = await computeGTScore(sessionId!, committedRegions);
+      const activeCommitted = inverseBlackoutMode
+        ? liveInverseRegionsRef.current
+        : liveRegionsRef.current;
+
+      const scored = await computeGTScore(
+        sessionId!,
+        activeCommitted,
+        !inverseBlackoutMode && liveRegionsRef.current.length > 0,
+        inverseBlackoutMode && liveInverseRegionsRef.current.length > 0,
+      );
       setGroundTruthScore(scored.scores);
       setGroundTruthStatus("GT score computed.");
       setGtUrl(`${BASE_URL}/gt/${sessionId}/preview`);
@@ -293,7 +303,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
             </button>
 
             {blackoutMode && (
-              <button className={styles.actionBtn} onClick={() => applyBlackout(blackoutRegions)}>
+              <button className={styles.actionBtn} onClick={() => applyBlackout()}>
                 Apply
               </button>
             )}
@@ -304,17 +314,20 @@ export default function Workspace({ params }: { params: { session_id: string } }
                 if (inverseBlackoutMode) {
                   setInverseBlackoutRegions([]);
                   setInverseCommittedRegions([]);
+                  liveInverseRegionsRef.current = [];
                 } else {
-                  setBlackoutRegions([]);
-                  setCommittedRegions([]);
+                    setBlackoutRegions([]);
+                    setCommittedRegions([]);
+                    liveRegionsRef.current = [];
                 }
-                setStatus(
+              setStatus(
                         `Cleared regions for ${
                           inverseBlackoutMode ? "inverse mode" : "blackout mode"
                         }!`
                       );
-                  }}
-                >
+                }
+              }
+              >
 
                 Clear Regions 
                 (for current mode)
@@ -393,7 +406,15 @@ export default function Workspace({ params }: { params: { session_id: string } }
                   imgHeight={imgSize.height}
                   isInverse={inverseBlackoutMode}
                   initialRegions={inverseBlackoutMode ? inverseBlackoutRegions : blackoutRegions}
-                  onChange={inverseBlackoutMode ? setInverseBlackoutRegions : setBlackoutRegions}
+                  onChange={(regions) => {
+                    if (inverseBlackoutMode) {
+                      liveInverseRegionsRef.current = regions;
+                      setInverseBlackoutRegions(regions);
+                    } else {
+                      liveRegionsRef.current = regions;
+                      setBlackoutRegions(regions);
+                    }
+                  }}
                 />
               </div>
             )}

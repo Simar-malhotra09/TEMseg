@@ -85,6 +85,7 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
 
   const handleMouseUp = () => {
     if (!drawing) return;
+    console.log("mouseUp, drawing:", drawing, "size:", drawing.width, drawing.height);
     if (Math.abs(drawing.width) > 5 && Math.abs(drawing.height) > 5) {
       const finalized = {
         ...drawing,
@@ -96,6 +97,7 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
       const updated = [...rects, finalized];
       setRects(updated);
       setSelectedId(finalized.id);
+      console.log("onChange called with", updated.length, "rects");
       onChange(updated);
     }
     setDrawing(null);
