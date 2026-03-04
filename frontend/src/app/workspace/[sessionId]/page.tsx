@@ -308,8 +308,16 @@ export default function Workspace({ params }: { params: { session_id: string } }
                   setBlackoutRegions([]);
                   setCommittedRegions([]);
                 }
-              }}>
-                Clear Regions
+                setStatus(
+                        `Cleared regions for ${
+                          inverseBlackoutMode ? "inverse mode" : "blackout mode"
+                        }!`
+                      );
+                  }}
+                >
+
+                Clear Regions 
+                (for current mode)
               </button>
             )}
             <p className={styles.sidebarHint}>
