@@ -3,6 +3,7 @@ from pydantic import BaseModel
 import cv2 as cv
 from typing import List
 from pathlib import Path 
+from typing import List
 
 class Box(BaseModel):
     id: str
@@ -102,3 +103,103 @@ def colorize_components_inplace(mask: np.ndarray, seed: int = 42) -> np.ndarray:
         colored[labels == label] = colors[label]
 
     return colored
+
+
+
+def extract_instances(mask: np.ndarray) -> list:
+    """
+    Connected components → simplified polygon contours per instance.
+    Returns list of dicts matching the Instance schema.
+    """
+    # ensure binary
+    binary = (mask > 0).astype("uint8")
+
+    num_labels, labels, stats, _ = cv.connectedComponentsWithStats(binary, connectivity=8)
+
+    instances = []
+    for label_id in range(1, num_labels):  # skip 0 = background
+        # isolate this component
+        component = (labels == label_id).astype("uint8") * 255
+
+        area = int(stats[label_id, cv.CC_STAT_AREA])
+
+        # skip noise — particles smaller than 50px
+        # if area < 50:
+        #     continue
+
+        contours, _ = cv.findContours(component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+
+        # simplify contour — epsilon controls how many vertices remain
+        epsilon = 0.01 * cv.arcLength(contours[0], True)
+        approx = cv.approxPolyDP(contours[0], epsilon, True)
+
+        # squeeze to [[x,y], ...] and convert to float
+        contour_pts = approx.squeeze().tolist()
+
+        # approxPolyDP can return a 1D array if only 2 points — skip degenerate
+        if not isinstance(contour_pts[0], list):
+            continue
+
+        x = int(stats[label_id, cv.CC_STAT_LEFT])
+        y = int(stats[label_id, cv.CC_STAT_TOP])
+        w = int(stats[label_id, cv.CC_STAT_WIDTH])
+        h = int(stats[label_id, cv.CC_STAT_HEIGHT])
+
+        instances.append({
+            "id": label_id,
+            "contour": contour_pts,
+            "bbox": {"x": x, "y": y, "w": w, "h": h},
+            "area": area,
+        })
+
+    return instances
+
+
+def rasterize_instances(instances: list, h: int, w: int) -> np.ndarray:
+    """
+    Convert polygon instances back to a binary mask.
+    """
+    mask = np.zeros((h, w), dtype="uint8")
+
+    for inst in instances:
+        pts = np.array(inst.contour, dtype=np.int32).reshape((-1, 1, 2))
+        cv.fillPoly(mask, [pts], 255)
+
+    return mask
+
+
+def save_debug_overlay(orig_path: Path, instances: list, save_path: Path):
+    """Draw instance polygons + IDs overlaid on original image for visual verification."""
+    img = cv.imread(str(orig_path))
+    if img is None:
+        # try npy
+        arr = np.load(str(orig_path))
+        arr = ((arr - arr.min()) / (arr.max() - arr.min() + 1e-8) * 255).astype("uint8")
+        img = cv.cvtColor(arr, cv.COLOR_GRAY2BGR)
+
+    colors = [
+        (255, 50, 50), (50, 255, 50), (50, 50, 255),
+        (255, 255, 50), (255, 50, 255), (50, 255, 255),
+    ]
+
+    for i, inst in enumerate(instances):
+        color = colors[i % len(colors)]
+        pts = np.array(inst["contour"], dtype=np.int32).reshape((-1, 1, 2))
+
+        # draw filled polygon with transparency
+        overlay = img.copy()
+        cv.fillPoly(overlay, [pts], color)
+        img = cv.addWeighted(img, 0.7, overlay, 0.3, 0)
+
+        # draw contour outline
+        cv.polylines(img, [pts], isClosed=True, color=color, thickness=2)
+
+        # draw instance ID at centroid
+        cx = int(np.mean([p[0] for p in inst["contour"]]))
+        cy = int(np.mean([p[1] for p in inst["contour"]]))
+        cv.putText(img, str(inst["id"]), (cx, cy),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+    cv.imwrite(str(save_path), img)
