@@ -79,3 +79,26 @@ def inverse_blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path
 
     return img_out
 
+import numpy as np
+import cv2 as cv
+
+def colorize_components_inplace(mask: np.ndarray, seed: int = 42) -> np.ndarray:
+    """
+    Converts a binary mask (0/1 or 0/255) into a colored
+    connected-components image.
+
+    Returns a 3-channel uint8 image.
+    """
+    binary = (mask > 0).astype(np.uint8)
+
+    num_labels, labels = cv.connectedComponents(binary)
+
+    colored = np.zeros((*labels.shape, 3), dtype=np.uint8)
+
+    rng = np.random.default_rng(seed)
+    colors = rng.integers(0, 255, size=(num_labels, 3), dtype=np.uint8)
+
+    for label in range(1, num_labels):  # skip background
+        colored[labels == label] = colors[label]
+
+    return colored

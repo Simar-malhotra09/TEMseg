@@ -65,6 +65,10 @@ async def compute_gt(session_id: str, req: ComputeRequest):
     inverse_blackout = req.inverse_blackout
     regions = req.regions
 
+    logger.info(f"[GT] Request received for session: {session_id}")
+    logger.info(f"[GT] Regions selected : {len(req.regions)}")
+    mode = "blacked_out" if req.blackout else "kept"
+    logger.info(f"[GT] Regions are being {mode}")
 
     if blackout and inverse_blackout:
         raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
@@ -92,8 +96,6 @@ async def compute_gt(session_id: str, req: ComputeRequest):
     preview = (gt_mask * 255).astype("uint8")
     cv.imwrite(str(session_dir / "gt_preview.png"), preview)
 
-    logger.info("GT unique:", np.unique(gt_mask))
-    logger.info("Pred unique:", np.unique(pred))
 
     scores = compute_metrics(gt_mask, pred)
     return {"scores": scores}

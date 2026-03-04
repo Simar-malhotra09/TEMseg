@@ -10,7 +10,7 @@ from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
 from app.api.live_models import AvailableModels
-from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions
+from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions, colorize_components_inplace
 from pydantic import BaseModel
 
 
@@ -24,6 +24,7 @@ class SegmentRequest(BaseModel):
     regions:List[Box]= None
     blackout: bool = False
     inverse_blackout: bool = False
+    colorize: bool= True # colorize masks for overlay
 
 
 
@@ -44,6 +45,7 @@ async def segment(req: SegmentRequest):
     logger.info(f"[SEG] Regions selected : {len(req.regions)}")
     mode = "blacked_out" if req.blackout else "kept"
     logger.info(f"[SEG] Regions are being {mode}")
+    logger.info(f"[SEG] colorize: {req.colorize}")
 
     session_dir = SESSIONS_DIR / req.session_id
     logger.info(f"[SEG] Session dir resolved to: {session_dir}")
@@ -102,6 +104,7 @@ async def segment(req: SegmentRequest):
     logger.info("[SEG] Running segmentation...")
     result = model_inst.segment(img)
 
+
     if req.model != result.model:
         logger.error("[SEG] Model mismatch between request and result")
         return {
@@ -114,6 +117,12 @@ async def segment(req: SegmentRequest):
 
     logger.info("[SEG] Normalizing mask...")
     mask = normalize_mask(result.segmentation_mask)
+
+    if req.colorize:
+        save_mask = colorize_components_inplace(mask)
+    else:
+        save_mask = mask
+
 
     if mask is None or mask.size == 0:
         logger.error("[SEG] Mask normalization failed or mask empty")
@@ -131,7 +140,7 @@ async def segment(req: SegmentRequest):
 
     mask_path = session_dir / "mask.png"
     logger.info(f"[SEG] Saving mask to: {mask_path}")
-    success = cv.imwrite(str(mask_path), mask)
+    success= cv.imwrite(str(mask_path), save_mask)
 
     if not success:
         logger.error("[SEG] Failed to save mask")
