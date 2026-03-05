@@ -240,7 +240,13 @@ export default function Workspace({ params }: { params: { session_id: string } }
       {/* Top Bar */}
       <header className={styles.topbar}>
         <div className={styles.topbarLeft}>
+        <div 
+          onClick={() => window.location.href = '/workspace/new'}
+          title="New workspace"
+          style={{ cursor: "pointer" }}
+        >
           <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
+        </div>
           <span className={styles.sessionTag}>
             session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
           </span>
