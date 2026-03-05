@@ -35,6 +35,12 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
   const liveRegionsRef = useRef<any[]>([]);
   const liveInverseRegionsRef = useRef<any[]>([]);
+  const isPanning = useRef(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
+
+  const [panning, setPanning] = useState(false);
   // ── image / session ──────────────────────────────────────────
   const [image,       setImage]      = useState<string | null>(null);
   const [imgSize,     setImgSize]    = useState({ width: 0, height: 0 });
@@ -102,6 +108,30 @@ export default function Workspace({ params }: { params: { session_id: string } }
   }, [image]);
 
   // ── handlers ─────────────────────────────────────────────────
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(z => Math.min(Math.max(z * delta, 0.5), 5));
+  }
+
+  function handleMouseDown(e: React.MouseEvent) {
+    if (blackoutMode || refineMode) return;
+    e.preventDefault();
+    isPanning.current = true;
+    setPanning(true);
+    panStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+  }
+
+  function handleMouseUp() {
+    isPanning.current = false;
+    setPanning(false);
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (!isPanning.current) return;
+    setPan({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
@@ -241,7 +271,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
       <header className={styles.topbar}>
         <div className={styles.topbarLeft}>
         <div 
-          onClick={() => window.location.href = '/workspace/new'}
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = '/workspace/new'; }}
           title="New workspace"
           style={{ cursor: "pointer" }}
         >
@@ -258,6 +288,12 @@ export default function Workspace({ params }: { params: { session_id: string } }
             </span>
           )}
           <span className={styles.statusPill}>{status}</span>
+          {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+            <button className={styles.zoomReset} 
+              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+              {Math.round(zoom * 100)}% ✕
+            </button>
+          )}
         </div>
       </header>
 
@@ -424,7 +460,24 @@ export default function Workspace({ params }: { params: { session_id: string } }
               <p className={styles.dropHint}>TIF, JPEG, PNG supported</p>
             </div>
           ) : (
-            <div className={styles.imageViewport} ref={viewportRef} style={{ position: "relative", display:"inline-block", lineHeight:0 }}>
+            <div
+              className={styles.imageViewport}
+              ref={viewportRef}
+              onWheel={handleWheel}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              style={{
+                position: "relative",
+                display: "inline-block",
+                lineHeight: 0,
+                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                transformOrigin: "center center",
+                transition: isPanning.current ? "none" : "transform 0.05s ease-out",
+                cursor: blackoutMode || refineMode ? "default" : panning ? "grabbing" : "grab",
+              }}
+            >
               <img src={image} alt="TEM input" className={styles.temImage}
                 style={{ display: "block", width: "100%", height: "100%" }}
                 onLoad={e => setImgSize({

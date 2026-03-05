@@ -245,3 +245,19 @@ border-bottom: 1px solid #1a1a1a;
 .gtOverlay {
   filter: hue-rotate(200deg);
 }
+
+
+.zoomReset {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  color: #888;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 100px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.zoomReset:hover {
+  border-color: #7ee8a2;
+  color: #7ee8a2;
+}
