@@ -22,7 +22,6 @@ async def get_preview(session_id: str):
 
 @router.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
-    # session_id="test"
     session_id = str(uuid.uuid4())
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -31,19 +30,35 @@ async def upload_image(file: UploadFile = File(...)):
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    logger.info("Upload — session: %s, filename: %s", session_id, file.filename)
+    logger.info("[IMG] Upload session: %s, filename: %s", session_id, file.filename)
 
-    is_npy = file.filename.endswith(".npy")
-    preview_url = f"/images/{session_id}/file"
+    fname = file.filename.lower()
+    arr = None
+    preview_url = f"/images/{session_id}/file"  
 
-    if is_npy:
+    logger.info(f"[IMG] preview url : {preview_url}")
+
+    if fname.endswith(".npy"):
         arr = np.load(str(dest))
-        # normalize to full 0-255 range for display
+    elif fname.endswith((".tif", ".tiff")):
+        import tifffile
+        arr = tifffile.imread(str(dest))
+
+    if arr is not None:
+        logger.info(f"[IMG] img shape: {arr.shape}")
+
+        # handle multi-channel or 3D tif stacks — take first slice
+        # if arr.ndim == 3 and arr.shape[0] > 3:
+        #     arr = arr[0]  # e.g. (Z, H, W) → take first Z
+        # elif arr.ndim == 3 and arr.shape[2] > 4:
+        #     arr = arr[:, :, 0]
+
+        logger.info(f"[IMG] img shape: {arr.shape}")
+
         arr_min, arr_max = arr.min(), arr.max()
-        if arr_max > arr_min:
-            display = ((arr - arr_min) / (arr_max - arr_min) * 255).astype("uint8")
-        else:
-            display = np.zeros_like(arr, dtype="uint8")
+        display = ((arr - arr_min) / (arr_max - arr_min + 1e-8) * 255).astype("uint8") \
+            if arr_max > arr_min else np.zeros_like(arr, dtype="uint8")
+
         preview_path = session_dir / "original_preview.png"
         cv.imwrite(str(preview_path), display)
         preview_url = f"/images/{session_id}/preview"
