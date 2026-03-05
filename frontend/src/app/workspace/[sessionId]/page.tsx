@@ -111,7 +111,11 @@ export default function Workspace({ params }: { params: { session_id: string } }
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(z => Math.min(Math.max(z * delta, 0.5), 5));
+    setZoom(z => {
+      const next = Math.min(Math.max(z * delta, 0.5), 5);
+      if (next <= 1) setPan({ x: 0, y: 0 }); // reset pan when fully zoomed out
+      return next;
+    });
   }
 
   function handleMouseDown(e: React.MouseEvent) {
@@ -129,7 +133,19 @@ export default function Workspace({ params }: { params: { session_id: string } }
 
   function handleMouseMove(e: React.MouseEvent) {
     if (!isPanning.current) return;
-    setPan({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+
+    const rawX = e.clientX - panStart.current.x;
+    const rawY = e.clientY - panStart.current.y;
+
+    // how much extra size the image gains at current zoom
+    const excessW = (viewportSize.width * (zoom - 1)) / 2;
+    const excessH = (viewportSize.height * (zoom - 1)) / 2;
+
+    // clamp so image edges can't go past canvas edges
+    setPan({
+      x: Math.min(excessW, Math.max(-excessW, rawX)),
+      y: Math.min(excessH, Math.max(-excessH, rawY)),
+    });
   }
 
   function onDrop(e: React.DragEvent) {
