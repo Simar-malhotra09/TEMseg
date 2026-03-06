@@ -12,6 +12,7 @@ from pathlib import Path
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 
+from app.api.live_models import AvailableModels
 from app.models.base_model import Model, SegmentationResult, ModelConfig
 
 router = APIRouter(prefix="/models/yolosam")
@@ -195,7 +196,7 @@ class YoloSam(Model):
         return SegmentationResult(
             segmentation_mask=combined,
             metadata={"detections": total_detections},
-            model="YoloSAM"
+            model=AvailableModels.yolosam
         )
 
     def plot(self, image, combined_mask):

@@ -11,6 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from app.api.live_models import AvailableModels
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 from app.models.helpers.maskrcnn_utils import group_boxes_and_masks
 
@@ -138,7 +139,7 @@ class MaskRCNN(Model):
         return SegmentationResult(
             segmentation_mask=combined,
             metadata={"detections": len(results['boxes'])},
-            model="MaskRCNN"
+            model=AvailableModels.maskrcnn
         )
 
     def plot(self, image, combined_mask):
