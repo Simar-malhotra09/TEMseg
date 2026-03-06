@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import cv2 as cv
 import numpy as np
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Dict, Any, Set
 from enum import Enum
 from app.models.helpers.compute_stats import (
@@ -64,7 +65,7 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def load_image(self, image_path: str) -> np.ndarray:
+    def load_image(self, image_path: Path) -> np.ndarray:
         pass
 
     @abstractmethod

@@ -1,6 +1,8 @@
 import cv2 as cv
 import numpy as np
 import torch
+import logging 
+from fastapi import APIRouter
 from torchvision.models.detection import maskrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
@@ -11,6 +13,10 @@ import matplotlib.patheffects as pe
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 from app.models.helpers.maskrcnn_utils import group_boxes_and_masks
+
+router = APIRouter(prefix="/models/maskrcnn")
+logger = logging.getLogger("routes.models.maskrcnn")
+SESSIONS_DIR = Path("sessions")
 
 class MaskRCNN(Model):
     def __init__(self, config: ModelConfig, device: str = "cpu"):

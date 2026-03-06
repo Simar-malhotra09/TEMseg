@@ -1,6 +1,8 @@
 import cv2 as cv
 import numpy as np
 import torch
+import logging
+from fastapi import APIRouter
 from typing import Dict, Any
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
@@ -11,6 +13,9 @@ from segment_anything import sam_model_registry, SamPredictor
 
 from app.models.base_model import Model, SegmentationResult, ModelConfig
 
+router = APIRouter(prefix="/models/yolosam")
+logger = logging.getLogger("routes.models.yolosam")
+SESSIONS_DIR = Path("sessions")
 
 class YoloSam(Model):
     def __init__(self, config: ModelConfig, device: str = "cpu"):
@@ -95,55 +100,44 @@ class YoloSam(Model):
         return img
 
     def segment(self, image: np.ndarray) -> SegmentationResult:
-
+        logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
+        
         # --- YOLO Detection ---
         yolo_model = self.components["yolo"]
-
-        results = yolo_model.predict(
-            source=image,
-            conf=0.25,
-            iou=0.5,
-            max_det=4000
-        )
-
+        results = yolo_model.predict(source=image, conf=0.25, iou=0.5, max_det=4000)
         boxes = results[0].boxes.xyxy
+        logger.info(f"[YoloSAM] detected {len(boxes)} boxes")
+        
         if boxes is None or len(boxes) == 0:
             return SegmentationResult(
                 segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
                 metadata={"detections": 0},
-                model= "YoloSAM"
+                model="YoloSAM"
             )
 
         # --- SAM Segmentation ---
         sam_model = self.components["sam"]
         predictor = SamPredictor(sam_model)
-
         predictor.set_image(image)
-
         input_boxes = boxes.to(predictor.device)
-        transformed_boxes = predictor.transform.apply_boxes_torch(
-            input_boxes, image.shape[:2]
-        )
-
+        transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, image.shape[:2])
         masks, _, _ = predictor.predict_torch(
             point_coords=None,
             point_labels=None,
             boxes=transformed_boxes,
             multimask_output=False,
         )
-
         masks_np = masks.cpu().numpy().astype("uint8")
-
-        # Combine masks into single mask
         combined_mask = np.max(masks_np, axis=0)
-
-        # self.plot(image, combined_mask)
-
+        
+        logger.info(f"[YoloSAM] output mask shape: {combined_mask.shape}, input was: {image.shape[:2]}")
+        
         return SegmentationResult(
             segmentation_mask=combined_mask,
             metadata={"detections": len(boxes)},
             model="YoloSAM"
         )
+
 
     def plot(self, image, combined_mask):
         if combined_mask is None:
