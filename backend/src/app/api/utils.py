@@ -230,9 +230,8 @@ def batch_seg_patches(
     Key things to keep in mind are latency concerns and robustness of stitch.
     """
     h, w = img.shape[:2]
-    combined = np.zeros((h, w), dtype="uint8")
-    total_detections = 0
-
+    patches = []
+    offsets = []
     for box in regions:
         # clamp to image bounds
         x1 = max(0, min(int(box.x), w))
@@ -242,38 +241,8 @@ def batch_seg_patches(
 
         if x2 <= x1 or y2 <= y1:
             logger.warning(f"[BATCH] Degenerate patch skipped: {box}")
-            continue
 
-        patch = img[y1:y2, x1:x2]
-        logger.info(f"[BATCH] Running seg on patch shape: {patch.shape}, offset: ({x1},{y1})")
+        patches.append(img[y1:y2, x1:x2])
+        offsets.append((x1, y1))
 
-        result = model.segment(patch)
-        total_detections += result.metadata.get("detections", 0) if result.metadata else 0
-        patch_mask = result.segmentation_mask
-
-
-        # squeeze if needed
-        if patch_mask.ndim == 3 and patch_mask.shape[0] == 1:
-            patch_mask = patch_mask.squeeze(0)
-
-        logger.info(f"[BATCH] Patch mask shape: {patch_mask.shape}, expected: ({y2-y1},{x2-x1})")
-
-        # resize mask back to patch dims if model changed size
-        if patch_mask.shape != (y2 - y1, x2 - x1):
-            patch_mask = cv.resize(
-                patch_mask.astype("uint8"),
-                (x2 - x1, y2 - y1),
-                interpolation=cv.INTER_NEAREST  # nearest for binary masks
-            )
-
-        # stitch back at correct offset
-        combined[y1:y2, x1:x2] = np.maximum(
-            combined[y1:y2, x1:x2],
-            (patch_mask > 0).astype("uint8") * 255
-        )
-
-    return SegmentationResult(
-        segmentation_mask=combined,
-        metadata={"detections": total_detections},
-        model="YoloSAM"
-    )
+    return model.segment_batch(patches, offsets, (h,w))
