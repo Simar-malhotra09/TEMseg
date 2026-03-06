@@ -3,7 +3,15 @@ from pydantic import BaseModel
 import cv2 as cv
 from typing import List
 from pathlib import Path 
-from typing import List
+from typing import List 
+import logging
+from fastapi import APIRouter
+
+from app.models.base_model import SegmentationResult
+ 
+router = APIRouter(prefix="/utils")
+logger = logging.getLogger("routes.utils")
+SESSIONS_DIR = Path("sessions")
 
 class Box(BaseModel):
     id: str
@@ -20,6 +28,7 @@ def normalize_mask(mask) -> np.ndarray:
 
     assert mask.ndim == 2, f"Unexpected mask shape: {mask.shape}"
     return (mask > 0).astype("uint8") * 255
+
 
 def blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str) -> np.ndarray:
     """
@@ -203,3 +212,68 @@ def save_debug_overlay(orig_path: Path, instances: list, save_path: Path):
                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
     cv.imwrite(str(save_path), img)
+
+
+def batch_seg_patches(
+    img: np.ndarray,
+    regions: List[Box],  
+    model,          # pre loaded model instance
+    ) -> SegmentationResult:
+    """
+    The function blackout_regions and inverse_blackout_regions take one image 
+    as input, and blackout regions in-place(in a copy of the image) and 
+    return back a single image. 
+
+    A better way might be to send patches of images that we want to keep 
+    instead, batch seg and stitch it back again. 
+
+    Key things to keep in mind are latency concerns and robustness of stitch.
+    """
+    h, w = img.shape[:2]
+    combined = np.zeros((h, w), dtype="uint8")
+    total_detections = 0
+
+    for box in regions:
+        # clamp to image bounds
+        x1 = max(0, min(int(box.x), w))
+        y1 = max(0, min(int(box.y), h))
+        x2 = max(0, min(int(box.x + box.width), w))
+        y2 = max(0, min(int(box.y + box.height), h))
+
+        if x2 <= x1 or y2 <= y1:
+            logger.warning(f"[BATCH] Degenerate patch skipped: {box}")
+            continue
+
+        patch = img[y1:y2, x1:x2]
+        logger.info(f"[BATCH] Running seg on patch shape: {patch.shape}, offset: ({x1},{y1})")
+
+        result = model.segment(patch)
+        total_detections += result.metadata.get("detections", 0) if result.metadata else 0
+        patch_mask = result.segmentation_mask
+
+
+        # squeeze if needed
+        if patch_mask.ndim == 3 and patch_mask.shape[0] == 1:
+            patch_mask = patch_mask.squeeze(0)
+
+        logger.info(f"[BATCH] Patch mask shape: {patch_mask.shape}, expected: ({y2-y1},{x2-x1})")
+
+        # resize mask back to patch dims if model changed size
+        if patch_mask.shape != (y2 - y1, x2 - x1):
+            patch_mask = cv.resize(
+                patch_mask.astype("uint8"),
+                (x2 - x1, y2 - y1),
+                interpolation=cv.INTER_NEAREST  # nearest for binary masks
+            )
+
+        # stitch back at correct offset
+        combined[y1:y2, x1:x2] = np.maximum(
+            combined[y1:y2, x1:x2],
+            (patch_mask > 0).astype("uint8") * 255
+        )
+
+    return SegmentationResult(
+        segmentation_mask=combined,
+        metadata={"detections": total_detections},
+        model="YoloSAM"
+    )
