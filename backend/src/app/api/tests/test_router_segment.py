@@ -23,15 +23,20 @@ def get_sessions(n: int):
     return sessions[:n]
 
 # single request to $server/segment/ 
-def run_segmentation(session, client) -> tuple[dict, float]:
-    req = SegmentRequest(
-        session_id=session.name,
-        model=AvailableModels.yolosam,
-        regions=[],
-        blackout=False,
-        inverse_blackout=False,
-        colorize=False,
-    )
+def run_segmentation(session, client, req: SegmentRequest | None = None) -> tuple[dict, float]:
+    if req is None:
+        req = SegmentRequest(
+            session_id=session.name,
+            model=AvailableModels.yolosam,
+            regions=[],
+            blackout=False,
+            inverse_blackout=False,
+            colorize=False,
+        )
+    else:
+        # ensure request matches the session being tested
+        req.session_id = session.name
+
     start = time.perf_counter()
     response = client.post("/segment/", json=req.model_dump())
     latency = time.perf_counter() - start
@@ -39,6 +44,7 @@ def run_segmentation(session, client) -> tuple[dict, float]:
     assert response.status_code == 200, f"Got {response.status_code}: {response.text}"
     data = response.json()
     assert "error" not in data, f"Error in response: {data}"
+
     return data, latency
 
 # test latency per image. 
@@ -89,6 +95,80 @@ def test_first_vs_subsequent_latency(setup_app):
     print(f"  avg (subsequent):   {rest_avg:.3f}s")
     print(f"  ratio:  {ratio:.1f}x")
 
+
+# Tests the inverse blackout mechanism.
+# User passes regions which she wants segmented.
+# Each region is extracted as a patch and batch seg'd.
+# Tests 1..N patches across N sessions to show scaling behavior.
+# Only works for yolo.
+
+def test_segment_inverse_blackout(setup_app):
+    client = setup_app
+    sessions = get_sessions(N_IMAGES + 1 )
+
+    # we want to warm up the server first 
+    # so we send a dummy request to ensure 
+    # model is up and running before we capture
+    # benchmark  
+
+    print("\n── Warming up... ──────────────────────")
+    _, warmup_latency = run_segmentation(sessions[0], client)
+    print(f"  warmup latency: {warmup_latency:.3f}s (excluded from benchmark)")
+   
+    # now benchmark 
+    for i, session in enumerate(sessions[1:]):
+        # img in session i gets spilt into i patches
+        n_patches = i + 1  
+
+        orig_files = list(session.glob("org_*"))
+        if not orig_files:
+            pytest.skip(f"No original image in session {session.name[:8]}")
+
+        import cv2
+        img = cv2.imread(str(orig_files[0]), cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            import numpy as np
+            img = np.load(str(orig_files[0]))
+        h, w = img.shape[:2]
+
+        # divide image into n_patches evenly across width
+        regions = []
+        patch_w = w // n_patches
+        for p in range(n_patches):
+            regions.append({
+                "id":str(i),
+                "x": p * patch_w,
+                "y": h // 4,          
+                "width": patch_w,
+                "height": h // 2,
+            })
+
+        req = SegmentRequest(
+            session_id=session.name,
+            model=AvailableModels.yolosam,
+            regions=regions,
+            blackout=False,
+            inverse_blackout=True,
+            colorize=False,
+        )
+
+        # time total request
+        start_total = time.perf_counter()
+        response = client.post("/segment/", json=req.model_dump())
+        total_latency = time.perf_counter() - start_total
+
+        assert response.status_code == 200, f"Got {response.status_code}: {response.text}"
+        data = response.json()
+        assert "error" not in data, f"Error in response: {data}"
+        assert "mask_url" in data, "No mask_url in response"
+
+        avg_per_patch = total_latency / n_patches
+
+        print(f"\n── Session {i+1} ({session.name[:8]}) ──────────────")
+        print(f"  patches:        {n_patches}")
+        print(f"  total latency:  {total_latency:.3f}s")
+        print(f"  avg per patch:  {avg_per_patch:.3f}s")
+        print(f"  detections:     {data.get('metadata', {}).get('detections', '?')}")
 
 def test_segment_benchmark(benchmark):
     sessions = get_sessions(N_IMAGES)
