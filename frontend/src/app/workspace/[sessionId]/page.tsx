@@ -199,7 +199,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
       setStats(result.stats);
       setSegDone(true);
       setMasksVisible(true);
-      setStatus("Segmentation complete. Refine masks or export.");
+      setStatus(`Segmentation completed in ${result.time_elapsed.toFixed(2)}s. Refine masks or export.`);
 
 
       if (groundTruth) {
