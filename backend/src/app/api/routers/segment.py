@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 import logging
+import time
 import cv2 as cv
 import numpy as np
 from app.models.base_model import SubModelConfig, ModelConfig, StatType, StatsConfig, StatsResult
@@ -37,6 +38,8 @@ async def segment(req: SegmentRequest, request: Request):
     logging.info(f"Model chosen: {model_inst}")
     if not model_inst:
         return {"error": f"Model {req.model} not found"}
+
+    start_time = time.perf_counter()
 
     if req.blackout and req.inverse_blackout:
         raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
@@ -183,9 +186,14 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Stats computed: {stats_results.values}")
     logger.info("[SEG] Segmentation completed successfully")
 
+    elapsed = time.perf_counter() - start_time
+    logger.info(f"[SEG] Total request time: {elapsed:.4f}s")
+
+    
     return {
         "mask_url": f"/images/{req.session_id}/mask",
         "metadata": result.metadata,
         "stats": stats_results.values,
-        "model": req.model
+        "model": req.model,
+        "time_elapsed": elapsed
     }

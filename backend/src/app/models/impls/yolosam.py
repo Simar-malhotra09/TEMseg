@@ -22,6 +22,7 @@ SESSIONS_DIR = Path("sessions")
 class YoloSam(Model):
     def __init__(self, config: ModelConfig, device: str = "cpu"):
         logger.info("Initalizing YoloSam")
+        logger.info("[YoloSAM] Initializing YoloSam")
         self.device = device
         super().__init__(config)
 
@@ -197,7 +198,9 @@ class YoloSam(Model):
 
         return SegmentationResult(
             segmentation_mask=combined,
-            metadata={"detections": total_detections},
+            metadata={
+                "detections": total_detections
+                },
             model=AvailableModels.yolosam
         )
 
