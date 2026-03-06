@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import torch
 import logging
+from typing import List
 from fastapi import APIRouter
 from typing import Dict, Any
 import matplotlib.pyplot as plt
@@ -138,6 +139,64 @@ class YoloSam(Model):
             model="YoloSAM"
         )
 
+    def segment_batch(self, patches: List[np.ndarray], offsets: List[tuple], img_shape:tuple) -> SegmentationResult:
+        """
+        Batch YOLO detection across all patches, then SAM per patch.
+        offsets: [(x1,y1), ...] for stitching back
+        """
+        h_full, w_full = img_shape
+        combined = np.zeros((h_full, w_full), dtype="uint8")
+
+        logger.info(f"Starting batch segmentation: {len(patches)} patches, output size {img_shape}")
+
+        # batch YOLO — one call for all patches
+        yolo_model = self.components["yolo"]
+        logger.info("Running YOLO batch detection")
+        all_results = yolo_model.predict(source=patches, conf=0.25, iou=0.5, max_det=4000)
+
+        sam_model = self.components["sam"]
+        predictor = SamPredictor(sam_model)
+
+        total_detections = 0
+
+        for i, (patch, result, (x1, y1)) in enumerate(zip(patches, all_results, offsets)):
+            boxes = result.boxes.xyxy
+
+            if boxes is None or len(boxes) == 0:
+                logger.info(f"Patch {i}: no detections")
+                continue
+
+            logger.info(f"Patch {i}: {len(boxes)} detections")
+
+            # SAM still per-patch but YOLO was batched
+            predictor.set_image(patch)
+            input_boxes = boxes.to(predictor.device)
+            transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, patch.shape[:2])
+
+            masks, _, _ = predictor.predict_torch(
+                point_coords=None, point_labels=None,
+                boxes=transformed_boxes, multimask_output=False,
+            )
+
+            patch_mask = masks.cpu().numpy().astype("uint8")
+            patch_mask = np.max(patch_mask, axis=0).squeeze()
+
+            x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
+
+            combined[y1:y2, x1:x2] = np.maximum(
+                combined[y1:y2, x1:x2],
+                (patch_mask > 0).astype("uint8") * 255
+            )
+
+            total_detections += len(boxes)
+
+        logger.info(f"Segmentation complete: {total_detections} total detections")
+
+        return SegmentationResult(
+            segmentation_mask=combined,
+            metadata={"detections": total_detections},
+            model="YoloSAM"
+        )
 
     def plot(self, image, combined_mask):
         if combined_mask is None:
