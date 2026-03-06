@@ -22,7 +22,7 @@ async def get_preview(session_id: str):
 
 @router.post("/upload")
 async def upload_image(file: UploadFile = File(...)):
-    session_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())[:4]
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
