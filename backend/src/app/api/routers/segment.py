@@ -1,6 +1,6 @@
 from typing import List
 from pathlib import Path 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 import logging
 import cv2 as cv
@@ -32,7 +32,11 @@ SESSIONS_DIR = Path("sessions")
 
 
 @router.post("/")
-async def segment(req: SegmentRequest):
+async def segment(req: SegmentRequest, request: Request):
+    model_inst = request.app.state.models.get(req.model.value)
+    logging.info(f"Model chosen: {model_inst}")
+    if not model_inst:
+        return {"error": f"Model {req.model} not found"}
 
     if req.blackout and req.inverse_blackout:
         raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
@@ -62,17 +66,17 @@ async def segment(req: SegmentRequest):
     logger.info(f"[SEG] Using image: {image_path}")
 
     # Model selection
-    if req.model == AvailableModels.yolosam:
-        logger.info("[SEG] Initializing YoloSAM model")
-        model_inst = YoloSam(nano_config, device="cpu")
-
-    elif req.model == AvailableModels.maskrcnn:
-        logger.info("[SEG] Initializing MaskRCNN model")
-        model_inst = MaskRCNN(house_config, device="cpu")
-
-    else:
-        logger.error(f"[SEG] Unsupported model requested: {req.model}")
-        return {"error": "Unsupported model"}
+    # if req.model == AvailableModels.yolosam:
+    #     logger.info("[SEG] Initializing YoloSAM model")
+    #     model_inst = YoloSam(nano_config, device="cpu")
+    #
+    # elif req.model == AvailableModels.maskrcnn:
+    #     logger.info("[SEG] Initializing MaskRCNN model")
+    #     model_inst = MaskRCNN(house_config, device="cpu")
+    #
+    # else:
+    #     logger.error(f"[SEG] Unsupported model requested: {req.model}")
+    #     return {"error": "Unsupported model"}
 
     # Load image
     logger.info("[SEG] Loading image...")

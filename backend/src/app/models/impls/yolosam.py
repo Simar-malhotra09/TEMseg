@@ -21,8 +21,10 @@ SESSIONS_DIR = Path("sessions")
 
 class YoloSam(Model):
     def __init__(self, config: ModelConfig, device: str = "cpu"):
+        logger.info("Initalizing YoloSam")
         self.device = device
         super().__init__(config)
+
 
     def _load_components(self) -> Dict[str, Any]:
         if not hasattr(self, "config") or not hasattr(self.config, "components"):
