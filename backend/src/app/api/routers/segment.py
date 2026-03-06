@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Any
 from pathlib import Path 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
@@ -24,7 +24,13 @@ class SegmentRequest(BaseModel):
     inverse_blackout: bool = False
     colorize: bool= True # colorize masks for overlay
 
-
+class SegmentResponse(BaseModel):
+    model: AvailableModels
+    mask_url: str 
+    metadata: Dict[str, Any]
+    stats: Dict
+    time_elapsed:float
+    
 
 router = APIRouter(prefix="/segment")
 logger = logging.getLogger("routes.segment")
@@ -190,10 +196,10 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Total request time: {elapsed:.4f}s")
 
     
-    return {
-        "mask_url": f"/images/{req.session_id}/mask",
-        "metadata": result.metadata,
-        "stats": stats_results.values,
-        "model": req.model,
-        "time_elapsed": elapsed
-    }
+    return SegmentResponse(
+        mask_url=f"/images/{req.session_id}/mask",
+        metadata=result.metadata,
+        stats= stats_results.values,
+        model=  req.model,
+        time_elapsed= elapsed,
+        )
