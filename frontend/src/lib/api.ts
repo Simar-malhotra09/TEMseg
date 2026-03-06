@@ -1,5 +1,50 @@
 export const BASE_URL = "http://localhost:8000";
 
+// These are mirrors of the pydantic model the server defines
+export interface Box {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface StatsResult {
+  particle_count: number;
+  avg_size: number;
+  avg_circularity: number;
+  coverage: number;
+}
+
+export interface SegmentResponse {
+  model: string;
+  mask_url: string;
+  metadata: Record<string, any>;
+  stats: StatsResult;
+  time_elapsed: number;
+}
+
+export interface GTResponse {
+  warnings: string[];
+  scores: {
+    iou: number;
+    dice: number;
+    pixel_acc: number;
+  } | null;
+}
+
+export interface UploadResponse {
+  session_id: string;
+  filename: string;
+  preview_url: string;
+}
+
+export interface Instance {
+  id: number;
+  contour: [number, number][];
+  bbox: { x: number; y: number; w: number; h: number };
+  area: number;
+}
 
 export async function getModels(): Promise<string[]> {
   const res = await fetch(`${BASE_URL}/models`);
@@ -42,11 +87,11 @@ export async function uploadImage(file: File) {
 export async function segmentImage(
   sessionId: string,
   model: string,
-  regions: any[],
+  regions: Box[],
   blackout: boolean = false,
   inverseBlackout: boolean = false,
   colorize: boolean= true
-) {
+) : Promise<SegmentResponse> {
 
   console.log("Calling [segmentImage]", sessionId, model, blackout, inverseBlackout, regions);
   
@@ -68,8 +113,9 @@ export async function segmentImage(
     console.error("[segmentImage] failed:", res.status);
     throw new Error("Segmentation failed");
   } 
-  console.log("[segmentImage] success:", res);
-  return res.json();
+  const data= await res.json()
+  console.log("[segmentImage] success:", data);
+  return data;
 }
 
 
