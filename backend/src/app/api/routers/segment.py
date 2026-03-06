@@ -10,14 +10,11 @@ from app.models.impls.yolosam import YoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.helpers.config import nano_config, house_config
 from app.api.live_models import AvailableModels
-from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions, colorize_components_inplace
+from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions, colorize_components_inplace, batch_seg_patches
 from pydantic import BaseModel
 
 
 
-# need to change this later
-# pass only one List a enum or bool
-# for blackout or inverse.
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
@@ -82,34 +79,34 @@ async def segment(req: SegmentRequest):
     img = model_inst.load_image(image_path)
 
 
-    # Apply blackout if needed
-    if req.blackout:
-        logger.info(f"[SEG] Applying blackout to {len(req.regions)} regions")
-        img = blackout_regions(
-            img,
-            req.regions,
-            save_path=f"sessions/{req.session_id}/blackout_check.png"
-        )
 
     # Apply inverse blackout if needed
     if req.inverse_blackout:
-        logger.info(f"[SEG] Applying inverse blackout to {len(req.regions)} regions")
-        img = inverse_blackout_regions(
-            img,
-            req.regions,
-            save_path=f"sessions/{req.session_id}/inverse_blackout_check.png"
-        )
+        logger.info(f"[SEG] Batch seg on {len(req.regions)} patches")
+        result = batch_seg_patches(img, req.regions, model_inst)
+        mask= result.segmentation_mask
+    
+    else:
+        # Apply blackout if needed
+        if req.blackout:
+            logger.info(f"[SEG] Applying blackout to {len(req.regions)} regions")
+            img = blackout_regions(
+                img,
+                req.regions,
+                save_path=f"sessions/{req.session_id}/blackout_check.png"
+            )
 
-    # Run segmentation
-    logger.info("[SEG] Running segmentation...")
-    result = model_inst.segment(img)
+        # for blackout seg or when neither applied
+        result = model_inst.segment(img)
+        mask = result.segmentation_mask
 
 
-    if req.model != result.model:
-        logger.error("[SEG] Model mismatch between request and result")
-        return {
-            "error": f"Mismatch between requested model {req.model} and model used {result.model}"
-        }
+
+    # if req.model != result.model:
+    #     logger.error("[SEG] Model mismatch between request and result")
+    #     return {
+    #         "error": f"Mismatch between requested model {req.model} and model used {result.model}"
+    #     }
 
     if result.segmentation_mask is None:
         logger.error("[SEG] Segmentation returned no mask")
