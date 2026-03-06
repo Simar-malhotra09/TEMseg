@@ -82,10 +82,26 @@ async def segment(req: SegmentRequest):
 
     # Apply inverse blackout if needed
     if req.inverse_blackout:
-        logger.info(f"[SEG] Batch seg on {len(req.regions)} patches")
-        result = batch_seg_patches(img, req.regions, model_inst)
-        mask= result.segmentation_mask
-    
+
+        # if yolosam: use batch seg
+        if req.model == AvailableModels.yolosam:
+            logger.info(f"[SEG] Batch seg on {len(req.regions)} patches")
+            result = batch_seg_patches(img, req.regions, model_inst)
+            mask= result.segmentation_mask
+
+        # maskrcnn currently doesn't impl batch seg!
+        elif req.model== AvailableModels.maskrcnn:
+            img= inverse_blackout_regions(
+                    img, 
+                    req.regions,
+                    save_path=f"sessions/{req.session_id}/inverse_blackout_check.png"
+                    )
+            result= model_inst.segment(img)
+            mask = result.segmentation_mask
+
+        else:
+            logger.error(f"[SEG] Unsupported model for inverse blackout: {req.model}")
+            return {"error": f"Unsupported model {req.model}"}   
     else:
         # Apply blackout if needed
         if req.blackout:
@@ -102,11 +118,11 @@ async def segment(req: SegmentRequest):
 
 
 
-    # if req.model != result.model:
-    #     logger.error("[SEG] Model mismatch between request and result")
-    #     return {
-    #         "error": f"Mismatch between requested model {req.model} and model used {result.model}"
-    #     }
+    if req.model != result.model:
+        logger.error("[SEG] Model mismatch between request and result")
+        return {
+            "error": f"Mismatch between requested model {req.model} and model used {result.model}"
+        }
 
     if result.segmentation_mask is None:
         logger.error("[SEG] Segmentation returned no mask")
