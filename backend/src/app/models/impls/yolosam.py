@@ -2,6 +2,7 @@ import cv2 as cv
 import numpy as np
 import torch
 import logging
+import time
 from typing import List
 from fastapi import APIRouter
 from typing import Dict, Any
@@ -107,6 +108,7 @@ class YoloSam(Model):
     def segment(self, image: np.ndarray) -> SegmentationResult:
         logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
         
+        yolo_start= time.perf_counter()
         # --- YOLO Detection ---
         yolo_model = self.components["yolo"]
         results = yolo_model.predict(source=image, conf=0.25, iou=0.5, max_det=4000)
@@ -120,6 +122,9 @@ class YoloSam(Model):
                 model="YoloSAM"
             )
 
+        yolo_end = time.perf_counter()
+        yolo_time_elapsed= yolo_end - yolo_start
+
         # --- SAM Segmentation ---
         sam_model = self.components["sam"]
         predictor = SamPredictor(sam_model)
@@ -132,14 +137,23 @@ class YoloSam(Model):
             boxes=transformed_boxes,
             multimask_output=False,
         )
+        sam_time_elapsed= time.perf_counter()-yolo_end 
+
         masks_np = masks.cpu().numpy().astype("uint8")
         combined_mask = np.max(masks_np, axis=0)
         
         logger.info(f"[YoloSAM] output mask shape: {combined_mask.shape}, input was: {image.shape[:2]}")
+        logger.info(f"[YoloSAM] Yolo took {yolo_time_elapsed:.4f}s")
+        logger.info(f"[YoloSAM] SAM took {sam_time_elapsed:.4f}s")
         
         return SegmentationResult(
             segmentation_mask=combined_mask,
-            metadata={"detections": len(boxes)},
+            metadata={
+                "detections": len(boxes),
+                "yolo_time_elapsed": yolo_time_elapsed, 
+                "sam_time_elapsed": sam_time_elapsed
+            },
+
             model="YoloSAM"
         )
 
@@ -199,7 +213,9 @@ class YoloSam(Model):
         return SegmentationResult(
             segmentation_mask=combined,
             metadata={
-                "detections": total_detections
+                "detections": total_detections,
+                # "yolo_time_elapsed": yolo_time_elapsed, 
+                # "sam_time_elapsed": sam_time_elapsed
                 },
             model=AvailableModels.yolosam
         )
