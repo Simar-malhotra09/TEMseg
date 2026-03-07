@@ -12,7 +12,7 @@ def setup_app():
         yield c 
 
 
-
+# consts
 SESSIONS_DIR = Path("sessions")
 N_IMAGES = 5
 
