@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images, segment, ground_truths, masks
 from app.api.live_models import AvailableModels
@@ -43,7 +44,7 @@ async def lifespan(app: FastAPI):
         AvailableModels.yolosam: YoloSam(nano_config, device="cpu"),
         AvailableModels.maskrcnn: MaskRCNN(house_config, device="cpu"),
     }
-
+    app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.warmed_up = False
 
     # Make a dummy req to warm up SAM in the YoloSAM pipeline
