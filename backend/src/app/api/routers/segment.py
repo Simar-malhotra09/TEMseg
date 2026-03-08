@@ -35,12 +35,17 @@ class SegmentResponse(BaseModel):
 router = APIRouter(prefix="/segment")
 logger = logging.getLogger("routes.segment")
 SESSIONS_DIR = Path("sessions")
-
+logger.disabled= True
 
 
 @router.post("/")
 async def segment(req: SegmentRequest, request: Request):
     model_inst = request.app.state.models.get(req.model.value)
+    cache = request.app.state.embedding_cache
+
+    # return embedding else None
+    embedding = cache.get(req.session_id)  
+
     logging.info(f"Model chosen: {model_inst}")
     if not model_inst:
         return {"error": f"Model {req.model} not found"}
@@ -126,8 +131,17 @@ async def segment(req: SegmentRequest, request: Request):
             )
 
         # for blackout seg or when neither applied
-        result = model_inst.segment(img)
-        mask = result.segmentation_mask
+
+
+        if req.model== AvailableModels.yolosam:
+            # we cache embds for images and use them if available since
+            # SAM's segment operations are expensive. 
+            # This'll only work within a session and not across. 
+            result = model_inst.segment(img, embedding)
+            mask = result.segmentation_mask
+        else:
+            result = model_inst.segment(img)
+            mask = result.segmentation_mask
 
 
 
@@ -190,6 +204,10 @@ async def segment(req: SegmentRequest, request: Request):
         return {"error": "Failed to compute stats"}
 
     logger.info(f"[SEG] Stats computed: {stats_results.values}")
+    if result.embedding:
+        cache[req.session_id] = result.embedding
+        logger.info(f"[SEG] Cached SAM embedding for session {req.session_id}")
+
     logger.info("[SEG] Segmentation completed successfully")
 
     elapsed = time.perf_counter() - start_time
