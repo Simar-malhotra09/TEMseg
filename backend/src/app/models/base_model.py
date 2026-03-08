@@ -69,7 +69,7 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def segment(self, image: np.ndarray) -> SegmentationResult:
+    def segment(self, image: np.ndarray, **kwargs) -> SegmentationResult:
         pass
 
     def get_model_specs(self) -> None:
