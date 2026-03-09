@@ -1,12 +1,14 @@
 from typing import Annotated
 import uuid, shutil
 from pathlib import Path 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, UploadFile, Request
 from fastapi.responses import FileResponse
 import logging
 import numpy as np 
 import cv2 as cv
-
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+from app.api.live_models import AvailableModels
 
 router = APIRouter(prefix="/images")
 logger = logging.getLogger("routes.images")
@@ -21,7 +23,7 @@ async def get_preview(session_id: str):
     return FileResponse(path)
 
 @router.post("/upload")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(request:Request, file: UploadFile = File(...)):
     session_id = str(uuid.uuid4())[:4]
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +64,27 @@ async def upload_image(file: UploadFile = File(...)):
         preview_path = session_dir / "original_preview.png"
         cv.imwrite(str(preview_path), display)
         preview_url = f"/images/{session_id}/preview"
+
+    async def warm_for_shape():
+        yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
+        if not yolosam:
+            return
+        try:
+            img = yolosam.load_image(dest)
+            logger.info(f"[UPLOAD] Warming YOLO for shape: {img.shape}")
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as pool:
+                await loop.run_in_executor(
+                    pool,
+                    lambda: yolosam.components["yolo"].predict(
+                        source=img, verbose=False, conf=0.25
+                    )
+                )
+            logger.info("[UPLOAD] YOLO warmup complete")
+        except Exception as e:
+            logger.warning(f"[UPLOAD] Warmup failed (non-fatal): {e}")
+
+    asyncio.create_task(warm_for_shape())
 
     return {
         "session_id": session_id,
