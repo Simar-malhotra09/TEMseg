@@ -50,21 +50,21 @@ async def lifespan(app: FastAPI):
 
     # Make a dummy req to warm up SAM in the YoloSAM pipeline
     # warmup up in a diff thread to prevent blocking of server
-    async def warmup():
-        loop = asyncio.get_event_loop()
-
-        def _warmup():
-            yolosam = app.state.models[AvailableModels.yolosam]
-            dummy = np.zeros((512, 512, 3), dtype=np.uint8)
-            cv.circle(dummy, (256, 256), 50, (255, 255, 255), -1)
-            yolosam.segment(dummy)  # warms both YOLO and SAM via the shared predictor
-
-        with ThreadPoolExecutor() as pool:
-            await loop.run_in_executor(pool, _warmup)
-
-        app.state.warmed_up = True
-        routes_logger.info("Models warmed up")
-    asyncio.create_task(warmup())
+    # async def warmup():
+    #     loop = asyncio.get_event_loop()
+    #
+    #     def _warmup():
+    #         yolosam = app.state.models[AvailableModels.yolosam]
+    #         dummy = np.zeros((512, 512, 3), dtype=np.uint8)
+    #         cv.circle(dummy, (256, 256), 50, (255, 255, 255), -1)
+    #         yolosam.segment(dummy)  # warms both YOLO and SAM via the shared predictor
+    #
+    #     with ThreadPoolExecutor() as pool:
+    #         await loop.run_in_executor(pool, _warmup)
+    #
+    #     app.state.warmed_up = True
+    #     routes_logger.info("Models warmed up")
+    # asyncio.create_task(warmup())
     yield
 
 
