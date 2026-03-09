@@ -65,7 +65,7 @@ class YoloSam(Model):
             if name == "yolo":
                 try:
                     model = YOLO(str(model_path))
-                    model.export(format="onnx", imgsz=640, opset=12)
+                    # model.export(format="onnx", int8= True,simplify=True, imgsz=640, opset=12)
                 except Exception as e:
                     raise RuntimeError(f"Failed to load YOLO: {e}") from e
                 components["yolo"] = model
@@ -115,76 +115,77 @@ class YoloSam(Model):
 
         return img
 
-    def segment(self, image: np.ndarray, embedding_cache:SAMEmbedding|None = None, **kwargs) -> YoloSAMSegmentationResult:
-        logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
-        
-        yolo_start= time.perf_counter()
-        # --- YOLO Detection ---
-        yolo_model = self.components["yolo"]
-        results = yolo_model.predict(source=image,conf=0.25, iou=0.5, max_det=4000)
-        boxes = results[0].boxes.xyxy
-        logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
-        
-        # --- SAM Segmentation ---
-        sam_model = self.components["sam"]
-        if not hasattr(self, '_predictor'):
-            self._predictor = SamPredictor(self.components["sam"])
-        predictor = self._predictor
-        predictor.set_image(image)
+    def segment(self, image: np.ndarray, embedding_cache: SAMEmbedding | None = None, **kwargs) -> YoloSAMSegmentationResult:
+            logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
 
-        if boxes is None or len(boxes) == 0:
+            # ensure predictor exists — created once, reused across calls
+            if not hasattr(self, '_predictor'):
+                self._predictor = SamPredictor(self.components["sam"])
+            predictor = self._predictor
+
+            # --- YOLO Detection ---
+            t0 = time.perf_counter()
+            results = self.components["yolo"].predict(
+                source=image, conf=0.25, iou=0.5, max_det=4000, verbose=False
+            )
+            t1 = time.perf_counter()
+            boxes = results[0].boxes.xyxy
+            logger.info(f"[YoloSAM-Yolo] predict={t1-t0:.3f}s | boxes={len(boxes)}")
+
+            t2 = time.perf_counter()
+            input_boxes = boxes.to(predictor.device)
+            transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, image.shape[:2])
+            t3 = time.perf_counter()
+            logger.info(f"[YoloSAM-Yolo] box_transfer={t3-t2:.3f}s")
+
+            yolo_time_elapsed = t3 - t0
+            logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
+
+            if boxes is None or len(boxes) == 0:
+                return YoloSAMSegmentationResult(
+                    segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
+                    metadata={"detections": 0},
+                    model=AvailableModels.yolosam
+                )
+
+            # --- SAM Segmentation ---
+            sam_start = time.perf_counter()
+
+            if embedding_cache:
+                predictor.features = embedding_cache.features
+                predictor.original_size = embedding_cache.original_size
+                predictor.input_size = embedding_cache.input_size
+                predictor.is_image_set = True
+                logger.info("[YoloSAM-SAM] Using cached SAM embedding")
+            else:
+                predictor.set_image(image)
+                logger.info("[YoloSAM-SAM] Encoding image with SAM")
+
+            masks, _, _ = predictor.predict_torch(
+                point_coords=None,
+                point_labels=None,
+                boxes=transformed_boxes,
+                multimask_output=False,
+            )
+            masks_np = masks.cpu().numpy().astype("uint8")
+            combined_mask = np.max(masks_np, axis=0)
+
+            sam_time_elapsed = time.perf_counter() - sam_start
+
+            logger.info(f"[YoloSAM] output mask shape: {combined_mask.shape}, input was: {image.shape[:2]}")
+            logger.info(f"[YoloSAM] Yolo took {yolo_time_elapsed:.4f}s")
+            logger.info(f"[YoloSAM] SAM took {sam_time_elapsed:.4f}s")
+
             return YoloSAMSegmentationResult(
-                segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                metadata={"detections": 0},
-                model=AvailableModels.yolosam
+                segmentation_mask=combined_mask,
+                metadata={"detections": len(boxes)},
+                model=AvailableModels.yolosam,
+                embedding=SAMEmbedding(
+                    features=predictor.features,
+                    original_size=predictor.original_size,
+                    input_size=predictor.input_size,
+                )
             )
-
-        yolo_end = time.perf_counter()
-        yolo_time_elapsed= yolo_end - yolo_start
-
-
-
-        # Try to get the img embds from cache if it was seg prev. 
-        if embedding_cache:
-            # restore cached embedding — skips expensive set_image encode
-            predictor.features = embedding_cache.features
-            predictor.original_size = embedding_cache.original_size
-            predictor.input_size = embedding_cache.input_size
-            predictor.is_image_set = True
-            logger.info("[YoloSAM-SAM] Using cached SAM embedding")
-        else:
-            predictor.set_image(image)
-            logger.info("[YoloSAM-SAM] Encoding image with SAM")
-
-        input_boxes = boxes.to(predictor.device)
-        transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, image.shape[:2])
-        masks, _, _ = predictor.predict_torch(
-            point_coords=None,
-            point_labels=None,
-            boxes=transformed_boxes,
-            multimask_output=False,
-        )
-        masks_np = masks.cpu().numpy().astype("uint8")
-        combined_mask = np.max(masks_np, axis=0)
-
-        sam_time_elapsed= time.perf_counter()-yolo_end 
-
-        
-        logger.info(f"[YoloSAM] output mask shape: {combined_mask.shape}, input was: {image.shape[:2]}")
-        logger.info(f"[YoloSAM] Yolo took {yolo_time_elapsed:.4f}s")
-        logger.info(f"[YoloSAM] SAM took {sam_time_elapsed:.4f}s")
-        
-        return YoloSAMSegmentationResult(
-            segmentation_mask=combined_mask,
-            metadata={"detections": len(boxes)},
-            model=AvailableModels.yolosam,
-            embedding=SAMEmbedding(
-                features=predictor.features,
-                original_size=predictor.original_size,
-                input_size=predictor.input_size,
-            )
-        )
-
     def segment_batch(self, patches: List[np.ndarray], offsets: List[tuple], img_shape:tuple) -> YoloSAMSegmentationResult:
         """
         Batch YOLO detection across all patches, then SAM per patch.
