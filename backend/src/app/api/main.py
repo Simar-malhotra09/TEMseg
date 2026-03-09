@@ -8,6 +8,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from typing import Dict
+import cv2 as cv
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images, segment, ground_truths, masks
 from app.api.live_models import AvailableModels
@@ -51,12 +52,18 @@ async def lifespan(app: FastAPI):
     # warmup up in a diff thread to prevent blocking of server
     async def warmup():
         loop = asyncio.get_event_loop()
+
+        def _warmup():
+            yolosam = app.state.models[AvailableModels.yolosam]
+            dummy = np.zeros((512, 512, 3), dtype=np.uint8)
+            cv.circle(dummy, (256, 256), 50, (255, 255, 255), -1)
+            yolosam.segment(dummy)  # warms both YOLO and SAM via the shared predictor
+
         with ThreadPoolExecutor() as pool:
-            dummy = np.zeros((64, 64, 3), dtype=np.uint8)
-            await loop.run_in_executor(pool, app.state.models[AvailableModels.yolosam].segment, dummy)
+            await loop.run_in_executor(pool, _warmup)
+
         app.state.warmed_up = True
         routes_logger.info("Models warmed up")
-
     asyncio.create_task(warmup())
     yield
 

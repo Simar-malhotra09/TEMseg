@@ -35,7 +35,7 @@ class SegmentResponse(BaseModel):
 router = APIRouter(prefix="/segment")
 logger = logging.getLogger("routes.segment")
 SESSIONS_DIR = Path("sessions")
-logger.disabled= True
+# logger.disabled= True
 
 
 @router.post("/")
@@ -204,7 +204,7 @@ async def segment(req: SegmentRequest, request: Request):
         return {"error": "Failed to compute stats"}
 
     logger.info(f"[SEG] Stats computed: {stats_results.values}")
-    if result.embedding:
+    if hasattr(result, "embedding") and result.embedding is not None:
         cache[req.session_id] = result.embedding
         logger.info(f"[SEG] Cached SAM embedding for session {req.session_id}")
 

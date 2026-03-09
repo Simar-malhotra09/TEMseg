@@ -122,8 +122,15 @@ class YoloSam(Model):
         yolo_model = self.components["yolo"]
         results = yolo_model.predict(source=image, conf=0.25, iou=0.5, max_det=4000)
         boxes = results[0].boxes.xyxy
-        logger.info(f"[YoloSAM] detected {len(boxes)} boxes")
+        logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
         
+        # --- SAM Segmentation ---
+        sam_model = self.components["sam"]
+        if not hasattr(self, '_predictor'):
+            self._predictor = SamPredictor(self.components["sam"])
+        predictor = self._predictor
+        predictor.set_image(image)
+
         if boxes is None or len(boxes) == 0:
             return YoloSAMSegmentationResult(
                 segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
@@ -134,11 +141,7 @@ class YoloSam(Model):
         yolo_end = time.perf_counter()
         yolo_time_elapsed= yolo_end - yolo_start
 
-        # --- SAM Segmentation ---
-        sam_model = self.components["sam"]
-        predictor = SamPredictor(sam_model)
 
-        predictor.set_image(image)
 
         # Try to get the img embds from cache if it was seg prev. 
         if embedding_cache:
@@ -147,10 +150,10 @@ class YoloSam(Model):
             predictor.original_size = embedding_cache.original_size
             predictor.input_size = embedding_cache.input_size
             predictor.is_image_set = True
-            logger.info("[YoloSAM] Using cached SAM embedding")
+            logger.info("[YoloSAM-SAM] Using cached SAM embedding")
         else:
             predictor.set_image(image)
-            logger.info("[YoloSAM] Encoding image with SAM")
+            logger.info("[YoloSAM-SAM] Encoding image with SAM")
 
         input_boxes = boxes.to(predictor.device)
         transformed_boxes = predictor.transform.apply_boxes_torch(input_boxes, image.shape[:2])
