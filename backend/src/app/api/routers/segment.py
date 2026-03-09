@@ -40,17 +40,14 @@ SESSIONS_DIR = Path("sessions")
 
 @router.post("/")
 async def segment(req: SegmentRequest, request: Request):
+    t_req_start = time.perf_counter()
+
     model_inst = request.app.state.models.get(req.model.value)
     cache = request.app.state.embedding_cache
+    embedding = cache.get(req.session_id)
 
-    # return embedding else None
-    embedding = cache.get(req.session_id)  
-
-    logging.info(f"Model chosen: {model_inst}")
     if not model_inst:
         return {"error": f"Model {req.model} not found"}
-
-    start_time = time.perf_counter()
 
     if req.blackout and req.inverse_blackout:
         raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")
@@ -58,118 +55,69 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Request received for session: {req.session_id}")
     logger.info(f"[SEG] Model requested: {req.model}")
     logger.info(f"[SEG] Regions selected : {len(req.regions)}")
-    mode = "blacked_out" if req.blackout else "kept"
-    logger.info(f"[SEG] Regions are being {mode}")
+    logger.info(f"[SEG] Regions are being {'blacked_out' if req.blackout else 'kept'}")
     logger.info(f"[SEG] colorize: {req.colorize}")
 
     session_dir = SESSIONS_DIR / req.session_id
-    logger.info(f"[SEG] Session dir resolved to: {session_dir}")
-
     if not session_dir.exists():
-        logger.warning("[SEG] Invalid session directory")
         return {"error": "Invalid session"}
 
     orig_files = list(session_dir.glob("org_*"))
-    logger.info(f"[SEG] Found original files: {orig_files}")
-
     if not orig_files:
-        logger.warning("[SEG] No original image found")
         return {"error": "No image found"}
 
     image_path = orig_files[0]
-    logger.info(f"[SEG] Using image: {image_path}")
 
-    # Model selection
-    # if req.model == AvailableModels.yolosam:
-    #     logger.info("[SEG] Initializing YoloSAM model")
-    #     model_inst = YoloSam(nano_config, device="cpu")
-    #
-    # elif req.model == AvailableModels.maskrcnn:
-    #     logger.info("[SEG] Initializing MaskRCNN model")
-    #     model_inst = MaskRCNN(house_config, device="cpu")
-    #
-    # else:
-    #     logger.error(f"[SEG] Unsupported model requested: {req.model}")
-    #     return {"error": "Unsupported model"}
-
-    # Load image
-    logger.info("[SEG] Loading image...")
+    # ── image load ───────────────────────────────────────────────
+    t0 = time.perf_counter()
     img = model_inst.load_image(image_path)
+    t_load = time.perf_counter() - t0
+    logger.info(f"[SEG-TIMING] image_load={t_load:.3f}s  shape={img.shape}")
 
+    # ── inference ────────────────────────────────────────────────
+    t1 = time.perf_counter()
 
-
-    # Apply inverse blackout if needed
     if req.inverse_blackout:
-
-        # if yolosam: use batch seg
         if req.model == AvailableModels.yolosam:
             logger.info(f"[SEG] Batch seg on {len(req.regions)} patches")
             result = batch_seg_patches(img, req.regions, model_inst)
-            mask= result.segmentation_mask
-
-        # maskrcnn currently doesn't impl batch seg!
-        elif req.model== AvailableModels.maskrcnn:
-            img= inverse_blackout_regions(
-                    img, 
-                    req.regions,
-                    save_path=f"sessions/{req.session_id}/inverse_blackout_check.png"
-                    )
-            result= model_inst.segment(img)
-            mask = result.segmentation_mask
-
+        elif req.model == AvailableModels.maskrcnn:
+            img = inverse_blackout_regions(
+                img, req.regions,
+                save_path=f"sessions/{req.session_id}/inverse_blackout_check.png"
+            )
+            result = model_inst.segment(img)
         else:
-            logger.error(f"[SEG] Unsupported model for inverse blackout: {req.model}")
-            return {"error": f"Unsupported model {req.model}"}   
+            return {"error": f"Unsupported model {req.model}"}
     else:
-        # Apply blackout if needed
         if req.blackout:
             logger.info(f"[SEG] Applying blackout to {len(req.regions)} regions")
             img = blackout_regions(
-                img,
-                req.regions,
+                img, req.regions,
                 save_path=f"sessions/{req.session_id}/blackout_check.png"
             )
-
-        # for blackout seg or when neither applied
-
-
-        if req.model== AvailableModels.yolosam:
-            # we cache embds for images and use them if available since
-            # SAM's segment operations are expensive. 
-            # This'll only work within a session and not across. 
+        if req.model == AvailableModels.yolosam:
             result = model_inst.segment(img, embedding)
-            mask = result.segmentation_mask
         else:
             result = model_inst.segment(img)
-            mask = result.segmentation_mask
 
+    t_inference = time.perf_counter() - t1
+    logger.info(f"[SEG-TIMING] inference={t_inference:.3f}s")
 
-
+    # ── validation ───────────────────────────────────────────────
     if req.model != result.model:
-        logger.error("[SEG] Model mismatch between request and result")
-        return {
-            "error": f"Mismatch between requested model {req.model} and model used {result.model}"
-        }
-
+        return {"error": f"Mismatch between requested model {req.model} and result {result.model}"}
     if result.segmentation_mask is None:
-        logger.error("[SEG] Segmentation returned no mask")
         return {"error": "Segmentation returned no mask"}
 
-    logger.info("[SEG] Normalizing mask...")
+    # ── mask normalize + colorize ────────────────────────────────
+    t2 = time.perf_counter()
     mask = normalize_mask(result.segmentation_mask)
 
-    if req.colorize:
-        save_mask = colorize_components_inplace(mask)
-    else:
-        save_mask = mask
-
-
     if mask is None or mask.size == 0:
-        logger.error("[SEG] Mask normalization failed or mask empty")
         return {"error": "Mask is empty"}
 
     if not np.any(mask):
-        logger.warning("[SEG] Mask contains no foreground pixels")
         return {
             "mask_url": None,
             "metadata": result.metadata,
@@ -178,16 +126,22 @@ async def segment(req: SegmentRequest, request: Request):
             "warning": "Mask contains no detected particles"
         }
 
+    save_mask = colorize_components_inplace(mask) if req.colorize else mask
+    t_colorize = time.perf_counter() - t2
+    logger.info(f"[SEG-TIMING] normalize+colorize={t_colorize:.3f}s")
+
+    # ── save mask ────────────────────────────────────────────────
+    t3 = time.perf_counter()
     mask_path = session_dir / "mask.png"
-    logger.info(f"[SEG] Saving mask to: {mask_path}")
-    success= cv.imwrite(str(mask_path), save_mask)
+    success = cv.imwrite(str(mask_path), save_mask)
+    t_save = time.perf_counter() - t3
+    logger.info(f"[SEG-TIMING] mask_save={t_save:.3f}s")
 
     if not success:
-        logger.error("[SEG] Failed to save mask")
         return {"error": "Failed to save mask"}
 
-    logger.info("[SEG] Computing stats...")
-
+    # ── stats ────────────────────────────────────────────────────
+    t4 = time.perf_counter()
     stats_config = StatsConfig(
         enabled={
             StatType.PARTICLE_COUNT,
@@ -196,28 +150,29 @@ async def segment(req: SegmentRequest, request: Request):
             StatType.COVERAGE,
         }
     )
-
     stats_results = model_inst.compute_stats(mask, stats_config)
+    t_stats = time.perf_counter() - t4
+    logger.info(f"[SEG-TIMING] stats={t_stats:.3f}s")
 
     if not stats_results or not getattr(stats_results, "values", None):
-        logger.error("[SEG] Failed to compute stats")
         return {"error": "Failed to compute stats"}
 
-    logger.info(f"[SEG] Stats computed: {stats_results.values}")
+    # ── cache embedding ──────────────────────────────────────────
     if hasattr(result, "embedding") and result.embedding is not None:
         cache[req.session_id] = result.embedding
         logger.info(f"[SEG] Cached SAM embedding for session {req.session_id}")
 
-    logger.info("[SEG] Segmentation completed successfully")
+    elapsed = time.perf_counter() - t_req_start
+    logger.info(
+        f"[SEG-TIMING] TOTAL={elapsed:.3f}s  "
+        f"(load={t_load:.3f} | infer={t_inference:.3f} | "
+        f"colorize={t_colorize:.3f} | save={t_save:.3f} | stats={t_stats:.3f})"
+    )
 
-    elapsed = time.perf_counter() - start_time
-    logger.info(f"[SEG] Total request time: {elapsed:.4f}s")
-
-    
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",
         metadata=result.metadata,
-        stats= stats_results.values,
-        model=  req.model,
-        time_elapsed= elapsed,
-        )
+        stats=stats_results.values,
+        model=req.model,
+        time_elapsed=elapsed,
+    )
