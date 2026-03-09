@@ -65,6 +65,7 @@ class YoloSam(Model):
             if name == "yolo":
                 try:
                     model = YOLO(str(model_path))
+                    model.export(format="onnx", imgsz=640, opset=12)
                 except Exception as e:
                     raise RuntimeError(f"Failed to load YOLO: {e}") from e
                 components["yolo"] = model
@@ -120,7 +121,7 @@ class YoloSam(Model):
         yolo_start= time.perf_counter()
         # --- YOLO Detection ---
         yolo_model = self.components["yolo"]
-        results = yolo_model.predict(source=image, conf=0.25, iou=0.5, max_det=4000)
+        results = yolo_model.predict(source=image,conf=0.25, iou=0.5, max_det=4000)
         boxes = results[0].boxes.xyxy
         logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
         
