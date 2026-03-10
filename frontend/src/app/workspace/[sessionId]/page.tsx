@@ -304,6 +304,7 @@ export default function Workspace({ params }: { params: { session_id: string } }
             </span>
           )}
           <span className={styles.statusPill}>{status}</span>
+
           {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
             <button className={styles.zoomReset} 
               onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
@@ -349,7 +350,21 @@ export default function Workspace({ params }: { params: { session_id: string } }
               {masksVisible ? "Hide Masks" : "Show Masks"}
             </button>
             <button className={styles.actionBtn} disabled={!segDone}
-              onClick={refineMode ? saveRefinements : enterRefineMode}>
+              onClick={
+                refineMode
+                  ? () => {
+                      saveRefinements();
+                      setMasksVisible(b => !b);
+                      setStatus("Edited masks saved!")
+
+                    }
+                  : () => {
+                      setMasksVisible(b => !b);
+                      enterRefineMode();
+                      setStatus("You can refine the seg mask by moving the verticles on the polygon contour. \n Use space + mouse to pan around!")
+                    }
+                  
+                }>
               <Sliders size={14} /> {refineMode ? "Save Refinements" : "Refine Masks"}
             </button>
             {refineMode && (
