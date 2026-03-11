@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from typing import Dict
 import cv2 as cv
+import torch
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images, segment, ground_truths, masks
 from app.api.live_models import AvailableModels
@@ -36,6 +37,17 @@ formatter = logging.Formatter(
 file_handler.setFormatter(formatter)
 routes_logger.addHandler(file_handler)
 
+def get_device() -> str:
+    """Pick the best available device at startup."""
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif torch.backends.mps.is_available():
+        device = "mps"
+    else:
+        device = "cpu"
+    routes_logger.info(f"[STARTUP] Using device: {device}")
+    return device
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cleanup_old_sessions(force=True)
@@ -47,24 +59,6 @@ async def lifespan(app: FastAPI):
     }
     app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.warmed_up = False
-
-    # Make a dummy req to warm up SAM in the YoloSAM pipeline
-    # warmup up in a diff thread to prevent blocking of server
-    # async def warmup():
-    #     loop = asyncio.get_event_loop()
-    #
-    #     def _warmup():
-    #         yolosam = app.state.models[AvailableModels.yolosam]
-    #         dummy = np.zeros((512, 512, 3), dtype=np.uint8)
-    #         cv.circle(dummy, (256, 256), 50, (255, 255, 255), -1)
-    #         yolosam.segment(dummy)  # warms both YOLO and SAM via the shared predictor
-    #
-    #     with ThreadPoolExecutor() as pool:
-    #         await loop.run_in_executor(pool, _warmup)
-    #
-    #     app.state.warmed_up = True
-    #     routes_logger.info("Models warmed up")
-    # asyncio.create_task(warmup())
     yield
 
 
