@@ -80,10 +80,16 @@ export default function Workspace() {
       if (!sessionId) return;
       const result = await saveInstances(sessionId, updated);
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+      setZoom(1);           // reset on exit
+      setPan({ x: 0, y: 0 });
       setRefineMode(false);
       setStatus("Edited masks saved.");
     },
-    onDiscard: () => setRefineMode(false),
+    onDiscard: () => {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setRefineMode(false);
+    },
     imgWidth: imgSize.width || 1,
     imgHeight: imgSize.height || 1,
   });
@@ -163,6 +169,16 @@ export default function Workspace() {
 
   // separate state to hand fresh instances to refine hook on enter
   const [refineInstances, setRefineInstances] = useState<any[]>([]);
+
+  async function enterRefineMode() {
+    if (!sessionId) return;
+    setZoom(1);           // reset zoom before entering
+    setPan({ x: 0, y: 0 });  
+    const res = await getInstances(sessionId);
+    refine.reinit(res.instances);  // feed instances into hook
+    setRefineMode(true);
+    setStatus("Refine mode — drag vertices, space+drag to pan.");
+  }
 
   // re-init refine hook when instances change
   // this is the clean way to reset a hook with new data
@@ -323,12 +339,24 @@ export default function Workspace() {
 
             {/*[ACTION]- refine masks */}
             <button className={styles.actionBtn} disabled={!seg.segDone}
-              onClick={refineMode ? refine.handleSave : enterRefineMode}>
+              onClick={
+                refineMode
+                  ? () => {
+                      refine.handleSave();
+                      seg.setMasksVisible(b => !b);
+                    }
+                  : () => {
+                      enterRefineMode();
+                      seg.setMasksVisible(b => !b);
+                    }
+              }
+              >
               <Sliders size={14} />
               {refineMode
                 ? (refine.isSaving ? "Saving..." : "Save Refinements")
                 : "Refine Masks"}
             </button>
+
             {/* discard all changes made while refining masks*/}
             {refineMode && (
               <button className={styles.actionBtn} onClick={refine.handleDiscard}>
