@@ -168,3 +168,16 @@ export async function saveInstances(sessionId: string, instances: any[]) {
   return res.json();
 }
 
+export async function splitInstances(
+  sessionId: string,
+  instanceId: number,
+  points: [number, number][]
+): Promise<{ instances: Instance[] }> {
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/split`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instance_id: instanceId, points }),
+  });
+  if (!res.ok) throw new Error("Split failed");
+  return res.json();
+}
