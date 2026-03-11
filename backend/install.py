@@ -14,9 +14,9 @@ What it does:
 import subprocess
 import sys
 import platform
-import importlib.util
-import os
+from pathlib import Path
 from dotenv import load_dotenv
+from src.app.models.helpers.settings import Settings
 
 
 
@@ -87,6 +87,15 @@ def torch_install_cmd(device: str) -> list[str]:
             "--index-url", index,
         ]
 
+def is_lfs_pointer(path: Path) -> bool:
+    """LFS pointer files are <200 bytes and start with 'version https://git-lfs'"""
+    if path.stat().st_size > 1000:
+        return False
+    try:
+        content = path.read_text(errors="ignore")
+        return content.startswith("version https://git-lfs")
+    except Exception:
+        return False
 
 def check_weights(settings):
     """
@@ -96,17 +105,38 @@ def check_weights(settings):
 
     weights = {
         "SAM ViT-B": Path(settings.SAM_MODEL_PATH),
-        "YOLO ": Path(settings.YOLO_MODEL_PATH),  # adjust filename to match yours
+        "YOLO ": Path(settings.YOLO_MODEL_PATH),
     }
 
     missing = []
+    lfs_pointers = []
+
     print("\n  [weights] Checking model weights...")
     for name, path in weights.items():
-        if path.exists():
-            print(f"  [weights] ✓ {name} → {path}")
-        else:
-            print(f"  [weights] ✗ {name} → {path}  (MISSING)")
+        if not path.exists():
+            print(f"  [weights] MISSING  {name} -> {path}")
             missing.append((name, path))
+        elif is_lfs_pointer(path):
+            print(f"  [weights] LFS POINTER  {name} -> {path}  (not downloaded yet)")
+            lfs_pointers.append((name, path))
+        else:
+            size_mb = path.stat().st_size / 1_000_000
+            print(f"  [weights]  ok  {name} -> {path}  ({size_mb:.0f} MB)")
+
+    if lfs_pointers:
+        print("\n  -- LFS pointer files found -- run these to download actual weights:")
+        print("\n    git lfs install")
+        print("    git lfs pull\n")
+        print("  If git-lfs is not installed: https://git-lfs.com")
+        print("  If on a network that blocks LFS, download manually:")
+        # for name, path in lfs_pointers:
+        #     if "SAM" in name:
+        #         print(f"\n    SAM ViT-B (~375 MB):")
+        #         print(f"    https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth")
+        #         print(f"    Save to: {path.resolve()}")
+        #     else:
+        #         print(f"\n    {name}: copy from another machine to {path.resolve()}")
+        return False
 
     if missing:
         print("\n  ── Missing weights ──────────────────────────────────────────")
@@ -126,11 +156,6 @@ def check_weights(settings):
 
 def main():
     load_dotenv()
-
-    class Settings:
-        YOLO_MODEL_PATH = os.environ.get("YOLO_MODEL_PATH")
-        SAM_MODEL_PATH = os.environ.get("SAM_MODEL_PATH")
-        MASKRCNN_MODEL_PATH= os.environ.get("MASKRCNN_MODEL_PATH")
 
     settings = Settings()
 
