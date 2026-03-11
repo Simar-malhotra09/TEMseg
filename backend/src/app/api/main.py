@@ -54,8 +54,8 @@ async def lifespan(app: FastAPI):
 
     # initalize on startup, 
     app.state.models = {
-        AvailableModels.yolosam: YoloSam(nano_config, device="cpu"),
-        AvailableModels.maskrcnn: MaskRCNN(house_config, device="cpu"),
+        AvailableModels.yolosam: YoloSam(nano_config, device=get_device()),
+        AvailableModels.maskrcnn: MaskRCNN(house_config, device=get_device()),
     }
     app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.warmed_up = False
