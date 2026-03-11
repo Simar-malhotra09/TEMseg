@@ -1,22 +1,32 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
-
-interface Instance {
-  id: number;
-  contour: [number, number][];
-  bbox: { x: number; y: number; w: number; h: number };
-  area: number;
-}
+import { useRef, useCallback, useState, useEffect } from "react";
+import { Instance } from "@/lib/types";
+import { ViewBox } from "../hooks/useRefineState";
 
 interface Props {
+  // display
   imageSrc: string;
   width: number;
   height: number;
   imgWidth: number;
   imgHeight: number;
+
+  // data — rendered as-is, no local copy
   instances: Instance[];
-  onChange: (instances: Instance[]) => void;
+  selectedId: number | null;
+  viewBox: ViewBox;
+  splitMode: boolean;
+  splitPoints: [number, number][];
+
+  // events — all business logic handled by parent via useRefineState
+  onSelect: (id: number) => void;
+  onDeselect: () => void;
+  onVertexDragEnd: (instId: number, vi: number, pos: [number, number]) => void;
+  onVertexDelete: (instId: number, vi: number) => void;
+  onEdgeClick: (instId: number, pos: [number, number]) => void;
+  onSplitPointPlace: (pos: [number, number]) => void;
+  onViewBoxChange: (vb: ViewBox) => void;
 }
 
 const COLORS = [
@@ -27,105 +37,57 @@ const COLORS = [
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 20;
-const VERTEX_RADIUS = 5;   // screen-space px, scaled by s2i for SVG
-const EDGE_HIT_WIDTH = 8;  // screen-space px for invisible edge hit area
+const VERTEX_RADIUS = 5;  // constant screen-space px
+const EDGE_HIT_WIDTH = 8; // constant screen-space px
 
 export default function RefineCanvas({
-  imageSrc, width, height, imgWidth, imgHeight, instances, onChange
+  imageSrc, width, height, imgWidth, imgHeight,
+  instances, selectedId, viewBox, splitMode, splitPoints,
+  onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
+  onEdgeClick, onSplitPointPlace, onViewBoxChange,
 }: Props) {
 
-  // localInstances is the source of truth while in refine mode.
-  // it is initialized from props once, and never re-synced from parent
-  // to avoid overwriting in-progress edits.
-  // onChange notifies parent after every committed edit.
-  const [localInstances, setLocalInstances] = useState<Instance[]>(instances);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: imgWidth, h: imgHeight });
-
-  // all mutable interaction state lives in refs to avoid stale closures
-  const instancesRef = useRef<Instance[]>(instances);  // always current, read in handlers
-  const draggingVertex = useRef<{ instId: number; vi: number } | null>(null);
-  const panStart = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
-  const isSpaceDown = useRef(false);
+  // pure interaction refs — no business logic, just mechanics
   const svgRef = useRef<SVGSVGElement>(null);
-
-  // keep instancesRef in sync with state 
-  useEffect(() => {
-    instancesRef.current = localInstances;
-  }, [localInstances]);
-
-  // helper: commit a new instances array to both local state and parent
-  const commit = useCallback((updated: Instance[]) => {
-    instancesRef.current = updated;  // update ref immediately, before re-render
-    setLocalInstances(updated);
-    onChange(updated);
-  }, [onChange]);
-
-  // keyboard: space = pan mode toggle, backspace/delete = remove selected instance
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !e.repeat) {
-        e.preventDefault();
-        isSpaceDown.current = true;
-        if (svgRef.current) svgRef.current.style.cursor = "grab";
-      }
-      if ((e.key === "Backspace" || e.key === "Delete") && selectedId !== null) {
-        const updated = instancesRef.current.filter(i => i.id !== selectedId);
-        setSelectedId(null);
-        commit(updated);
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        isSpaceDown.current = false;
-        if (svgRef.current) svgRef.current.style.cursor = "default";
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  // only selectedId matters here — instancesRef is always current via ref
-  }, [selectedId, commit]);
-
-  // convert screen mouse position to SVG/image-space coordinates
-  // uses getScreenCTM so it is immune to CSS transforms on parent elements
-  const mouseToImageSpace = useCallback((e: React.MouseEvent): [number, number] => {
-    const svg = svgRef.current!;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const svgPt = pt.matrixTransform(svg.getScreenCTM()!.inverse());
-    return [svgPt.x, svgPt.y];
-  }, []);
+  const isSpaceDown = useRef(false);
+  const panStart = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
+  // tracks which vertex is being dragged and its live position during drag
+  const draggingVertex = useRef<{ instId: number; vi: number; pos: [number, number] } | null>(null);
+  // local render-only state for smooth vertex drag — does not go to parent until mouseup
+  const [dragPos, setDragPos] = useLocalDragState();
 
   // scale factor: image pixels per screen pixel at current zoom
-  // used to keep vertex radius and stroke width visually constant
+  // used to keep stroke widths and vertex sizes visually constant
   const s2i = viewBox.w / width;
 
-  // wheel zoom: zooms toward cursor position, clamped to MIN/MAX_ZOOM
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  // convert screen coords to image-space via SVG matrix
+  // immune to any CSS transforms on parent elements
+  const toImageSpace = useCallback((clientX: number, clientY: number): [number, number] => {
     const svg = svgRef.current!;
     const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const { x: mx, y: my } = pt.matrixTransform(svg.getScreenCTM()!.inverse());
-    const factor = e.deltaY > 0 ? 1.1 : 0.9;
-    setViewBox(vb => {
-      const newW = Math.min(Math.max(vb.w * factor, imgWidth / MAX_ZOOM), imgWidth / MIN_ZOOM);
-      const newH = Math.min(Math.max(vb.h * factor, imgHeight / MAX_ZOOM), imgHeight / MIN_ZOOM);
-      return {
-        w: newW, h: newH,
-        x: Math.min(Math.max(mx - (mx - vb.x) * (newW / vb.w), 0), imgWidth - newW),
-        y: Math.min(Math.max(my - (my - vb.y) * (newH / vb.h), 0), imgHeight - newH),
-      };
-    });
-  }, [imgWidth, imgHeight]);
+    pt.x = clientX;
+    pt.y = clientY;
+    const { x, y } = pt.matrixTransform(svg.getScreenCTM()!.inverse());
+    return [x, y];
+  }, []);
 
-  // mousedown: start pan (space held) or deselect (click background)
+  // keyboard: space = pan, backspace/delete = delete selected
+  // note: delete is handled in parent via useRefineState — canvas just needs space for pan
+  useSpaceKey(svgRef, isSpaceDown);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const [mx, my] = toImageSpace(e.clientX, e.clientY);
+    const factor = e.deltaY > 0 ? 1.1 : 0.9;
+    const newW = Math.min(Math.max(viewBox.w * factor, imgWidth / MAX_ZOOM), imgWidth / MIN_ZOOM);
+    const newH = Math.min(Math.max(viewBox.h * factor, imgHeight / MAX_ZOOM), imgHeight / MIN_ZOOM);
+    onViewBoxChange({
+      w: newW, h: newH,
+      x: Math.min(Math.max(mx - (mx - viewBox.x) * (newW / viewBox.w), 0), imgWidth - newW),
+      y: Math.min(Math.max(my - (my - viewBox.y) * (newH / viewBox.h), 0), imgHeight - newH),
+    });
+  }, [viewBox, imgWidth, imgHeight, toImageSpace, onViewBoxChange]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (isSpaceDown.current) {
       e.preventDefault();
@@ -133,90 +95,61 @@ export default function RefineCanvas({
       if (svgRef.current) svgRef.current.style.cursor = "grabbing";
       return;
     }
+    if (splitMode) {
+      onSplitPointPlace(toImageSpace(e.clientX, e.clientY));
+      return;
+    }
     const tag = (e.target as Element).tagName;
-    if (tag === "svg" || tag === "image") setSelectedId(null);
-  }, [viewBox]);
+    if (tag === "svg" || tag === "image") onDeselect();
+  }, [viewBox, splitMode, toImageSpace, onSplitPointPlace, onDeselect]);
 
-  // mousemove: pan (if panStart set) or drag vertex (if draggingVertex set)
-  // reads instancesRef directly — never closes over localInstances state
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (panStart.current) {
       const { vx, vy, mx, my } = panStart.current;
-      setViewBox(vb => ({
-        ...vb,
-        x: Math.min(Math.max(vx - (e.clientX - mx) / width * vb.w, 0), imgWidth - vb.w),
-        y: Math.min(Math.max(vy - (e.clientY - my) / height * vb.h, 0), imgHeight - vb.h),
-      }));
+      onViewBoxChange({
+        ...viewBox,
+        x: Math.min(Math.max(vx - (e.clientX - mx) / width * viewBox.w, 0), imgWidth - viewBox.w),
+        y: Math.min(Math.max(vy - (e.clientY - my) / height * viewBox.h, 0), imgHeight - viewBox.h),
+      });
       return;
     }
     if (draggingVertex.current) {
-      const [ix, iy] = mouseToImageSpace(e);
-      const { instId, vi } = draggingVertex.current;
-      // read from ref — always current even after previous drags
-      const updated = instancesRef.current.map(inst => inst.id !== instId ? inst : {
-        ...inst,
-        contour: inst.contour.map((pt, i) => i === vi ? [ix, iy] as [number, number] : pt),
-      });
-      // update ref immediately so next mousemove sees the new positions
-      instancesRef.current = updated;
-      setLocalInstances(updated);
-      // note: we do NOT call onChange during drag — only on mouseup
+      const pos = toImageSpace(e.clientX, e.clientY);
+      draggingVertex.current.pos = pos;
+      // update local render state for smooth drag — parent not notified until mouseup
+      setDragPos({ instId: draggingVertex.current.instId, vi: draggingVertex.current.vi, pos });
     }
-  }, [width, height, imgWidth, imgHeight, mouseToImageSpace]);
+  }, [viewBox, width, height, imgWidth, imgHeight, toImageSpace, onViewBoxChange, setDragPos]);
 
-  // mouseup: finalize drag and notify parent
   const handleMouseUp = useCallback(() => {
     if (draggingVertex.current) {
       // commit final position to parent only on release
-      onChange(instancesRef.current);
+      const { instId, vi, pos } = draggingVertex.current;
+      onVertexDragEnd(instId, vi, pos);
+      setDragPos(null);
     }
     draggingVertex.current = null;
     panStart.current = null;
     if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : "default";
-  }, [onChange]);
-
-  // edge click: insert a new vertex at the midpoint of the closest edge
-  const handleEdgeClick = useCallback((e: React.MouseEvent, instId: number) => {
-    e.stopPropagation();
-    const [mx, my] = mouseToImageSpace(e);
-    const inst = instancesRef.current.find(i => i.id === instId);
-    if (!inst) return;
-
-    const n = inst.contour.length;
-    let bestIdx = 0, bestDist = Infinity;
-
-    for (let i = 0; i < n; i++) {
-      const [ax, ay] = inst.contour[i];
-      const [bx, by] = inst.contour[(i + 1) % n];
-      const dx = bx - ax, dy = by - ay;
-      const lenSq = dx * dx + dy * dy;
-      const t = lenSq > 0 ? Math.max(0, Math.min(1, ((mx - ax) * dx + (my - ay) * dy) / lenSq)) : 0;
-      const dist = Math.sqrt((ax + t * dx - mx) ** 2 + (ay + t * dy - my) ** 2);
-      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
-    }
-
-    const [ax, ay] = inst.contour[bestIdx];
-    const [bx, by] = inst.contour[(bestIdx + 1) % n];
-    const newContour = [
-      ...inst.contour.slice(0, bestIdx + 1),
-      [(ax + bx) / 2, (ay + by) / 2] as [number, number],
-      ...inst.contour.slice(bestIdx + 1),
-    ];
-    commit(instancesRef.current.map(i => i.id === instId ? { ...i, contour: newContour } : i));
-  }, [mouseToImageSpace, commit]);
-
-  // vertex double-click: delete vertex (minimum 3 vertices enforced)
-  const handleVertexDelete = useCallback((instId: number, vi: number) => {
-    const inst = instancesRef.current.find(i => i.id === instId);
-    if (!inst || inst.contour.length <= 3) return;
-    commit(instancesRef.current.map(i => i.id !== instId ? i : {
-      ...i,
-      contour: i.contour.filter((_, idx) => idx !== vi),
-    }));
-  }, [commit]);
+  }, [onVertexDragEnd, setDragPos]);
 
   const pointsStr = (contour: [number, number][]) =>
     contour.map(([x, y]) => `${x},${y}`).join(" ");
+
+  // get live vertex position — use drag position during drag, contour otherwise
+  const getVertexPos = (instId: number, vi: number, contourPt: [number, number]): [number, number] => {
+    if (dragPos && dragPos.instId === instId && dragPos.vi === vi) return dragPos.pos;
+    return contourPt;
+  };
+
+  // get live points string — applies drag offset to the dragged vertex only
+  const getLivePointsStr = (inst: Instance): string => {
+    if (!dragPos || dragPos.instId !== inst.id) return pointsStr(inst.contour);
+    return inst.contour.map((pt, i) => {
+      const [x, y] = getVertexPos(inst.id, i, pt);
+      return `${x},${y}`;
+    }).join(" ");
+  };
 
   return (
     <svg
@@ -224,14 +157,13 @@ export default function RefineCanvas({
       width={width}
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      style={{ display: "block", cursor: "default", userSelect: "none" }}
+      style={{ display: "block", userSelect: "none", cursor: splitMode ? "crosshair" : "default" }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* image rendered at full natural resolution — viewBox handles zoom/pan */}
       <image
         href={imageSrc}
         x={0} y={0}
@@ -240,62 +172,113 @@ export default function RefineCanvas({
         style={{ imageRendering: "crisp-edges" }}
       />
 
-      {localInstances.map((inst, i) => {
+      {instances.map((inst, i) => {
         const color = COLORS[i % COLORS.length];
         const isSelected = inst.id === selectedId;
-        const pts = pointsStr(inst.contour);
+        const pts = getLivePointsStr(inst);
 
         return (
           <g key={inst.id}>
-
-            {/* visible polygon fill and outline */}
             <polygon
               points={pts}
               fill={`${color}33`}
               stroke={color}
               strokeWidth={isSelected ? 2.5 * s2i : 1.5 * s2i}
               opacity={isSelected ? 1 : 0.7}
-              style={{ cursor: "pointer" }}
-              onClick={e => { e.stopPropagation(); setSelectedId(inst.id); }}
+              style={{ cursor: splitMode ? "crosshair" : "pointer" }}
+              onClick={e => {
+                e.stopPropagation();
+                if (!splitMode) onSelect(inst.id);
+              }}
             />
 
-            {isSelected && (
+            {isSelected && !splitMode && (
               <>
-                {/* wider invisible stroke over edges — clicking inserts a vertex */}
+                {/* wider invisible stroke over edges — click to insert vertex */}
                 <polygon
                   points={pts}
                   fill="none"
                   stroke="transparent"
                   strokeWidth={EDGE_HIT_WIDTH * 2 * s2i}
                   style={{ cursor: "cell" }}
-                  onClick={e => handleEdgeClick(e, inst.id)}
+                  onClick={e => {
+                    e.stopPropagation();
+                    onEdgeClick(inst.id, toImageSpace(e.clientX, e.clientY));
+                  }}
                 />
 
-                {/* vertex handles — drag to move, double-click to delete */}
-                {inst.contour.map(([x, y], vi) => (
-                  <circle
-                    key={`v-${inst.id}-${vi}`}
-                    cx={x} cy={y}
-                    r={VERTEX_RADIUS * s2i}
-                    fill={color}
-                    stroke="#fff"
-                    strokeWidth={1.5 * s2i}
-                    style={{ cursor: "move" }}
-                    onMouseDown={e => {
-                      e.stopPropagation();
-                      draggingVertex.current = { instId: inst.id, vi };
-                    }}
-                    onDoubleClick={e => {
-                      e.stopPropagation();
-                      handleVertexDelete(inst.id, vi);
-                    }}
-                  />
-                ))}
+                {/* vertex handles */}
+                {inst.contour.map((pt, vi) => {
+                  const [x, y] = getVertexPos(inst.id, vi, pt);
+                  return (
+                    <circle
+                      key={`v-${inst.id}-${vi}`}
+                      cx={x} cy={y}
+                      r={VERTEX_RADIUS * s2i}
+                      fill={color}
+                      stroke="#fff"
+                      strokeWidth={1.5 * s2i}
+                      style={{ cursor: "move" }}
+                      onMouseDown={e => {
+                        e.stopPropagation();
+                        draggingVertex.current = { instId: inst.id, vi, pos: pt };
+                      }}
+                      onDoubleClick={e => {
+                        e.stopPropagation();
+                        onVertexDelete(inst.id, vi);
+                      }}
+                    />
+                  );
+                })}
               </>
             )}
           </g>
         );
       })}
+
+      {/* split point markers — on top of everything */}
+      {splitMode && splitPoints.map(([x, y], i) => (
+        <g key={`sp-${i}`} style={{ pointerEvents: "none" }}>
+          <circle cx={x} cy={y} r={10 * s2i} fill="none" stroke="#fff" strokeWidth={2 * s2i} opacity={0.8} />
+          <circle cx={x} cy={y} r={4 * s2i} fill="#fff" opacity={0.9} />
+          <text x={x + 12 * s2i} y={y + 4 * s2i} fontSize={12 * s2i} fill="#fff">{i + 1}</text>
+        </g>
+      ))}
     </svg>
   );
+}
+
+// local drag position — smooth vertex rendering during drag, never sent to parent
+// parent only receives final position on mouseup via onVertexDragEnd
+function useLocalDragState() {
+  const [dragPos, setDragPos] = useState<{ instId: number; vi: number; pos: [number, number] } | null>(null);
+  return [dragPos, setDragPos] as const;
+}
+
+// space key — pan mode cursor management only, no business logic
+function useSpaceKey(
+  svgRef: React.RefObject<SVGSVGElement | null>,
+  isSpaceDown: React.MutableRefObject<boolean>
+) {
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        e.preventDefault();
+        isSpaceDown.current = true;
+        if (svgRef.current) svgRef.current.style.cursor = "grab";
+      }
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        isSpaceDown.current = false;
+        if (svgRef.current) svgRef.current.style.cursor = "default";
+      }
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, [isSpaceDown, svgRef]);
 }
