@@ -38,7 +38,7 @@ routes_logger.addHandler(file_handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    cleanup_old_sessions()
+    cleanup_old_sessions(force=True)
 
     # initalize on startup, 
     app.state.models = {
@@ -90,12 +90,15 @@ def get_models():
     return [model.value for model in AvailableModels]
 
 
-def cleanup_old_sessions(max_age_hours: int = 24):
+def cleanup_old_sessions(max_age_hours: int = 24, force=False):
     sessions_dir = Path("sessions")
     
     if not sessions_dir.exists():
         return
+
     now = time.time()
+    if force: 
+        max_age_hours=0
     for session in sessions_dir.iterdir():
         if not session.is_dir():
             continue
