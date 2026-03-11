@@ -120,6 +120,7 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
       onMouseUp={handleMouseUp}
     >
       <Layer ref={layerRef}>
+        <KonvaImage image={image} width={width} height={height} />
         {rects.map(rect => {
           const scaled = scaleToViewport(rect);
           return (
