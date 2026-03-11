@@ -16,7 +16,7 @@ from app.models.helpers.compute_stats import (
 @dataclass
 class SubModelConfig:
     name: str
-    path: str
+    path: str | Path
 
 ''' 
 Stores multiple Sub models 
