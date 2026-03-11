@@ -1,17 +1,15 @@
 from typing import List, Dict, Any
 from pathlib import Path 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse
 import logging
 import time
 import cv2 as cv
 import numpy as np
-from app.models.base_model import SubModelConfig, ModelConfig, StatType, StatsConfig, StatsResult
-from app.models.impls.yolosam import YoloSam
-from app.models.impls.maskrcnn import MaskRCNN
-from app.models.helpers.config import nano_config, house_config
+from app.models.base_model import  StatType, StatsConfig
 from app.api.live_models import AvailableModels
 from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions, colorize_components_inplace, batch_seg_patches
+from app.api.instances import extract_instances
+
 from pydantic import BaseModel
 
 
@@ -168,6 +166,16 @@ async def segment(req: SegmentRequest, request: Request):
         f"(load={t_load:.3f} | infer={t_inference:.3f} | "
         f"colorize={t_colorize:.3f} | save={t_save:.3f} | stats={t_stats:.3f})"
     )
+
+    # ── save the instances in instance.json ──────────────────────────────────────────
+    logger.info(f"[SEG] Pre-computing instances for session={req.session_id}")
+    try:
+        binary = (mask > 0).astype(np.uint8)
+        instances, _ = extract_instances(binary, session_dir, save=True)
+        logger.info(f"[SEG] Pre-computed {len(instances)} instances and saved to disk")
+    except Exception as e:
+        # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
+        logger.warning(f"[SEG] Instance pre-computation failed (non-fatal): {e}")
 
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",
