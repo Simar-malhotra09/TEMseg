@@ -130,11 +130,11 @@ export default function Workspace() {
   // run segmentation — reads live region refs, passes values into hook
   async function handleRunSegmentation() {
     if (!sessionId || !selectedModel) return;
-    const activeRegions = seg.inverseBlackoutMode
+    const activeRegions = seg.isInvBlackoutMode
       ? liveInverseRegionsRef.current
       : liveRegionsRef.current;
-    const blackout = !seg.inverseBlackoutMode && liveRegionsRef.current.length > 0;
-    const inverse = seg.inverseBlackoutMode && liveInverseRegionsRef.current.length > 0;
+    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
     setStatus(`Running ${selectedModel}...`);
     const msg = await seg.runSegmentation(activeRegions, blackout, inverse);
@@ -170,7 +170,7 @@ export default function Workspace() {
 
   // blackout apply
   function handleApplyBlackout() {
-    const regions = seg.inverseBlackoutMode
+    const regions = seg.isInvBlackoutMode
       ? liveInverseRegionsRef.current
       : liveRegionsRef.current;
     seg.applyBlackout(regions);
@@ -181,11 +181,11 @@ export default function Workspace() {
   function onGroundTruthFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const activeRegions = seg.inverseBlackoutMode
+    const activeRegions = seg.isInvBlackoutMode
       ? liveInverseRegionsRef.current
       : liveRegionsRef.current;
-    const blackout = !seg.inverseBlackoutMode && liveRegionsRef.current.length > 0;
-    const inverse = seg.inverseBlackoutMode && liveInverseRegionsRef.current.length > 0;
+    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
     seg.uploadGT(file, activeRegions, blackout, inverse);
     e.target.value = "";
   }
@@ -203,7 +203,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.blackoutMode || refineMode) return;
+    if (seg.isBlackoutMode || refineMode) return;
     e.preventDefault();
     isPanning.current = true;
     setPanning(true);
@@ -227,8 +227,8 @@ export default function Workspace() {
     });
   }
 
-  const activeRegions = seg.inverseBlackoutMode
-    ? seg.inverseBlackoutRegions
+  const activeRegions = seg.isInvBlackoutMode
+    ? seg.invBlackoutRegions
     : seg.blackoutRegions;
   const hasRegions = activeRegions.length > 0;
 
@@ -379,29 +379,29 @@ export default function Workspace() {
             <p className={styles.sidebarLabel}>Blackout Regions</p>
             <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
               <button
-                className={`${styles.actionBtn} ${!seg.inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => seg.setInverseBlackoutMode(false)}
+                className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                onClick={() => seg.setIsInvBlackoutMode(false)}
                 disabled={!image}
               >Exclude</button>
               <button
-                className={`${styles.actionBtn} ${seg.inverseBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => seg.setInverseBlackoutMode(true)}
+                className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                onClick={() => seg.setIsInvBlackoutMode(true)}
                 disabled={!image}
               >Isolate</button>
             </div>
             <button className={styles.actionBtn} disabled={!image}
-              onClick={() => { seg.setMasksVisible(false); seg.setBlackoutMode(b => !b); }}>
-              <Trash2 size={14} /> {seg.blackoutMode ? "Exit" : "Draw Regions"}
+              onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
+              <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
             </button>
-            {seg.blackoutMode && (
+            {seg.isBlackoutMode && (
               <button className={styles.actionBtn} onClick={handleApplyBlackout}>
                 Apply
               </button>
             )}
-            {hasRegions && !seg.blackoutMode && (
+            {hasRegions && !seg.isBlackoutMode && (
               <button className={styles.actionBtn} onClick={() => {
                 seg.clearRegions();
-                if (seg.inverseBlackoutMode) liveInverseRegionsRef.current = [];
+                if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
                 else liveRegionsRef.current = [];
                 setStatus("Regions cleared.");
               }}>
@@ -409,7 +409,7 @@ export default function Workspace() {
               </button>
             )}
             <p className={styles.sidebarHint}>
-              {seg.inverseBlackoutMode
+              {seg.isInvBlackoutMode
                 ? "Isolate: model only sees selected regions."
                 : "Exclude: model ignores selected regions."}
             </p>
@@ -465,12 +465,12 @@ export default function Workspace() {
                 position: "relative",
                 display: "inline-block",
                 lineHeight: 0,
-                transform: seg.blackoutMode || refineMode
+                transform: seg.isBlackoutMode || refineMode
                   ? "none"
                   : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                 transformOrigin: "center center",
                 transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                cursor: seg.blackoutMode || refineMode
+                cursor: seg.isBlackoutMode || refineMode
                   ? "default"
                   : panning ? "grabbing" : "grab",
               }}
@@ -482,7 +482,7 @@ export default function Workspace() {
                 className={styles.temImage}
                 style={{
                   display: "block", width: "100%", height: "100%",
-                  visibility: seg.blackoutMode || refineMode ? "hidden" : "visible",
+                  visibility: seg.isBlackoutMode || refineMode ? "hidden" : "visible",
                 }}
                 onLoad={e => setImgSize({
                   width: e.currentTarget.naturalWidth,
@@ -491,7 +491,7 @@ export default function Workspace() {
               />
 
               {/* blackout canvas */}
-              {seg.blackoutMode && imgSize.width > 0 && (
+              {seg.isBlackoutMode && imgSize.width > 0 && (
                 <div style={{ position: "absolute", top: 0, left: 0 }}>
                   <BlackoutCanvas
                     imageSrc={image} 
@@ -499,12 +499,12 @@ export default function Workspace() {
                     height={viewportSize.height}
                     imgWidth={imgSize.width}
                     imgHeight={imgSize.height}
-                    isInverse={seg.inverseBlackoutMode}
-                    initialRegions={seg.inverseBlackoutMode ? seg.inverseBlackoutRegions : seg.blackoutRegions}
+                    isInverse={seg.isInvBlackoutMode}
+                    initialRegions={seg.isInvBlackoutMode ? seg.invBlackoutRegions : seg.blackoutRegions}
                     onChange={regions => {
-                      if (seg.inverseBlackoutMode) {
+                      if (seg.isInvBlackoutMode) {
                         liveInverseRegionsRef.current = regions;
-                        seg.setInverseBlackoutRegions(regions);
+                        seg.setInvBlackoutRegions(regions);
                       } else {
                         liveRegionsRef.current = regions;
                         seg.setBlackoutRegions(regions);
