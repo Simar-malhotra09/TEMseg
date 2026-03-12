@@ -15,7 +15,8 @@ import subprocess
 import sys
 import platform
 from pathlib import Path
-from dotenv import load_dotenv
+
+from torch import onnx
 from src.app.models.helpers.settings import Settings
 
 
@@ -87,6 +88,13 @@ def torch_install_cmd(device: str) -> list[str]:
             "--index-url", index,
         ]
 
+def onnx_install_cmd(device:str):
+    if device == "cuda":
+        pip("install", "onnxruntime-gpu")
+    else:
+        pip("install", "onnxruntime")
+
+
 def is_lfs_pointer(path: Path) -> bool:
     """LFS pointer files are <200 bytes and start with 'version https://git-lfs'"""
     if path.stat().st_size > 1000:
@@ -106,6 +114,7 @@ def check_weights(settings):
     weights = {
         "SAM ViT-B": Path(settings.SAM_MODEL_PATH),
         "YOLO ": Path(settings.YOLO_MODEL_PATH),
+        "MaskRCNN": Path(settings.MASKRCNN_MODEL_PATH)
     }
 
     missing = []
@@ -155,7 +164,6 @@ def check_weights(settings):
 
 
 def main():
-    load_dotenv()
 
     settings = Settings()
 
@@ -173,6 +181,7 @@ def main():
     # step 2 — install torch
     print(f"\n[2/4] Installing torch 2.5.1 + torchvision 0.20.1 ({device})...")
     cmd = torch_install_cmd(device)
+    onnx_install_cmd(device)
     code = run(cmd)
     if code != 0:
         print("\n  ERROR: torch install failed. Check your internet connection and try again.")

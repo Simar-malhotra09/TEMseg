@@ -54,6 +54,20 @@ def cleanup(processes: list[subprocess.Popen]):
         if proc.poll() is None:
             proc.kill()
 
+def _wait_for_backend(port: int, timeout: int = 30):
+    import urllib.request
+    import urllib.error
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"http://localhost:{port}/models", timeout=1)
+            print("[start] Backend ready.")
+            return
+        except Exception:
+            time.sleep(0.5)
+    print("[start] WARNING: backend did not respond in time, starting frontend anyway.")
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Start TEM seg — backend + frontend")
@@ -89,6 +103,10 @@ def main():
         threading.Thread(
             target=stream_output, args=(backend, "backend"), daemon=True
         ).start()
+
+        # wait for backend to signal ready before starting frontend
+        print("[start] Waiting for backend to be ready...")
+        _wait_for_backend(args.port)
 
     # ── frontend ──────────────────────────────────────────────────────────────
     if not args.backend_only:
