@@ -80,12 +80,14 @@ export default function Workspace() {
       if (!sessionId) return;
       const result = await saveInstances(sessionId, updated);
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+      refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
       setZoom(1);           // reset on exit
       setPan({ x: 0, y: 0 });
       setRefineMode(false);
       setStatus("Edited masks saved.");
     },
     onDiscard: () => {
+      refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
       setZoom(1);
       setPan({ x: 0, y: 0 });
       setRefineMode(false);
@@ -154,35 +156,19 @@ export default function Workspace() {
     }
   }
 
-  // enter refine mode — load instances then activate
-  async function enterRefineMode() {
-    if (!sessionId) return;
-    const res = await getInstances(sessionId);
-    // reset refine hook with fresh instances
-    // we do this by passing instances to a wrapper that re-inits
-    refine.handleDiscard(); // clears state
-    // inject fresh instances — handled below via key trick
-    setRefineInstances(res.instances);
-    setRefineMode(true);
-    // setStatus("Refine mode — drag vertices, space+drag to pan.");
-  }
-
-  // separate state to hand fresh instances to refine hook on enter
-  const [refineInstances, setRefineInstances] = useState<any[]>([]);
 
   async function enterRefineMode() {
+    (document.activeElement as HTMLElement)?.blur();
     if (!sessionId) return;
     setZoom(1);           // reset zoom before entering
     setPan({ x: 0, y: 0 });  
     const res = await getInstances(sessionId);
     refine.reinit(res.instances);  // feed instances into hook
+    refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
     setRefineMode(true);
     setStatus("Refine mode — drag vertices, space+drag to pan.");
   }
 
-  // re-init refine hook when instances change
-  // this is the clean way to reset a hook with new data
-  const refineKey = refineInstances.length > 0 ? refineInstances[0].id : "empty";
 
   // blackout apply
   function handleApplyBlackout() {
@@ -343,11 +329,17 @@ export default function Workspace() {
                 refineMode
                   ? () => {
                       refine.handleSave();
-                      seg.setMasksVisible(b => !b);
+                      setTimeout(() => {
+                        seg.setMasksVisible(b => !b);
+                      }, 300);
+
                     }
                   : () => {
                       enterRefineMode();
-                      seg.setMasksVisible(b => !b);
+
+                      setTimeout(() => {
+                        seg.setMasksVisible(b => !b);
+                      }, 300);
                     }
               }
               >
