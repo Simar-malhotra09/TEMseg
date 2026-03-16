@@ -1,24 +1,10 @@
-"""
-install.py — run once on a fresh machine to set up the backend.
-
-Usage:
-  python install.py
-
-What it does:
-  1. Detects platform (Windows/Mac/Linux) and GPU availability
-  2. Installs the correct torch + torchvision build for your hardware
-  3. Installs all other dependencies from pyproject.toml
-  4. Checks for required model weights and tells you where to get them
-"""
-
 import subprocess
 import sys
 import platform
+import shutil
 from pathlib import Path
 
-from torch import onnx
 from src.app.models.helpers.settings import Settings
-
 
 
 def run(cmd: list[str], **kwargs) -> int:
@@ -27,72 +13,46 @@ def run(cmd: list[str], **kwargs) -> int:
     return result.returncode
 
 
-def pip(*args):
+def get_uv() -> list[str] | None:
+    """Return ['uv', 'pip'] if uv is available, else None."""
+    if shutil.which("uv"):
+        return ["uv", "pip"]
+    return None
+
+
+def pip_run(*args):
+    uv = get_uv()
+    if uv:
+        return run([*uv, *args])
     return run([sys.executable, "-m", "pip", *args])
 
 
 def detect_device() -> str:
-    """
-    Returns 'cuda', 'mps', or 'cpu'.
-    Tries to import torch if already installed to check cuda availability.
-    Falls back to platform heuristics.
-    """
-    # check for NVIDIA GPU on Windows/Linux via nvidia-smi
     if platform.system() in ("Windows", "Linux"):
-        result = subprocess.run(
-            ["nvidia-smi"], capture_output=True, text=True
-        )
+        result = subprocess.run(["nvidia-smi"], capture_output=True, text=True)
         if result.returncode == 0:
             print("  [detect] NVIDIA GPU found via nvidia-smi")
             return "cuda"
-
-    # check for Apple Silicon
     if platform.machine() == "arm64":
         print("  [detect] Apple Silicon detected → MPS")
         return "mps"
-
     print("  [detect] No GPU detected → CPU")
     return "cpu"
 
 
-def torch_install_cmd(device: str) -> list[str]:
-    """
-    Returns the pip install command for the correct torch build.
-    Uses torch 2.5.1 — latest stable with broad CUDA/platform support.
-    """
+def install_torch(device: str) -> int:
     base = ["torch==2.5.1", "torchvision==0.20.1"]
+    index = (
+        "https://download.pytorch.org/whl/cu121"
+        if device == "cuda"
+        else "https://download.pytorch.org/whl/cpu"
+    )
+    return pip_run("install", *base, "--index-url", index)
 
-    if device == "cuda":
-        # CUDA 12.1 — works on most modern NVIDIA GPUs (GTX 10xx and newer)
-        # if you have an older GPU with CUDA 11.8 support only, change cu121 → cu118
-        index = "https://download.pytorch.org/whl/cu121"
-        return [
-            sys.executable, "-m", "pip", "install",
-            *base,
-            "--index-url", index,
-        ]
-    elif device == "mps":
-        # standard PyPI torch has MPS support built in for Apple Silicon
-        index = "https://download.pytorch.org/whl/cpu"
-        return [
-            sys.executable, "-m", "pip", "install",
-            *base,
-            "--index-url", index,
-        ]
-    else:
-        # CPU only
-        index = "https://download.pytorch.org/whl/cpu"
-        return [
-            sys.executable, "-m", "pip", "install",
-            *base,
-            "--index-url", index,
-        ]
 
-def onnx_install_cmd(device:str):
-    if device == "cuda":
-        pip("install", "onnxruntime-gpu")
-    else:
-        pip("install", "onnxruntime")
+def install_onnx(device: str):
+    pkg = "onnxruntime-gpu" if device == "cuda" else "onnxruntime"
+    pip_run("install", pkg)
 
 
 def is_lfs_pointer(path: Path) -> bool:
@@ -105,6 +65,7 @@ def is_lfs_pointer(path: Path) -> bool:
     except Exception:
         return False
 
+
 def check_weights(settings):
     """
     Checks for required model weight files and prints download instructions if missing.
@@ -114,7 +75,7 @@ def check_weights(settings):
     weights = {
         "SAM ViT-B": Path(settings.SAM_MODEL_PATH),
         "YOLO ": Path(settings.YOLO_MODEL_PATH),
-        "MaskRCNN": Path(settings.MASKRCNN_MODEL_PATH)
+        "MaskRCNN": Path(settings.MASKRCNN_MODEL_PATH),
     }
 
     missing = []
@@ -138,13 +99,6 @@ def check_weights(settings):
         print("    git lfs pull\n")
         print("  If git-lfs is not installed: https://git-lfs.com")
         print("  If on a network that blocks LFS, download manually:")
-        # for name, path in lfs_pointers:
-        #     if "SAM" in name:
-        #         print(f"\n    SAM ViT-B (~375 MB):")
-        #         print(f"    https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth")
-        #         print(f"    Save to: {path.resolve()}")
-        #     else:
-        #         print(f"\n    {name}: copy from another machine to {path.resolve()}")
         return False
 
     if missing:
@@ -152,11 +106,13 @@ def check_weights(settings):
         for name, path in missing:
             if "SAM" in name:
                 print(f"\n  {name}:")
-                print(f"    Download from: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth")
+                print(
+                    "    Download from: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
+                )
                 print(f"    Save to:       {path}")
             elif "YOLO" in name:
                 print(f"\n  {name}:")
-                print(f"    This is your trained YOLO model — copy it from your Mac.")
+                print("    This is your trained YOLO model — copy it from your Mac.")
                 print(f"    Save to: {path}")
         print()
         return False
@@ -180,16 +136,20 @@ def main():
 
     # step 2 — install torch
     print(f"\n[2/4] Installing torch 2.5.1 + torchvision 0.20.1 ({device})...")
-    cmd = torch_install_cmd(device)
-    onnx_install_cmd(device)
-    code = run(cmd)
+    code = install_torch(device)
+    install_onnx(device)
     if code != 0:
-        print("\n  ERROR: torch install failed. Check your internet connection and try again.")
+        print(
+            "\n  ERROR: torch install failed. Check your internet connection and try again."
+        )
         sys.exit(1)
 
     # step 3 — install everything else from pyproject.toml
     print("\n[3/4] Installing project dependencies...")
-    code = pip("install", "-e", ".[dev]")
+    if shutil.which("uv"):
+        code = run(["uv", "sync", "--extra", "dev"])
+    else:
+        code = run([sys.executable, "-m", "pip", "install", "-e", ".[dev]"])
     if code != 0:
         print("\n  ERROR: dependency install failed.")
         sys.exit(1)

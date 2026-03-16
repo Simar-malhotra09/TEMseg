@@ -1,4 +1,3 @@
-
 """
 start.py — starts both the FastAPI backend and Next.js frontend.
 
@@ -10,13 +9,13 @@ Usage:
   python start.py --frontend-only
 """
 
+import argparse
+import os
+import platform
+import signal
 import subprocess
 import sys
-import argparse
-import platform
 import threading
-import os
-import signal
 import time
 from pathlib import Path
 
@@ -54,9 +53,10 @@ def cleanup(processes: list[subprocess.Popen]):
         if proc.poll() is None:
             proc.kill()
 
+
 def _wait_for_backend(port: int, timeout: int = 30):
     import urllib.request
-    import urllib.error
+
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -66,7 +66,6 @@ def _wait_for_backend(port: int, timeout: int = 30):
         except Exception:
             time.sleep(0.5)
     print("[start] WARNING: backend did not respond in time, starting frontend anyway.")
-
 
 
 def main():
@@ -84,10 +83,14 @@ def main():
     # ── backend ───────────────────────────────────────────────────────────────
     if not args.frontend_only:
         backend_cmd = [
-            sys.executable, "-m", "uvicorn",
+            sys.executable,
+            "-m",
+            "uvicorn",
             "app.api.main:app",
-            "--host", args.host,
-            "--port", str(args.port),
+            "--host",
+            args.host,
+            "--port",
+            str(args.port),
         ]
         if not args.no_reload:
             backend_cmd.append("--reload")
@@ -114,13 +117,17 @@ def main():
 
         if frontend_dir is None:
             print("[frontend] WARNING: could not find frontend directory — skipping.")
-            print("[frontend] Expected a 'frontend/' or 'web/' folder with package.json.")
+            print(
+                "[frontend] Expected a 'frontend/' or 'web/' folder with package.json."
+            )
         else:
             print(f"[frontend] Found at {frontend_dir}")
 
             # auto-install node_modules on first run
             if not (frontend_dir / "node_modules").exists():
-                print("[frontend] node_modules missing — running npm install (first time only)...")
+                print(
+                    "[frontend] node_modules missing — running npm install (first time only)..."
+                )
                 result = subprocess.run([npm_cmd(), "install"], cwd=frontend_dir)
                 if result.returncode != 0:
                     print("[frontend] ERROR: npm install failed. Is Node.js installed?")
@@ -129,7 +136,12 @@ def main():
                 print("[frontend] npm install complete.")
 
             frontend_env = {**os.environ, "PORT": str(args.frontend_port)}
-            print(f"[frontend] Starting on http://localhost:{args.frontend_port}")
+
+            print("\n")
+            print('*'*100)
+            print(f"[frontend] Starting on http://localhost:{args.frontend_port}/workspace/new")
+            print('*'*100)
+            print("\n")
 
             frontend = subprocess.Popen(
                 [npm_cmd(), "run", "dev"],
@@ -144,7 +156,9 @@ def main():
             ).start()
 
     if not processes:
-        print("Nothing started — check your setup or use --backend-only / --frontend-only.")
+        print(
+            "Nothing started — check your setup or use --backend-only / --frontend-only."
+        )
         sys.exit(1)
 
     print("\n  Both servers running. Press Ctrl+C to stop all.\n")
@@ -154,7 +168,9 @@ def main():
         while True:
             for proc in processes:
                 if proc.poll() is not None:
-                    print(f"\n  A server exited unexpectedly (code {proc.returncode}). Shutting everything down.")
+                    print(
+                        f"\n  A server exited unexpectedly (code {proc.returncode}). Shutting everything down."
+                    )
                     cleanup(processes)
                     sys.exit(1)
             time.sleep(1)
