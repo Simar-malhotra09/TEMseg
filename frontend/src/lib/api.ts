@@ -181,3 +181,16 @@ export async function splitInstances(
   if (!res.ok) throw new Error("Split failed");
   return res.json();
 }
+
+export async function exportSession(
+  sessionId: string,
+  items: string[]
+): Promise<Blob> {
+  const res = await fetch(`${BASE_URL}/export/${sessionId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) throw new Error("Export failed");
+  return res.blob();
+}
