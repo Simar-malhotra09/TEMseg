@@ -1,0 +1,146 @@
+.triggerBtn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #ccc;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+}
+.triggerBtn:hover:not(.triggerBtnDisabled) {
+  border-color: #7ee8a2;
+  color: #7ee8a2;
+}
+.triggerBtnDisabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* panel — pops up above the button */
+.panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  z-index: 50;
+  overflow: hidden;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+  min-width: 200px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.panelTitle {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #555;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #444;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.closeBtn:hover { color: #888; }
+
+.options {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.option:hover:not(.optionDisabled) { background: #1a1a1a; }
+
+.optionDisabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.checkbox {
+  accent-color: #7ee8a2;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  cursor: inherit;
+}
+
+.optionLabel {
+  font-size: 12px;
+  color: #ccc;
+  flex: 1;
+}
+
+.optionHint {
+  font-size: 10px;
+  color: #444;
+  flex-shrink: 0;
+}
+
+.panelFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-top: 1px solid #1e1e1e;
+  gap: 8px;
+}
+
+.selectAllBtn {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.selectAllBtn:hover { color: #888; }
+
+.downloadBtn {
+  flex: 1;
+  padding: 6px 10px;
+  background: #7ee8a2;
+  border: none;
+  border-radius: 4px;
+  color: #0d0d0d;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.downloadBtn:hover:not(:disabled) { background: #9df0b6; }
+.downloadBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
