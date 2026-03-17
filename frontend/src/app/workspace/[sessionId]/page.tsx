@@ -10,6 +10,7 @@ import {
 import { BASE_URL, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
 import BlackoutCanvas from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
+import ExportPanel from "./components/ExportPanel";
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
 
@@ -67,7 +68,7 @@ export default function Workspace() {
 
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
-
+  const [refineDone, setRefineDone] = useState(false);
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel });
 
@@ -81,8 +82,9 @@ export default function Workspace() {
       const result = await saveInstances(sessionId, updated);
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
-      setZoom(1);           // reset on exit
+      setZoom(1);
       setPan({ x: 0, y: 0 });
+      setRefineDone(true);   
       setRefineMode(false);
       setStatus("Edited masks saved.");
     },
@@ -315,7 +317,8 @@ export default function Workspace() {
             >
               <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
             </button>
-
+          </section>
+          <section>
             {/*[ACTION]- show/hide masks */}
             <button className={styles.actionBtn} disabled={!seg.segDone}
               onClick={() => seg.setMasksVisible(v => !v)}>
@@ -355,9 +358,16 @@ export default function Workspace() {
                 Discard
               </button>
             )} 
-            <button className={styles.actionBtn} disabled={!seg.segDone}>
-              <Download size={14} /> Export
-            </button>
+        </section>
+        <section>
+            {sessionId && (
+              <ExportPanel
+                sessionId={sessionId}
+                segDone={seg.segDone}
+                refineDone={refineDone}
+                hasStats={!!seg.stats}
+              />
+            )}
           </section>
 
           {/* split controls — only shown in refine mode */}
