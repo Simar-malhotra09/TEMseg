@@ -139,7 +139,7 @@ def main():
 
             print("\n")
             print('*'*100)
-            print(f"[frontend] Starting on http://localhost:{args.frontend_port}/workspace/new")
+            print(f"[frontend] Starting on http://localhost:{args.frontend_port}/workspace")
             print('*'*100)
             print("\n")
 
