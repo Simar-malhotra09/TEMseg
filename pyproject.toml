@@ -16,6 +16,7 @@ dependencies = [
   "python-multipart>=0.0.9",
   "onnx>=1.16.0",
   "onnxruntime>=1.24.3",
+  "pywebview>=6.1",
 ]
 
 [project.optional-dependencies]
