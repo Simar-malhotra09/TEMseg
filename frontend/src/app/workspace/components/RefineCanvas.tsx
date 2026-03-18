@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useState, useEffect } from "react";
-import { Instance } from "@/lib/types";
+import { Instance } from "@/lib/api";
 import { ViewBox } from "../hooks/useRefineState";
 
 interface Props {

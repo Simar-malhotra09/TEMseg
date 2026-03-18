@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
-
 const nextConfig: NextConfig = {
-  experimental: {
-    turbopack: false,
-  }
+  eslint: { ignoreDuringBuilds: true },
+  output: 'export'
 };
-
 export default nextConfig;

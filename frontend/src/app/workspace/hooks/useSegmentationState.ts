@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { segmentImage, uploadGroundTruth, computeGTScore } from "@/lib/api";
-import { BASE_URL } from "@/lib/api";
-import { StatsResult } from "@/lib/types";
+import { BASE_URL, StatsResult } from "@/lib/api";
+import { BlackoutRect } from "../components/BlackOutCanvas" 
 
 interface Options {
   sessionId: string | null;
@@ -19,11 +19,11 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
 
   // exclude/include regions 
   // committed: the regions that were used for the last valid seg; used for out-of-sync warning
-  const [blackoutRegions, setBlackoutRegions] = useState<any[]>([]);
-  const [invBlackoutRegions, setInvBlackoutRegions] = useState<any[]>([]);
-  const [committedRegions, setCommittedRegions] = useState<any[]>([]);
-  const [invCommittedRegions, serInvCommittedRegions] = useState<any[]>([]);
-  const [isInvBlackoutMode, setIsInvBlackoutMode] = useState(false); // which mode are we in?
+  const [blackoutRegions, setBlackoutRegions] = useState<BlackoutRect[]>([]);
+  const [invBlackoutRegions, setInvBlackoutRegions] = useState<BlackoutRect[]>([]);
+  const [committedRegions, setCommittedRegions] = useState<BlackoutRect[]>([]);
+  const [invCommittedRegions, setInvCommittedRegions] = useState<BlackoutRect[]>([]);
+  const [isInvBlackoutMode, setIsInvBlackoutMode] = useState(false);
   const [isBlackoutMode, setIsBlackoutMode] = useState(false);
 
   // ground truth
@@ -44,7 +44,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   // run segmentation 
   // the selected regions passed in from page.tsx refs
   const runSegmentation = useCallback(async (
-    activeRegions: any[],
+    activeRegions: BlackoutRect[],
     blackout: boolean,
     inverse: boolean,
   ): Promise<string | null> => {
@@ -55,7 +55,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
         sessionId, selectedModel, activeRegions, blackout, inverse
       );
       setCommittedRegions(blackout ? activeRegions : []);
-      serInvCommittedRegions(inverse ? activeRegions : []);
+      setInvCommittedRegions(inverse ? activeRegions : []);
       setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       setStats(result.stats);
       setSegDone(true);
@@ -72,7 +72,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   // compute GT score 
   // called after seg or after GT upload
   const scoreGroundTruth = useCallback(async (
-    activeRegions: any[],
+    activeRegions: BlackoutRect[],
     blackout: boolean,
     inverse: boolean,
   ) => {
@@ -90,7 +90,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   // upload GT file
   const uploadGT = useCallback(async (
     file: File,
-    activeRegions: any[],
+    activeRegions: BlackoutRect[],
     blackout: boolean,
     inverse: boolean,
   ) => {
@@ -109,7 +109,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   }, [sessionId, segDone, scoreGroundTruth]);
 
   // apply blackout — called when user clicks Apply in blackout mode
-  const applyBlackout = useCallback((regions: any[]) => {
+  const applyBlackout = useCallback((regions: BlackoutRect[]) => {
     if (isInvBlackoutMode) {
       setInvBlackoutRegions(regions);
     } else {
@@ -122,7 +122,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   const clearRegions = useCallback(() => {
     if (isInvBlackoutMode) {
       setInvBlackoutRegions([]);
-      serInvCommittedRegions([]);
+      setInvCommittedRegions([]);
     } else {
       setBlackoutRegions([]);
       setCommittedRegions([]);
@@ -138,7 +138,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
     setBlackoutRegions([]);
     setInvBlackoutRegions([]);
     setCommittedRegions([]);
-    serInvCommittedRegions([]);
+    setInvCommittedRegions([]);
     setIsInvBlackoutMode(false);
     setIsBlackoutMode(false);
     setGroundTruth(false);

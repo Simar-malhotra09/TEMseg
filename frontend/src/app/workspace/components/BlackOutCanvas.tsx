@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Rect, Transformer, Image as KonvaImage } from "react-konva";
+import Konva from "konva";
+
 import useImage from "use-image";
 
 export interface BlackoutRect {
@@ -18,7 +20,7 @@ interface Props {
   imgHeight: number;  // original image height
   width: number;      // viewport width
   height: number;     // viewport height
-  initalRegions?: BlackoutRect[]; // pre render regions if any stored in state
+  initialRegions?: BlackoutRect[]; // pre render regions if any stored in state
   isInverse: boolean; // true if inverse blackout 
   onChange: (regions: BlackoutRect[]) => void;
 }
@@ -30,20 +32,20 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<BlackoutRect | null>(null);
 
-  const transformerRef = useRef<any>(null);
-  const stageRef = useRef<any>(null);
-  const layerRef = useRef<any>(null);
+  const transformerRef = useRef<Konva.Transformer | null>(null);
+  const stageRef = useRef<Konva.Stage | null>(null);
+  const layerRef = useRef<Konva.Layer | null>(null);
 
   // attach transformer to selected rect
   useEffect(() => {
     if (!transformerRef.current || !layerRef.current) return;
     if (selectedId) {
       const node = layerRef.current.findOne(`#${selectedId}`);
-      transformerRef.current.nodes([node]);
+      if (node) transformerRef.current.nodes([node]);
     } else {
       transformerRef.current.nodes([]);
     }
-    transformerRef.current.getLayer().batchDraw();
+    transformerRef.current.getLayer()?.batchDraw();
   }, [selectedId]);
 
   // delete on backspace
@@ -61,15 +63,15 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
   }, [selectedId, rects]);
 
   // map viewport pointer -> image coordinates
-  const getPointerPos = (e: any) => {
-    const pos = e.target.getStage().getPointerPosition();
+  const getPointerPos = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const pos = e.target.getStage()?.getPointerPosition();
     if (!pos) return { x: 0, y: 0 };
     const scaleX = imgWidth / width;
     const scaleY = imgHeight / height;
     return { x: pos.x * scaleX, y: pos.y * scaleY };
   };
 
-  const handleMouseDown = (e: any) => {
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent> ) => {
     if (e.target === e.target.getStage() || e.target.getClassName() === "Image") {
       setSelectedId(null);
       const pos = getPointerPos(e);
@@ -77,7 +79,7 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
     }
   };
 
-  const handleMouseMove = (e: any) => {
+  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (!drawing) return;
     const pos = getPointerPos(e);
     setDrawing(d => d ? { ...d, width: pos.x - d.x, height: pos.y - d.y } : null);

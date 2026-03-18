@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { Instance } from "@/lib/types";
+import { Instance } from "@/lib/api";
 import { splitInstances } from "@/lib/api"
 
 export interface ViewBox {

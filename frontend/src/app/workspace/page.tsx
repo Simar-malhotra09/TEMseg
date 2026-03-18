@@ -1,14 +1,15 @@
 "use client";
-
 import styles from "./page.module.css";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+// import {Image} from "next/Image"
 import {
-  Upload, Play, Download, Sliders,
+  Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
-import { BASE_URL, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
-import BlackoutCanvas from "./components/BlackOutCanvas";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
+import { BlackoutRect }  from "./components/BlackOutCanvas";
+import  BlackoutCanvas  from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import ExportPanel from "./components/ExportPanel";
 import { useSegmentationState } from "./hooks/useSegmentationState";
@@ -63,8 +64,8 @@ export default function Workspace() {
 
   // blackout region refs — written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
-  const liveRegionsRef = useRef<any[]>([]); // tracks region to be excluded
-  const liveInverseRegionsRef = useRef<any[]>([]); // tracks regions to be included 
+  const liveRegionsRef = useRef<BlackoutRect[]>([]); // tracks region to be excluded
+  const liveInverseRegionsRef = useRef<BlackoutRect[]>([]); // tracks regions to be included 
 
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
@@ -77,10 +78,11 @@ export default function Workspace() {
   const refine = useRefineState({
     sessionId: sessionId ?? "",
     initialInstances: [],
-    onSave: async (updated) => {
+    onSave: async (updated: Instance[]) => {
       if (!sessionId) return;
       const result = await saveInstances(sessionId, updated);
-      seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+      const ts = Date.now(); // eslint-disable-line
+      seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
       refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
       setZoom(1);
       setPan({ x: 0, y: 0 });

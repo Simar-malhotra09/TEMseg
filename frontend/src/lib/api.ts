@@ -9,6 +9,15 @@ export interface Box {
   height: number;
 }
 
+// this already exists in BlackOutCanvas. low priority fix
+interface BlackoutRect {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface StatsResult {
   particle_count: number;
   avg_size: number;
@@ -19,7 +28,7 @@ export interface StatsResult {
 export interface SegmentResponse {
   model: string;
   mask_url: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, number>;
   stats: StatsResult;
   time_elapsed: number;
 }
@@ -133,7 +142,7 @@ export async function uploadGroundTruth(
 
 export async function computeGTScore(
   sessionId: string, 
-  regions: any[],
+  regions: BlackoutRect[],
   blackout: boolean = false,
   inverseBlackout: boolean = false,
 ) {
@@ -158,7 +167,7 @@ export async function getInstances(sessionId: string) {
   return res.json();
 }
 
-export async function saveInstances(sessionId: string, instances: any[]) {
+export async function saveInstances(sessionId: string, instances: Instance[]) {
   const res = await fetch(`${BASE_URL}/masks/${sessionId}/instances`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
