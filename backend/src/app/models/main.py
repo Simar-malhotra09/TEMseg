@@ -10,7 +10,6 @@ from app.models.helpers.compute_stats import (
     compute_coverage,
 )
 import torch
-import matplotlib.pyplot as plt
 
 BASE_DIR = Path(__file__).resolve().parents[2]  
 DATA_DIR = BASE_DIR / "data"
@@ -66,22 +65,4 @@ stats2 = compute_stats(result2.segmentation_mask, stats_config)
 
 print("MaskRCNN stats:", stats1)
 print("YoloSam stats:", stats2)
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
-axes[0].imshow(img1)
-axes[0].imshow(result1.segmentation_mask, alpha=0.5)
-axes[0].set_title("MaskRCNN")
-axes[0].axis("off")
-
-axes[1].imshow(img2)
-axes[1].imshow(result2.segmentation_mask, alpha=0.5)
-axes[1].set_title("YoloSam")
-axes[1].axis("off")
-
-plt.tight_layout()
-plt.show()
-
-print(result1.metadata)
-print(result2.metadata)
 

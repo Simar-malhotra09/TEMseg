@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import cv2 as cv
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from fastapi import APIRouter
@@ -273,25 +272,3 @@ class YoloSam(Model):
             },
             model=AvailableModels.yolosam,
         )
-
-    def plot(self, image, combined_mask):
-        if combined_mask is None:
-            print("Warning: No masks to visualize.")
-            return None
-
-        # squeeze extra dimensions
-        mask_to_plot = combined_mask.squeeze()
-
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.imshow(image)  # show original image
-
-        # overlay mask
-        ax.imshow(
-            np.ma.masked_where(mask_to_plot == 0, mask_to_plot),
-            cmap="nipy_spectral",
-            alpha=0.5,
-        )
-
-        ax.axis("off")
-        plt.tight_layout(pad=0)
-        plt.show()

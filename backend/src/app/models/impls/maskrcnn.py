@@ -8,9 +8,6 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 from typing import Dict, Any
 from pathlib import Path
-import matplotlib.pyplot as plt
-import matplotlib.patheffects as pe
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 from app.api.live_models import AvailableModels
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 from app.models.helpers.maskrcnn_utils import group_boxes_and_masks
@@ -142,21 +139,3 @@ class MaskRCNN(Model):
             model=AvailableModels.maskrcnn
         )
 
-    def plot(self, image, combined_mask):
-        if combined_mask is None:
-            print("Warning: No masks to visualize.")
-            return None
-
-        # squeeze extra dimensions
-        mask_to_plot = combined_mask.squeeze()
-
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.imshow(image)  # show original image
-
-        # overlay mask
-        ax.imshow(np.ma.masked_where(mask_to_plot == 0, mask_to_plot),
-                  cmap='nipy_spectral', alpha=0.5)
-
-        ax.axis("off")
-        plt.tight_layout(pad=0)
-        plt.show()
