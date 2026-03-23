@@ -1,122 +1,269 @@
 """
-launcher.py -- minimal PyWebView proof of concept.
-Starts the FastAPI backend, serves the static frontend, opens a desktop window.
+launcher.py — TEMseg desktop application launcher.
+
+Runs the FastAPI backend in-process (background thread), serves the static
+frontend, downloads model weights on first launch, and opens a PyWebView window.
+
+Works both frozen (PyInstaller .app) and in dev:
+    # Dev (from project root):
+    uv run launcher.py
+
+    # Frozen: double-click TEMseg.app
 """
 
 import json
-import subprocess
+import hashlib
+import logging
+import os
+import platform
 import sys
-import time
 import threading
-import urllib.request
+import time
 import urllib.error
-import webview
-from pathlib import Path
+import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
 
-ROOT = Path(__file__).parent
-FRONTEND_OUT = ROOT / "frontend" / "out"
-BACKEND_DIR = ROOT / "backend" / "src"
+import webview
 
-BACKEND_PORT = 8000
-FRONTEND_PORT = 3001  # different from dev port to avoid confusion
-BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
-
-
-class SPAHandler(SimpleHTTPRequestHandler):
-    """Serve index.html for any path that doesn't match a real file.
-    Required for Next.js static export with client-side routing."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(FRONTEND_OUT), **kwargs)
-
-    def do_GET(self):
-        # check if the requested path maps to a real file in out/
-        requested = Path(FRONTEND_OUT) / self.path.lstrip("/")
-        if not requested.exists() or requested.is_dir():
-            # fall back to index.html — let the client router handle it
-            self.path = "/index.html"
-        super().do_GET()
-
-    def log_message(self, format, *args):
-        pass  # suppress per-request logs
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
 
 
-class Api:
-    """Exposed to JS as window.pywebview.api"""
+def _is_frozen() -> bool:
+    return getattr(sys, "frozen", False)
 
-    def __init__(self, window_ref):
-        self._window_ref = window_ref
 
-    def export_zip(self, session_id: str, items: list[str]) -> dict:
-        """
-        Called from JS: window.pywebview.api.export_zip(sessionId, items)
-        Fetches ZIP from backend, opens native Save dialog, writes to disk.
-        Returns {success: bool, path?: str, error?: str}
-        """
+def _bundle_dir() -> Path:
+    """PyInstaller sets sys._MEIPASS to the temp extract dir."""
+    if _is_frozen():
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent
+
+
+def _project_root() -> Path:
+    """Project root — only meaningful in dev mode."""
+    return Path(__file__).parent
+
+
+def _frontend_out_dir() -> Path:
+    if _is_frozen():
+        return _bundle_dir() / "frontend_out"
+    return _project_root() / "frontend" / "out"
+
+
+def _weights_dir() -> Path:
+    """Where weights live at runtime."""
+    if _is_frozen():
+        system = platform.system()
+        if system == "Darwin":
+            return (
+                Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
+            )
+        elif system == "Windows":
+            return Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
+        else:
+            return Path.home() / ".local" / "share" / "TEMseg" / "weights"
+    # Dev: use backend/weights/
+    return _project_root() / "backend" / "weights"
+
+
+def _manifest_path() -> Path:
+    if _is_frozen():
+        return _bundle_dir() / "weight_manifest.json"
+    return _project_root() / "weight_manifest.json"
+
+
+def _backend_src_dir() -> Path:
+    """Backend source dir — needed for CWD so relative 'sessions/' works."""
+    if _is_frozen():
+        return _bundle_dir() / "backend_src"
+    return _project_root() / "backend" / "src"
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[launcher] %(message)s",
+)
+log = logging.getLogger("launcher")
+
+# ---------------------------------------------------------------------------
+# Weight downloading
+# ---------------------------------------------------------------------------
+
+
+def _load_manifest() -> list[dict]:
+    mp = _manifest_path()
+    if not mp.exists():
+        log.warning(f"Weight manifest not found at {mp}")
+        return []
+    with open(mp) as f:
+        data = json.load(f)
+    return data.get("weights", [])
+
+
+def _verify_sha256(filepath: Path, expected: str) -> bool:
+    """Check SHA256 of a downloaded file. Skip if placeholder."""
+    if not expected or "PLACEHOLDER" in expected.upper():
+        return True  # can't verify, assume ok
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest() == expected
+
+
+def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
+    """
+    Ensure all weights exist in the weights dir.
+    Returns (success: bool, message: str).
+
+    progress_callback(filename, percent) is called during download.
+    """
+    weights_dir = _weights_dir()
+    weights_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = _load_manifest()
+    if not manifest:
+        # No manifest — check if weights exist anyway (dev mode)
+        expected = ["best12x.onnx", "sam_vit_b_01ec64.pth", "maskrcnn_best_model.pth"]
+        missing = [f for f in expected if not (weights_dir / f).exists()]
+        if missing:
+            return False, f"Missing weights and no manifest to download from: {missing}"
+        return True, "All weights present"
+
+    for entry in manifest:
+        filename = entry["filename"]
+        url = entry.get("url", "")
+        sha256 = entry.get("sha256", "")
+        dest = weights_dir / filename
+
+        if dest.exists():
+            if _verify_sha256(dest, sha256):
+                log.info(f"Weight OK: {filename}")
+                continue
+            else:
+                log.warning(f"Checksum mismatch for {filename}, re-downloading")
+                dest.unlink()
+
+        if not url or "PLACEHOLDER" in url.upper():
+            return False, (
+                f"Weight '{filename}' is missing and no download URL is configured.\n"
+                f"Please place it manually in:\n{weights_dir}"
+            )
+
+        log.info(f"Downloading {filename} from {url}")
         try:
-            # fetch ZIP from backend
-            url = f"{BACKEND_URL}/export/{session_id}"
-            payload = json.dumps({"items": items}).encode("utf-8")
-            req = urllib.request.Request(
-                url,
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                zip_bytes = resp.read()
+            req = urllib.request.Request(url, headers={"User-Agent": "TEMseg/1.0"})
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                tmp = dest.with_suffix(".tmp")
+                with open(tmp, "wb") as out:
+                    while True:
+                        chunk = resp.read(1024 * 256)  # 256KB chunks
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total > 0:
+                            pct = int(downloaded / total * 100)
+                            progress_callback(filename, pct)
 
-            # native save dialog
-            save_path = self._window_ref.create_file_dialog(
-                webview.FileDialog.SAVE,
-                save_filename=f"temseg_export_{session_id[:8]}.zip",
-                file_types=("ZIP archive (*.zip)",),
-            )
+                # verify
+                if not _verify_sha256(tmp, sha256):
+                    tmp.unlink()
+                    return False, f"Checksum verification failed for {filename}"
 
-            if not save_path:
-                return {"success": False, "error": "cancelled"}
-
-            # save_path is a string on Windows, tuple on some platforms
-            dest = save_path if isinstance(save_path, str) else save_path[0]
-
-            Path(dest).write_bytes(zip_bytes)
-            return {"success": True, "path": dest}
+                tmp.rename(dest)
+                log.info(f"Downloaded: {filename}")
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return False, f"Failed to download {filename}: {e}"
+
+    return True, "All weights ready"
 
 
-def serve_frontend():
-    server = HTTPServer(("localhost", FRONTEND_PORT), SPAHandler)
+# ---------------------------------------------------------------------------
+# Frontend static server
+# ---------------------------------------------------------------------------
+
+FRONTEND_PORT = 3001
+
+
+def _make_spa_handler(directory: str):
+    """Create an SPA handler class bound to the given directory."""
+
+    class SPAHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=directory, **kwargs)
+
+        def do_GET(self):
+            requested = Path(directory) / self.path.lstrip("/")
+            if not requested.exists() or requested.is_dir():
+                self.path = "/index.html"
+            super().do_GET()
+
+        def log_message(self, format, *args):
+            pass
+
+    return SPAHandler
+
+
+def start_frontend_server():
+    out_dir = _frontend_out_dir()
+    if not out_dir.exists():
+        log.error(f"Frontend build not found at {out_dir}")
+        return
+    handler = _make_spa_handler(str(out_dir))
+    server = HTTPServer(("localhost", FRONTEND_PORT), handler)
+    log.info(f"Frontend serving on :{FRONTEND_PORT}")
     server.serve_forever()
 
 
-def start_backend():
-    """Start FastAPI backend as a subprocess."""
-    venv_python = ROOT / "backend" / "env312" / "Scripts" / "python.exe"
-    if not venv_python.exists():
-        # Mac/Linux path
-        venv_python = ROOT / "backend" / "env312" / "bin" / "python"
-    if not venv_python.exists():
-        # fall back to current interpreter
-        venv_python = Path(sys.executable)
+# ---------------------------------------------------------------------------
+# Backend (in-process via uvicorn)
+# ---------------------------------------------------------------------------
 
-    cmd = [
-        str(venv_python),
-        "-m",
-        "uvicorn",
+BACKEND_PORT = 8000
+
+
+def start_backend_server():
+    """Run the FastAPI app via uvicorn in the current thread."""
+    import uvicorn
+
+    # Set CWD so that relative paths (sessions/) resolve correctly
+    backend_src = _backend_src_dir()
+    os.chdir(str(backend_src))
+
+    # If frozen, tell settings.py where weights are
+    if _is_frozen():
+        os.environ["TEMSEG_WEIGHTS_DIR"] = str(_weights_dir())
+
+    # Add backend src to sys.path so imports work
+    src_str = str(backend_src)
+    if src_str not in sys.path:
+        sys.path.insert(0, src_str)
+
+    uvicorn.run(
         "app.api.main:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        str(BACKEND_PORT),
-    ]
-    return subprocess.Popen(cmd, cwd=BACKEND_DIR)
+        host="0.0.0.0",
+        port=BACKEND_PORT,
+        log_level="info",
+    )
 
 
-def wait_for_server(port: int, timeout: int = 30):
-    """Poll until server responds or timeout."""
+# ---------------------------------------------------------------------------
+# Wait helpers
+# ---------------------------------------------------------------------------
+
+
+def wait_for_server(port: int, timeout: int = 60) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -127,51 +274,189 @@ def wait_for_server(port: int, timeout: int = 30):
     return False
 
 
+# ---------------------------------------------------------------------------
+# PyWebView JS API bridge
+# ---------------------------------------------------------------------------
+
+
+class Api:
+    """Exposed to JS as window.pywebview.api"""
+
+    def __init__(self, window_ref):
+        self._window = window_ref
+
+    def export_zip(self, session_id: str, items: list[str]) -> dict:
+        """
+        Called from JS: window.pywebview.api.export_zip(sessionId, items)
+        Fetches ZIP from backend, opens native Save dialog, writes to disk.
+        """
+        try:
+            url = f"http://localhost:{BACKEND_PORT}/export/{session_id}"
+            payload = json.dumps({"items": items}).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                zip_bytes = resp.read()
+
+            save_path = self._window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=f"temseg_export_{session_id[:8]}.zip",
+                file_types=("ZIP archive (*.zip)",),
+            )
+
+            if not save_path:
+                return {"success": False, "error": "cancelled"}
+
+            dest = save_path if isinstance(save_path, str) else save_path[0]
+            Path(dest).write_bytes(zip_bytes)
+            return {"success": True, "path": dest}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Loading window (shown during weight download / model init)
+# ---------------------------------------------------------------------------
+
+LOADING_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+  .container { text-align: center; max-width: 420px; padding: 2rem; }
+  h1 { font-size: 1.6rem; margin-bottom: 0.5rem; color: #ffffff; }
+  .status { font-size: 0.95rem; color: #a0a0b8; margin-top: 1rem; min-height: 1.4em; }
+  .progress-outer {
+    width: 100%; height: 6px; background: #2a2a4a;
+    border-radius: 3px; margin-top: 0.8rem; overflow: hidden;
+  }
+  .progress-inner {
+    height: 100%; width: 0%; background: #6c63ff;
+    border-radius: 3px; transition: width 0.3s ease;
+  }
+  .error { color: #ff6b6b; font-size: 0.9rem; margin-top: 1rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>TEMseg</h1>
+  <div class="status" id="status">Checking model weights…</div>
+  <div class="progress-outer"><div class="progress-inner" id="bar"></div></div>
+  <div class="error" id="error"></div>
+</div>
+<script>
+  function setStatus(msg) {
+    document.getElementById("status").textContent = msg;
+  }
+  function setProgress(pct) {
+    document.getElementById("bar").style.width = pct + "%";
+  }
+  function setError(msg) {
+    document.getElementById("error").textContent = msg;
+  }
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
 def main():
-    # start backend
-    print("[launcher] Starting backend...")
-    backend = start_backend()
+    log.info("Starting TEMseg...")
 
-    # start frontend static server in background thread
-    print("[launcher] Starting frontend static server...")
-    t = threading.Thread(target=serve_frontend, daemon=True)
-    t.start()
-
-    # wait for both
-    print("[launcher] Waiting for backend...")
-    if not wait_for_server(BACKEND_PORT):
-        print("[launcher] ERROR: backend did not start in time")
-        backend.terminate()
-        sys.exit(1)
-
-    print("[launcher] Waiting for frontend...")
-    if not wait_for_server(FRONTEND_PORT):
-        print("[launcher] ERROR: frontend did not start in time")
-        backend.terminate()
-        sys.exit(1)
-
-    print("[launcher] Both ready — opening window")
-
-    LAUNCH_PATH = f"http://localhost:{FRONTEND_PORT}/workspace"
-    print(f"[launcher] Opening window at {LAUNCH_PATH}")
-
-    # create window with JS API bridge
-    window = webview.create_window(
-        title="TEMseg",
-        url=LAUNCH_PATH,
-        width=1400,
-        height=900,
-        min_size=(900, 600),
+    # --- Phase 1: Loading window + weight check ---
+    loading_window = webview.create_window(
+        title="TEMseg — Loading",
+        html=LOADING_HTML,
+        width=480,
+        height=260,
+        resizable=False,
     )
 
-    # attach API after window is created (needs window ref for dialogs)
-    window.expose(Api(window).export_zip)
+    def startup():
+        """Runs after the loading window is visible."""
+        try:
+            # Check / download weights
+            def on_progress(filename, pct):
+                loading_window.evaluate_js(
+                    f'setStatus("Downloading {filename}… {pct}%"); setProgress({pct});'
+                )
 
-    webview.start()
+            ok, msg = check_and_download_weights(progress_callback=on_progress)
+            if not ok:
+                loading_window.evaluate_js(f"setError({json.dumps(msg)});")
+                loading_window.evaluate_js('setStatus("Setup incomplete");')
+                return  # keep window open so user can read error
 
-    # window closed — kill backend
-    print("[launcher] Window closed, stopping backend...")
-    backend.terminate()
+            loading_window.evaluate_js(
+                'setStatus("Starting backend…"); setProgress(0);'
+            )
+
+            # --- Phase 2: Start servers ---
+            backend_thread = threading.Thread(target=start_backend_server, daemon=True)
+            backend_thread.start()
+
+            frontend_thread = threading.Thread(
+                target=start_frontend_server, daemon=True
+            )
+            frontend_thread.start()
+
+            # Wait for backend
+            loading_window.evaluate_js('setStatus("Loading models…");')
+            if not wait_for_server(BACKEND_PORT, timeout=120):
+                loading_window.evaluate_js(
+                    'setError("Backend failed to start. Check console for errors.");'
+                )
+                return
+
+            loading_window.evaluate_js('setStatus("Almost ready…"); setProgress(80);')
+            if not wait_for_server(FRONTEND_PORT, timeout=15):
+                loading_window.evaluate_js(
+                    'setError("Frontend server failed to start.");'
+                )
+                return
+
+            loading_window.evaluate_js('setProgress(100); setStatus("Ready!");')
+            time.sleep(0.3)
+
+            # --- Phase 3: Open main window, close loader ---
+            main_window = webview.create_window(
+                title="TEMseg",
+                url=f"http://localhost:{FRONTEND_PORT}/workspace",
+                width=1400,
+                height=900,
+                min_size=(900, 600),
+            )
+            main_window.expose(Api(main_window).export_zip)
+
+            # Close loading window after main is created
+            loading_window.destroy()
+
+        except Exception as e:
+            log.exception("Startup failed")
+            loading_window.evaluate_js(f"setError({json.dumps(str(e))});")
+
+    # Run startup after window is shown
+    webview.start(startup, debug=False)
 
 
 if __name__ == "__main__":
