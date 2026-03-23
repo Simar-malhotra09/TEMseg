@@ -55,6 +55,30 @@ export interface Instance {
   area: number;
 }
 
+/* ------------------------------------------------------------------ */
+/*  PyWebView bridge detection                                        */
+/* ------------------------------------------------------------------ */
+
+/** True when running inside the PyWebView desktop window */
+export function isPyWebView(): boolean {
+  return typeof window !== "undefined" && !!(window as any).pywebview?.api?.export_zip;
+}
+
+/**
+ * Export via PyWebView native save dialog.
+ * Returns { success, path?, error? }
+ */
+export async function exportViaPyWebView(
+  sessionId: string,
+  items: string[]
+): Promise<{ success: boolean; path?: string; error?: string }> {
+  return (window as any).pywebview.api.export_zip(sessionId, items);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Standard API functions                                            */
+/* ------------------------------------------------------------------ */
+
 export async function getModels(): Promise<string[]> {
   const res = await fetch(`${BASE_URL}/models`);
 

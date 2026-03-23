@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Download, X } from "lucide-react";
 import styles from "./ExportPanel.module.css";
-import {exportSession} from "@/lib/api";
+import { exportSession, isPyWebView, exportViaPyWebView } from "@/lib/api";
 
 export type ExportItem =
   | "original_image"
@@ -115,13 +115,25 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
     if (selected.size === 0 || downloading) return;
     setDownloading(true);
     try {
-      const blob = await exportSession(sessionId, Array.from(selected));
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `temseg_export_${sessionId}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const items = Array.from(selected);
+
+      if (isPyWebView()) {
+        // Native save dialog via PyWebView bridge
+        const result = await exportViaPyWebView(sessionId, items);
+        if (!result.success && result.error !== "cancelled") {
+          console.error("Export failed:", result.error);
+        }
+      } else {
+        // Browser: blob download
+        const blob = await exportSession(sessionId, items);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `temseg_export_${sessionId}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
       setOpen(false);
     } catch (err) {
       console.error("Export failed:", err);
