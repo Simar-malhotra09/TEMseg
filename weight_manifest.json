@@ -1,0 +1,22 @@
+{
+  "weights": [
+    {
+      "filename": "best12x.onnx",
+      "url": "PLACEHOLDER — replace with your download URL",
+      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/best12x.onnx",
+      "size_mb": 0
+    },
+    {
+      "filename": "sam_vit_b_01ec64.pth",
+      "url": "PLACEHOLDER — replace with your download URL",
+      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/sam_vit_b_01ec64.pth",
+      "size_mb": 0
+    },
+    {
+      "filename": "maskrcnn_best_model.pth",
+      "url": "PLACEHOLDER — replace with your download URL",
+      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/maskrcnn_best_model.pth",
+      "size_mb": 0
+    }
+  ]
+}
