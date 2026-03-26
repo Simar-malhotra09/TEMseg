@@ -2,21 +2,21 @@
   "weights": [
     {
       "filename": "best12x.onnx",
-      "url": "PLACEHOLDER — replace with your download URL",
-      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/best12x.onnx",
-      "size_mb": 0
+      "url": "https://huggingface.co/0saker/TEMseg/resolve/main/best12x.onnx",
+      "sha256": "28c9694e117d3f3f264ca0aeec28f12e00f0b0297ef6749f634f9c826aa47739",
+      "size_mb": 260
     },
     {
       "filename": "sam_vit_b_01ec64.pth",
-      "url": "PLACEHOLDER — replace with your download URL",
-      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/sam_vit_b_01ec64.pth",
-      "size_mb": 0
+      "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+      "sha256": "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912",
+      "size_mb": 358
     },
     {
       "filename": "maskrcnn_best_model.pth",
-      "url": "PLACEHOLDER — replace with your download URL",
-      "sha256": "PLACEHOLDER — run: shasum -a 256 backend/weights/maskrcnn_best_model.pth",
-      "size_mb": 0
+      "url": "https://huggingface.co/0saker/TEMseg/resolve/main/maskrcnn_best_model.pth",
+      "sha256": "8601e68a19f50cf337cda06db92f6c2f40365200276cf3535ef6121862f83300",
+      "size_mb": 168
     }
   ]
 }
