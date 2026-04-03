@@ -246,7 +246,7 @@ export default function Workspace() {
       <header className={styles.topbar}>
         <div className={styles.topbarLeft}>
           <div
-            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/new"; }}
+            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
             title="New workspace"
             style={{ cursor: "pointer" }}
           >
@@ -483,7 +483,7 @@ export default function Workspace() {
             >
               <Upload size={32} strokeWidth={1.5} />
               <p className={styles.dropLabel}>Drop image here or click to upload</p>
-              <p className={styles.dropHint}>TIF, TIFF, JPEG, PNG, NPY supported</p>
+              <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
             </div>
           ) : (
             <div
@@ -594,7 +594,7 @@ export default function Workspace() {
               )}
             </div>
           )}
-          <input ref={fileRef} type="file" accept=".tif,.tiff,.jpg,.jpeg,.png,.npy"
+          <input ref={fileRef} type="file" accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
             hidden onChange={onFileChange} />
         </main>
 
