@@ -45,7 +45,11 @@ async def upload_image(request:Request, file: UploadFile = File(...)):
     elif fname.endswith((".tif", ".tiff")):
         import tifffile
         arr = tifffile.imread(str(dest))
-
+    elif fname.endswith(".emd"):
+        import hyperspy.api as hs 
+        result = hs.load(str(dest))
+        s = result[0] if isinstance(result, list) else result
+        arr = s.data
     if arr is not None:
         logger.info(f"[IMG] img shape: {arr.shape}")
 
