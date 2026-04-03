@@ -1,0 +1,153 @@
+.panel {
+  width: 210px;
+  flex-shrink: 0;
+  border-left: 1px solid #1e1e1e;
+  padding: 16px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #555;
+  margin-bottom: 2px;
+}
+
+.hint {
+  font-size: 11px;
+  color: #444;
+  line-height: 1.5;
+}
+
+/* stat rows */
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid #1a1a1a;
+  gap: 8px;
+}
+
+.label {
+  color: #555;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.val {
+  color: #e8e6e1;
+  font-size: 11px;
+  text-align: right;
+  word-break: break-all;
+}
+
+.divider {
+  height: 1px;
+  background: #1e1e1e;
+  margin: 6px 0;
+}
+
+/* collapsible sections */
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+}
+.collapseBtn:hover {
+  color: #7ee8a2;
+}
+
+/* mini histogram */
+.histogram {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 48px;
+  padding: 4px 0;
+}
+
+.histBar {
+  flex: 1;
+  background: #7ee8a2;
+  border-radius: 1px 1px 0 0;
+  min-height: 1px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.histBar:hover {
+  opacity: 1;
+}
+
+.histLabel {
+  font-size: 10px;
+  color: #444;
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* shape distribution */
+.shapeGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.shapeRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shapeLabel {
+  font-size: 10px;
+  color: #888;
+  width: 56px;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.shapeBarOuter {
+  flex: 1;
+  height: 6px;
+  background: #1a1a1a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.shapeBarInner {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.shapeCount {
+  font-size: 10px;
+  color: #555;
+  width: 24px;
+  text-align: right;
+}
