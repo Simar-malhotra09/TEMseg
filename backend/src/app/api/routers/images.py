@@ -1,11 +1,11 @@
-from typing import Annotated
 import json
-import uuid, shutil
-from pathlib import Path 
+import uuid
+import shutil
+from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, Request
 from fastapi.responses import FileResponse
 import logging
-import numpy as np 
+import numpy as np
 import cv2 as cv
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -29,6 +29,7 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
     try:
         if fname.endswith(".emd"):
             import hyperspy.api as hs
+
             result = hs.load(str(filepath))
             s = result[0] if isinstance(result, list) else result
             meta["image_shape"] = list(s.data.shape)
@@ -36,13 +37,15 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
             # Store all axes calibration
             meta["axes"] = []
             for ax in s.axes_manager.signal_axes:
-                meta["axes"].append({
-                    "name": ax.name,
-                    "scale": float(ax.scale) if ax.scale else None,
-                    "offset": float(ax.offset) if ax.offset else None,
-                    "units": ax.units if ax.units else None,
-                    "size": ax.size,
-                })
+                meta["axes"].append(
+                    {
+                        "name": ax.name,
+                        "scale": float(ax.scale) if ax.scale else None,
+                        "offset": float(ax.offset) if ax.offset else None,
+                        "units": ax.units if ax.units else None,
+                        "size": ax.size,
+                    }
+                )
 
             # Convenience fields
             if meta["axes"]:
@@ -62,10 +65,13 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
                 except Exception:
                     meta["hyperspy_metadata"] = str(s.metadata)
 
-            logger.info(f"[META] EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}")
+            logger.info(
+                f"[META] EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}"
+            )
 
         elif fname.endswith((".tif", ".tiff")):
             import tifffile
+
             with tifffile.TiffFile(str(filepath)) as tif:
                 page = tif.pages[0]
                 meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
@@ -97,6 +103,7 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
         logger.warning(f"[META] Metadata extraction failed (non-fatal): {e}")
 
     return meta
+
 
 @router.get("/{session_id}/preview")
 async def get_preview(session_id: str):
@@ -132,7 +139,9 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     meta_path = session_dir / "metadata.json"
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
-    logger.info(f"[IMG] Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}")
+    logger.info(
+        f"[IMG] Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}"
+    )
 
     fname = file.filename.lower()
     arr = None
@@ -144,9 +153,11 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         arr = np.load(str(dest))
     elif fname.endswith((".tif", ".tiff")):
         import tifffile
+
         arr = tifffile.imread(str(dest))
     elif fname.endswith(".emd"):
         import hyperspy.api as hs
+
         result = hs.load(str(dest))
         s = result[0] if isinstance(result, list) else result
         arr = s.data
@@ -155,8 +166,11 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         logger.info(f"[IMG] img shape: {arr.shape}")
 
         arr_min, arr_max = arr.min(), arr.max()
-        display = ((arr - arr_min) / (arr_max - arr_min + 1e-8) * 255).astype("uint8") \
-            if arr_max > arr_min else np.zeros_like(arr, dtype="uint8")
+        display = (
+            ((arr - arr_min) / (arr_max - arr_min + 1e-8) * 255).astype("uint8")
+            if arr_max > arr_min
+            else np.zeros_like(arr, dtype="uint8")
+        )
 
         preview_path = session_dir / "original_preview.png"
         cv.imwrite(str(preview_path), display)
@@ -175,7 +189,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
                     pool,
                     lambda: yolosam.components["yolo"].predict(
                         source=img, verbose=False, conf=0.25
-                    )
+                    ),
                 )
             logger.info("[UPLOAD] YOLO warmup complete")
         except Exception as e:
@@ -191,10 +205,12 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     }
 
 
-''' 
+""" 
 Send response back to user for a given session id. 
 Just sends the first file for now.
-'''
+"""
+
+
 @router.get("/{session_id}/file")
 async def get_image(session_id: str):
     session_dir = SESSIONS_DIR / session_id
@@ -213,6 +229,7 @@ async def get_image(session_id: str):
 
     return FileResponse(file)
 
+
 @router.get("/{session_id}/mask")
 async def get_mask(session_id: str):
     mask_path = SESSIONS_DIR / session_id / "mask.png"
@@ -223,7 +240,7 @@ async def get_mask(session_id: str):
 async def upload_ground_truth(session_id: str, file: UploadFile = File(...)):
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
-    
+
     dest = session_dir / file.filename
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -234,6 +251,7 @@ async def upload_ground_truth(session_id: str, file: UploadFile = File(...)):
         file.filename,
     )
     return {"session_id": session_id, "filename": file.filename}
+
 
 @router.get("/{session_id}/instances-debug")
 async def get_instances_debug(session_id: str):
