@@ -176,11 +176,14 @@ border: 1px solid #7ee8a233;
 
 /* Stats */
 .statsPanel {
-width: 180px;
-flex-shrink: 0;
-border-left: 1px solid #1e1e1e;
-padding: 16px 12px;
-overflow-y: auto;
+  width: 180px;
+  flex-shrink: 0;
+  border-left: 1px solid #1e1e1e;
+  padding: 16px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 .statsGrid { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
 .statRow {

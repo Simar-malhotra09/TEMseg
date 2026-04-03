@@ -46,6 +46,7 @@ export interface UploadResponse {
   session_id: string;
   filename: string;
   preview_url: string;
+  image_info: Record<String, String>;
 }
 
 export interface Instance {
@@ -111,7 +112,7 @@ export async function uploadImage(file: File) {
     throw new Error("Upload failed");
   }
 
-  const data = await res.json(); //{ session_id, filename, preview_url} }
+  const data = await res.json(); 
   console.log("[uploadImage] success:", data);
 
   return data;
