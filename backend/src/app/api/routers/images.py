@@ -201,7 +201,12 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         "session_id": session_id,
         "filename": file.filename,
         "preview_url": preview_url,
-        "metadata": metadata,
+        "image_info": {
+            "image_shape": metadata.get("image_shape"),
+            "original_format": metadata.get("original_format"),
+            "pixel_size": metadata.get("pixel_size"),
+            "pixel_unit": metadata.get("pixel_unit"),
+        },
     }
 
 
