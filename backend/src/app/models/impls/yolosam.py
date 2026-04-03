@@ -1,3 +1,4 @@
+from enum import unique
 import logging
 import time
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ import numpy as np
 import torch
 from fastapi import APIRouter
 from segment_anything import SamPredictor, sam_model_registry
+from torch._C import dtype
 from ultralytics import YOLO
 
 from app.api.live_models import AvailableModels
@@ -178,12 +180,17 @@ class YoloSam(Model):
             multimask_output=False,
         )
         masks_np = masks.cpu().numpy().astype("uint8")
+
         combined_mask = np.max(masks_np, axis=0)
 
         sam_time_elapsed = time.perf_counter() - sam_start
 
         logger.info(
-            f"[YoloSAM] output mask shape: {combined_mask.shape}, input was: {image.shape[:2]}"
+            f"""
+
+            [yolosam] Output mask: {np.info(combined_mask)}, Input was: {np.info(image)}. 
+
+            """
         )
         logger.info(f"[YoloSAM] Yolo took {yolo_time_elapsed:.4f}s")
         logger.info(f"[YoloSAM] SAM took {sam_time_elapsed:.4f}s")

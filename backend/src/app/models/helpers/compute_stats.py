@@ -3,7 +3,6 @@ import cv2 as cv
 import math
 
 
-''' These are all AI generated to start and I assume not super helpful at all ! '''
 def _prepare_mask(mask: np.ndarray) -> np.ndarray:
     """
     Ensure mask is binary uint8 (0 or 255).

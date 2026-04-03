@@ -34,28 +34,9 @@ def _is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
-def _resolve_weights_dir() -> Path:
-    """
-    Priority order:
-    1. TEMSEG_WEIGHTS_DIR env var (explicit override, useful for testing)
-    2. Frozen app → user app-support directory
-    3. Dev → backend/weights/ via relative path from this file
-    """
-    import os
-
-    env = os.environ.get("TEMSEG_WEIGHTS_DIR")
-    if env:
-        return Path(env)
-
-    if _is_frozen():
-        return _app_support_weights_dir()
-
-    # Dev layout: this file is at backend/src/app/models/helpers/settings.py
-    # weights dir is at backend/weights/ → parents[4] = backend/
-    return Path(__file__).resolve().parents[4] / "weights"
 
 
-WEIGHTS_DIR = _resolve_weights_dir()
+WEIGHTS_DIR = _app_support_weights_dir()
 
 
 class Settings:
