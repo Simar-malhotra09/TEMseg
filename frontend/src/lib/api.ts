@@ -19,10 +19,58 @@ interface BlackoutRect {
 }
 
 export interface StatsResult {
+  // scale info
+  pixel_size: number | null;
+  pixel_unit: string | null;
+  unit: string;
+  has_scale: boolean;
+
+  // aggregate (backward compat)
   particle_count: number;
+  coverage: number;
   avg_size: number;
   avg_circularity: number;
-  coverage: number;
+  avg_aspect_ratio: number;
+
+  // detailed aggregate
+  avg_area_px: number;
+  avg_diameter_px: number;
+  avg_area_real: number | null;
+  avg_diameter_real: number | null;
+
+  // distributions
+  size_stats: {
+    area_mean: number;
+    area_std: number;
+    area_min: number;
+    area_max: number;
+    area_median: number;
+    diameter_mean: number;
+    diameter_std: number;
+    diameter_min: number;
+    diameter_max: number;
+    diameter_median: number;
+    unit: string;
+  };
+
+  shape_distribution: Record<string, { count: number; fraction: number }>;
+
+  // per-particle
+  particles: {
+    area_px: number;
+    area_real?: number;
+    perimeter_px: number;
+    perimeter_real?: number;
+    diameter_px: number;
+    diameter_real?: number;
+    major_axis_px: number;
+    major_axis_real?: number;
+    minor_axis_px: number;
+    minor_axis_real?: number;
+    circularity: number;
+    aspect_ratio: number;
+    shape: string;
+  }[];
 }
 
 export interface SegmentResponse {

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import styles from "./StatsPanel.module.css";
+import { StatsResult } from "@/lib/api";
 
 interface Particle {
   area_px: number;
@@ -39,31 +40,6 @@ interface ShapeEntry {
   fraction: number;
 }
 
-export interface Stats {
-  // scale
-  pixel_size: number | null;
-  pixel_unit: string | null;
-  unit: string;
-  has_scale: boolean;
-
-  // backward compat
-  particle_count: number;
-  coverage: number;
-  avg_size: number;
-  avg_circularity: number;
-  avg_aspect_ratio: number;
-
-  // detailed
-  avg_area_px: number;
-  avg_diameter_px: number;
-  avg_area_real?: number | null;
-  avg_diameter_real?: number | null;
-
-  // distributions
-  size_stats: SizeStats;
-  shape_distribution: Record<string, ShapeEntry>;
-  particles: Particle[];
-}
 
 interface GTScores {
   iou: number;
