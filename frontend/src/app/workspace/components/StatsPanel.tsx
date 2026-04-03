@@ -62,6 +62,8 @@ interface Props {
   stats: Stats | null;
   segDone: boolean;
   groundTruthScore: GTScores | null;
+  onViewDetails?: () => void;
+
 }
 
 function fmt(val: number, decimals = 3): string {
@@ -130,6 +132,7 @@ export default function StatsPanel({
   stats,
   segDone,
   groundTruthScore,
+  onViewDetails,
 }: Props) {
   const [sizeOpen, setSizeOpen] = useState(true);
   const [shapeOpen, setShapeOpen] = useState(true);
@@ -243,6 +246,12 @@ export default function StatsPanel({
                   );
                 })}
               </>
+            )}
+
+            {segDone && stats && stats.particles?.length > 0 && onViewDetails && (
+              <button className={styles.detailsBtn} onClick={onViewDetails}>
+                View Details →
+              </button>
             )}
           </div>
         ) : (
