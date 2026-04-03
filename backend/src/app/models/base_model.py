@@ -6,12 +6,12 @@ from typing import Any, Dict, List, Set
 
 import numpy as np
 
-from app.models.helpers.compute_stats import (
-    compute_avg_circularity,
-    compute_avg_size,
-    compute_coverage,
-    compute_particle_count,
-)
+# from app.models.helpers.compute_stats import (
+#     compute_avg_circularity,
+#     compute_avg_size,
+#     compute_coverage,
+#     compute_particle_count,
+# )
 
 """ Stores individual models"""
 
@@ -49,23 +49,23 @@ class SegmentationResult:
 """
 
 
-class StatType(str, Enum):
-    PARTICLE_COUNT = "particle_count"
-    AVG_SIZE = "avg_size"
-    AVG_CIRCULARITY = "avg_circularity"
-    COVERAGE = "coverage"
-
-
-@dataclass
-class StatsConfig:
-    enabled: Set[StatType]
-
-
-@dataclass
-class StatsResult:
-    values: dict[StatType, float]
-
-
+# class StatType(str, Enum):
+#     PARTICLE_COUNT = "particle_count"
+#     AVG_SIZE = "avg_size"
+#     AVG_CIRCULARITY = "avg_circularity"
+#     COVERAGE = "coverage"
+#
+#
+# @dataclass
+# class StatsConfig:
+#     enabled: Set[StatType]
+#
+#
+# @dataclass
+# class StatsResult:
+#     values: dict[StatType, float]
+#
+#
 class Model(ABC):
     def __init__(self, config: ModelConfig):
         self.config = config
@@ -91,19 +91,19 @@ class Model(ABC):
             print(f"Path:      {comp.path}")
             print("-" * 40)
 
-    def compute_stats(self, mask, config: StatsConfig) -> StatsResult:
-        results = {}
-
-        if StatType.PARTICLE_COUNT in config.enabled:
-            results[StatType.PARTICLE_COUNT] = compute_particle_count(mask)
-
-        if StatType.AVG_SIZE in config.enabled:
-            results[StatType.AVG_SIZE] = compute_avg_size(mask)
-
-        if StatType.AVG_CIRCULARITY in config.enabled:
-            results[StatType.AVG_CIRCULARITY] = compute_avg_circularity(mask)
-
-        if StatType.COVERAGE in config.enabled:
-            results[StatType.COVERAGE] = compute_coverage(mask)
-
-        return StatsResult(values=results)
+    # def compute_stats(self, mask, config: StatsConfig) -> StatsResult:
+    #     results = {}
+    #
+    #     if StatType.PARTICLE_COUNT in config.enabled:
+    #         results[StatType.PARTICLE_COUNT] = compute_particle_count(mask)
+    #
+    #     if StatType.AVG_SIZE in config.enabled:
+    #         results[StatType.AVG_SIZE] = compute_avg_size(mask)
+    #
+    #     if StatType.AVG_CIRCULARITY in config.enabled:
+    #         results[StatType.AVG_CIRCULARITY] = compute_avg_circularity(mask)
+    #
+    #     if StatType.COVERAGE in config.enabled:
+    #         results[StatType.COVERAGE] = compute_coverage(mask)
+    #
+    #     return StatsResult(values=results)

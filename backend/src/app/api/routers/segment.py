@@ -5,10 +5,12 @@ import logging
 import time
 import cv2 as cv
 import numpy as np
-from app.models.base_model import  StatType, StatsConfig
+# from app.models.base_model import  StatType, StatsConfig
 from app.api.live_models import AvailableModels
 from app.api.utils import Box, normalize_mask, blackout_regions, inverse_blackout_regions, colorize_components_inplace, batch_seg_patches
 from app.api.instances import extract_instances
+
+from app.models.helpers.compute_stats import compute_stats
 
 from pydantic import BaseModel
 
@@ -140,20 +142,22 @@ async def segment(req: SegmentRequest, request: Request):
 
     # ── stats ────────────────────────────────────────────────────
     t4 = time.perf_counter()
-    stats_config = StatsConfig(
-        enabled={
-            StatType.PARTICLE_COUNT,
-            StatType.AVG_SIZE,
-            StatType.AVG_CIRCULARITY,
-            StatType.COVERAGE,
-        }
-    )
-    stats_results = model_inst.compute_stats(mask, stats_config)
-    t_stats = time.perf_counter() - t4
-    logger.info(f"[SEG-TIMING] stats={t_stats:.3f}s")
 
-    if not stats_results or not getattr(stats_results, "values", None):
-        return {"error": "Failed to compute stats"}
+    # load pixel scale from session metadata (if available)
+    pixel_size = None
+    pixel_unit = None
+    meta_path = session_dir / "metadata.json"
+    if meta_path.exists():
+        import json
+        with open(meta_path) as f:
+            meta = json.load(f)
+        pixel_size = meta.get("pixel_size")
+        pixel_unit = meta.get("pixel_unit")
+
+    stats_results = compute_stats(mask, pixel_size=pixel_size, pixel_unit=pixel_unit)
+
+    t_stats = time.perf_counter() - t4
+    logger.info(f"[SEG-TIMING] stats={t_stats:.3f}s | pixel_size={pixel_size} {pixel_unit}")
 
     # ── cache embedding ──────────────────────────────────────────
     if hasattr(result, "embedding") and result.embedding is not None:
@@ -180,7 +184,7 @@ async def segment(req: SegmentRequest, request: Request):
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",
         metadata=result.metadata,
-        stats=stats_results.values,
+        stats=stats_results,
         model=req.model,
         time_elapsed=elapsed,
     )
