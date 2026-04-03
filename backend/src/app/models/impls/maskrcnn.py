@@ -84,6 +84,13 @@ class MaskRCNN(Model):
     def load_image(self, image_path: Path) -> np.ndarray:
         if image_path.suffix == ".npy":
             img = np.load(image_path)
+        elif image_path.suffix== ".emd":
+            import hyperspy.api as hs
+
+            result = hs.load(str(image_path))
+            s = result[0] if isinstance(result, list) else result
+            img= s.data
+
         else:
             img = cv.imread(str(image_path), cv.IMREAD_GRAYSCALE)
             if img is None:
