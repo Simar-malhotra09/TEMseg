@@ -3,7 +3,7 @@ start.py — starts both the FastAPI backend and Next.js frontend.
 
 Usage:
   python start.py
-  python start.py --port 8000 --frontend-port 3000
+  python start.py --port 8080 --frontend-port 3000
   python start.py --no-reload
   python start.py --backend-only
   python start.py --frontend-only
@@ -70,7 +70,7 @@ def _wait_for_backend(port: int, timeout: int = 30):
 
 def main():
     parser = argparse.ArgumentParser(description="Start TEM seg — backend + frontend")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--frontend-port", type=int, default=3000)
     parser.add_argument("--no-reload", action="store_true")

@@ -1,14 +1,5 @@
 """
 launcher.py — TEMseg desktop application launcher.
-
-Runs the FastAPI backend in-process (background thread), serves the static
-frontend, downloads model weights on first launch, and opens a PyWebView window.
-
-Works both frozen (PyInstaller .app) and in dev:
-    # Dev (from project root):
-    uv run launcher.py
-
-    # Frozen: double-click TEMseg.app
 """
 
 import json
@@ -19,16 +10,18 @@ import platform
 import sys
 import threading
 import time
-import urllib.error
 import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 import webview
 
-# ---------------------------------------------------------------------------
-# Path resolution
-# ---------------------------------------------------------------------------
+
+if getattr(sys, "frozen", False):
+    import ssl
+    import certifi
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+    ssl._create_default_https_context = ssl.create_default_context
 
 
 def _is_frozen() -> bool:
@@ -43,7 +36,6 @@ def _bundle_dir() -> Path:
 
 
 def _project_root() -> Path:
-    """Project root — only meaningful in dev mode."""
     return Path(__file__).parent
 
 
@@ -58,6 +50,7 @@ def _weights_dir() -> Path:
     if _is_frozen():
         system = platform.system()
         if system == "Darwin":
+            print(Path.home() / "Library" / "Application Support" / "TEMseg" / "weights")
             return (
                 Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
             )
@@ -65,8 +58,8 @@ def _weights_dir() -> Path:
             return Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
         else:
             return Path.home() / ".local" / "share" / "TEMseg" / "weights"
-    # Dev: use backend/weights/
-    return _project_root() / "backend" / "weights"
+
+    return _project_root()
 
 
 def _manifest_path() -> Path:
@@ -82,9 +75,6 @@ def _backend_src_dir() -> Path:
     return _project_root() / "backend" / "src"
 
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -92,13 +82,11 @@ logging.basicConfig(
 )
 log = logging.getLogger("launcher")
 
-# ---------------------------------------------------------------------------
-# Weight downloading
-# ---------------------------------------------------------------------------
 
 
 def _load_manifest() -> list[dict]:
     mp = _manifest_path()
+    log.info("Weight manifest found @ ", mp)
     if not mp.exists():
         log.warning(f"Weight manifest not found at {mp}")
         return []
@@ -189,9 +177,6 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
     return True, "All weights ready"
 
 
-# ---------------------------------------------------------------------------
-# Frontend static server
-# ---------------------------------------------------------------------------
 
 FRONTEND_PORT = 3001
 
@@ -230,7 +215,7 @@ def start_frontend_server():
 # Backend (in-process via uvicorn)
 # ---------------------------------------------------------------------------
 
-BACKEND_PORT = 8000
+BACKEND_PORT = 8080
 
 
 def start_backend_server():
@@ -394,6 +379,7 @@ def main():
 
     def startup():
         """Runs after the loading window is visible."""
+        log.info("[STARTUP]")
         try:
             # Check / download weights
             def on_progress(filename, pct):

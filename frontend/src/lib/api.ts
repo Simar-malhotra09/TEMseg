@@ -1,4 +1,4 @@
-export const BASE_URL = "http://localhost:8000";
+export const BASE_URL = "http://localhost:8080";
 
 // These are mirrors of the pydantic model the server defines
 export interface Box {
