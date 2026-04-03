@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ReferenceLine, CartesianGrid,
 } from "recharts";
-import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
 import type { StatsResult } from "@/lib/api";
 
@@ -28,6 +28,7 @@ interface Props {
   metadata: Metadata | null;
   groundTruthScore: GTScores | null;
   onBack: () => void;
+  onLocateParticle?: (particleIndex: number) => void;
 }
 
 type SizeMode = "diameter" | "area";
@@ -81,10 +82,11 @@ function HistTooltip({ active, payload, unit }: any) {
   );
 }
 
-export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack }: Props) {
+export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
   const [sortKey, setSortKey] = useState<SortKey>("index");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
 
   const hasScale = stats.has_scale;
   const unit = stats.unit ?? "px";
@@ -309,7 +311,14 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
 
       {/* per-particle table */}
       <div className={styles.tableCard}>
-        <h2 className={styles.chartTitle}>Per-Particle Data</h2>
+        <div className={styles.tableHeader}>
+          <h2 className={styles.chartTitle}>Per-Particle Data</h2>
+          {onLocateParticle && (
+            <span className={styles.tableHint}>
+              <Crosshair size={10} /> Click a row to locate on canvas
+            </span>
+          )}
+        </div>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -331,8 +340,16 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
             </thead>
             <tbody>
               {sortedParticles.map(p => (
-                <tr key={p.index} className={styles.tr}>
-                  <td className={styles.td}>{p.index}</td>
+                <tr
+                  key={p.index}
+                  className={`${styles.tr} ${onLocateParticle ? styles.trClickable : ""} ${hoveredRow === p.index ? styles.trHighlighted : ""}`}
+                  onMouseEnter={() => setHoveredRow(p.index)}
+                  onMouseLeave={() => setHoveredRow(null)}
+                  onClick={() => onLocateParticle?.(p.index - 1)}
+                >
+                  <td className={styles.td}>
+                    <span className={styles.particleId}>{p.index}</span>
+                  </td>
                   <td className={styles.td}>{fmt(hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px)}</td>
                   <td className={styles.td}>{fmt(hasScale && p.area_real != null ? p.area_real : p.area_px)}</td>
                   <td className={styles.td}>{fmt(hasScale && p.perimeter_real != null ? p.perimeter_real : p.perimeter_px)}</td>
