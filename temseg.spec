@@ -43,6 +43,7 @@ datas = [
 datas += collect_data_files("torch")
 datas += collect_data_files("torchvision")
 datas += collect_data_files("numpy")
+datas += collect_data_files("certifi")
 
 # ---------------------------------------------------------------------------
 # Hidden imports PyInstaller tends to miss
@@ -142,7 +143,6 @@ hiddenimports = list(set(hiddenimports))
 
 excludes = [
     "tkinter",
-    "matplotlib",
     "notebook",
     "jupyter",
     "IPython",
@@ -213,7 +213,7 @@ exe = EXE(
     strip=False,
     upx=False,      # UPX can break signed binaries on Mac
     console=False,   # no terminal window
-    icon=None,       # TODO: add app icon (icns file)
+    icon=str(ROOT / "temseg_icon.icns"),
 )
 
 coll = COLLECT(
@@ -229,7 +229,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="TEMseg.app",
-    icon=None,       # TODO: add .icns icon
+    icon=str(ROOT / "temseg_icon.icns"),
     bundle_identifier="com.temseg.app",
     info_plist={
         "CFBundleDisplayName": "TEMseg",

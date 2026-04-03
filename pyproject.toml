@@ -17,6 +17,9 @@ dependencies = [
   "onnx>=1.16.0",
   "onnxruntime>=1.24.3",
   "pywebview>=6.1",
+  "hyperspy>=2.4.0",
+  "numba>=0.64.0",
+  "matplotlib>=3.10.8",
 ]
 
 [project.optional-dependencies]
