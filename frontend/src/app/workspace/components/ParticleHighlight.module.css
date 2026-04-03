@@ -1,0 +1,16 @@
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; stroke-width: 2.5; }
+  50% { opacity: 0.6; stroke-width: 1.5; }
+}
