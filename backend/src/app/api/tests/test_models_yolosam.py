@@ -16,7 +16,6 @@ import time
 from typing import List
 from fastapi import APIRouter
 from typing import Dict, Any
-import matplotlib.pyplot as plt
 from pathlib import Path 
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor

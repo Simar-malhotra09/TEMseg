@@ -4,7 +4,8 @@ __pycache__/
 *.pyc
 .next/
 .DS_Store
-backend/venv/
+backend/uv_venv/
+backend/uv_venv_clean/
 backend/.DS_Store
 backend/src/data/
 *.egg-info/
