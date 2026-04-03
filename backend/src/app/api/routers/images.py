@@ -1,4 +1,5 @@
 from typing import Annotated
+import json
 import uuid, shutil
 from pathlib import Path 
 from fastapi import APIRouter, File, UploadFile, Request
@@ -15,6 +16,88 @@ logger = logging.getLogger("routes.images")
 SESSIONS_DIR = Path("sessions")
 
 
+def _extract_metadata(filepath: Path, filename: str) -> dict:
+    """
+    Extract all available metadata from the uploaded file.
+    """
+    fname = filename.lower()
+    meta = {
+        "original_format": Path(filename).suffix.lstrip("."),
+        "image_shape": None,
+    }
+
+    try:
+        if fname.endswith(".emd"):
+            import hyperspy.api as hs
+            result = hs.load(str(filepath))
+            s = result[0] if isinstance(result, list) else result
+            meta["image_shape"] = list(s.data.shape)
+
+            # Store all axes calibration
+            meta["axes"] = []
+            for ax in s.axes_manager.signal_axes:
+                meta["axes"].append({
+                    "name": ax.name,
+                    "scale": float(ax.scale) if ax.scale else None,
+                    "offset": float(ax.offset) if ax.offset else None,
+                    "units": ax.units if ax.units else None,
+                    "size": ax.size,
+                })
+
+            # Convenience fields
+            if meta["axes"]:
+                meta["pixel_size"] = meta["axes"][0].get("scale")
+                meta["pixel_unit"] = meta["axes"][0].get("units")
+
+            # Store all original metadata from the file
+            if hasattr(s, "original_metadata"):
+                try:
+                    meta["original_metadata"] = s.original_metadata.as_dictionary()
+                except Exception:
+                    meta["original_metadata"] = str(s.original_metadata)
+
+            if hasattr(s, "metadata"):
+                try:
+                    meta["hyperspy_metadata"] = s.metadata.as_dictionary()
+                except Exception:
+                    meta["hyperspy_metadata"] = str(s.metadata)
+
+            logger.info(f"[META] EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}")
+
+        elif fname.endswith((".tif", ".tiff")):
+            import tifffile
+            with tifffile.TiffFile(str(filepath)) as tif:
+                page = tif.pages[0]
+                meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
+
+                # Store all TIFF tags
+                meta["tiff_tags"] = {}
+                for tag in page.tags.values():
+                    try:
+                        val = tag.value
+                        # Make JSON-serializable
+                        if isinstance(val, (bytes, np.ndarray)):
+                            val = str(val)[:500]
+                        elif isinstance(val, tuple):
+                            val = list(val)
+                        meta["tiff_tags"][tag.name] = val
+                    except Exception:
+                        pass
+
+        elif fname.endswith(".npy"):
+            arr = np.load(str(filepath))
+            meta["image_shape"] = list(arr.shape)
+
+        else:
+            img = cv.imread(str(filepath))
+            if img is not None:
+                meta["image_shape"] = [img.shape[0], img.shape[1]]
+
+    except Exception as e:
+        logger.warning(f"[META] Metadata extraction failed (non-fatal): {e}")
+
+    return meta
+
 @router.get("/{session_id}/preview")
 async def get_preview(session_id: str):
     path = SESSIONS_DIR / session_id / "original_preview.png"
@@ -22,8 +105,19 @@ async def get_preview(session_id: str):
         return {"error": "No preview found"}
     return FileResponse(path)
 
+
+@router.get("/{session_id}/metadata")
+async def get_metadata(session_id: str):
+    """Return session metadata (pixel scale, format, etc.)."""
+    path = SESSIONS_DIR / session_id / "metadata.json"
+    if not path.exists():
+        return {"pixel_size": None, "pixel_unit": None}
+    with open(path) as f:
+        return json.load(f)
+
+
 @router.post("/upload")
-async def upload_image(request:Request, file: UploadFile = File(...)):
+async def upload_image(request: Request, file: UploadFile = File(...)):
     session_id = str(uuid.uuid4())[:4]
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -34,9 +128,15 @@ async def upload_image(request:Request, file: UploadFile = File(...)):
 
     logger.info("[IMG] Upload session: %s, filename: %s", session_id, file.filename)
 
+    metadata = _extract_metadata(dest, file.filename)
+    meta_path = session_dir / "metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    logger.info(f"[IMG] Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}")
+
     fname = file.filename.lower()
     arr = None
-    preview_url = f"/images/{session_id}/file"  
+    preview_url = f"/images/{session_id}/file"
 
     logger.info(f"[IMG] preview url : {preview_url}")
 
@@ -46,19 +146,12 @@ async def upload_image(request:Request, file: UploadFile = File(...)):
         import tifffile
         arr = tifffile.imread(str(dest))
     elif fname.endswith(".emd"):
-        import hyperspy.api as hs 
+        import hyperspy.api as hs
         result = hs.load(str(dest))
         s = result[0] if isinstance(result, list) else result
         arr = s.data
+
     if arr is not None:
-        logger.info(f"[IMG] img shape: {arr.shape}")
-
-        # handle multi-channel or 3D tif stacks — take first slice
-        # if arr.ndim == 3 and arr.shape[0] > 3:
-        #     arr = arr[0]  # e.g. (Z, H, W) → take first Z
-        # elif arr.ndim == 3 and arr.shape[2] > 4:
-        #     arr = arr[:, :, 0]
-
         logger.info(f"[IMG] img shape: {arr.shape}")
 
         arr_min, arr_max = arr.min(), arr.max()
@@ -94,6 +187,7 @@ async def upload_image(request:Request, file: UploadFile = File(...)):
         "session_id": session_id,
         "filename": file.filename,
         "preview_url": preview_url,
+        "metadata": metadata,
     }
 
 
@@ -126,7 +220,7 @@ async def get_mask(session_id: str):
 
 
 @router.post("/{session_id}/gt")
-async def upload_ground_truth(session_id:str, file:UploadFile=File(...)):
+async def upload_ground_truth(session_id: str, file: UploadFile = File(...)):
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     
