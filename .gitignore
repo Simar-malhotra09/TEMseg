@@ -9,6 +9,8 @@ backend/uv_venv_clean/
 backend/.DS_Store
 backend/src/data/
 *.egg-info/
+build/
+dist/
 backend/src/routes.log
 backend/src/sessions/
 backend/uv.lock
