@@ -12,6 +12,7 @@ import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import ExportPanel from "./components/ExportPanel";
+import StatsPanel from "./components/StatsPanel";
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
 
@@ -604,106 +605,16 @@ export default function Workspace() {
         </main>
 
         {/* right panel */}
-        <aside className={styles.statsPanel}>
-          <section className={styles.sidebarSection}>
-              {/* metadata section */}
-              <p className={styles.sidebarLabel}>Image Info</p>
-              {!image ? (
-                <p className={styles.sidebarHint}>Upload an image to see info.</p>
-              ) : (
-                <div className={styles.statsGrid}>
-                  {sessionId && (
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Session</span>
-                      <span className={styles.statVal}>{sessionId}</span>
-                    </div>
-                  )}
-                  {metadata?.image_shape && (
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Dimensions</span>
-                      <span className={styles.statVal}>
-                        {metadata.image_shape[1]}×{metadata.image_shape[0]}
-                      </span>
-                    </div>
-                  )}
-                  {metadata?.original_format && (
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Format</span>
-                      <span className={styles.statVal}>{metadata.original_format.toUpperCase()}</span>
-                    </div>
-                  )}
-                  {metadata?.pixel_size != null && (
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Pixel Size</span>
-                      <span className={styles.statVal}>
-                        {metadata.pixel_size.toFixed(4)} {metadata.pixel_unit ?? ""}
-                      </span>
-                    </div>
-                  )}
-                  {metadata?.axes?.length > 0 && metadata.axes[0]?.units && (
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>FOV</span>
-                      <span className={styles.statVal}>
-                        {(metadata.axes[0].scale * metadata.axes[0].size).toFixed(1)} {metadata.axes[0].units}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
 
-            <section className={styles.sidebarSection}>
-              {/* stats section */}
-              <p className={styles.sidebarLabel}>Stats</p>
-              {!seg.segDone ? (
-                <p className={styles.sidebarHint}>Run segmentation to see particle statistics.</p>
-              ) : (
-                <div className={styles.statsGrid}>
-                  {(["Particles", "Avg. Size", "Avg. Circularity", "Coverage"] as const).map(label => {
-                    const key = ({
-                      "Particles": "particle_count",
-                      "Avg. Size": "avg_size",
-                      "Avg. Circularity": "avg_circularity",
-                      "Coverage": "coverage",
-                    } as const)[label];
+        <StatsPanel
+          image={image}
+          sessionId={sessionId}
+          metadata={metadata}
+          stats={seg.stats}
+          segDone={seg.segDone}
+          groundTruthScore={seg.groundTruthScore}
+        />
 
-                    let displayVal = "—";
-                    if (seg.stats && key in seg.stats) {
-                      const raw = (seg.stats as any)[key];
-                      displayVal = raw.toFixed(3);
-
-                      // If we have pixel scale, show real units for size
-                      if (key === "avg_size" && metadata?.pixel_size != null) {
-                        const realSize = raw * metadata.pixel_size * metadata.pixel_size;
-                        const unit = metadata.pixel_unit ?? "";
-                        displayVal = `${realSize.toFixed(2)} ${unit}²`;
-                      }
-                    }
-
-                    return (
-                      <div className={styles.statRow} key={label}>
-                        <span className={styles.statLabel}>{label}</span>
-                        <span className={styles.statVal}>{displayVal}</span>
-                      </div>
-                    );
-                  })}
-                  <div className={styles.statDivider} />
-                  {(["IoU", "Dice", "Pixel Acc"] as const).map(label => {
-                    const key = label === "Pixel Acc" ? "pixel_acc" : label.toLowerCase() as "iou" | "dice";
-                    return (
-                      <div className={styles.statRow} key={label}>
-                        <span className={styles.statLabel}>{label}</span>
-                        <span className={styles.statVal}>
-                          {seg.groundTruthScore?.[key]?.toFixed(3) ?? "—"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-        </aside>
       </div>
     </div>
   );
