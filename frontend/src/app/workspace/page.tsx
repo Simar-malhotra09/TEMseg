@@ -7,12 +7,17 @@ import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
+
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
+
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import ExportPanel from "./components/ExportPanel";
 import StatsPanel from "./components/StatsPanel";
+import StatsDetailView from "./components/StatsDetailView";
+import ParticleHighlight from "./components/ParticleHighlight";
+
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
 
@@ -40,6 +45,11 @@ export default function Workspace() {
 
   // metadata
   const [metadata, setMetadata] = useState<Record<string, any> | null>(null);
+
+  // stats detail view
+  const [showStatsDetail, setShowStatsDetail] = useState(false);
+  const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
+  const [loadedInstances, setLoadedInstances] = useState<Instance[]>([]);
 
   // viewport
   const viewportRef = useRef<HTMLDivElement>(null); // we want to keep track of the size of the current view: the div where the image is displayed
@@ -217,6 +227,7 @@ export default function Workspace() {
 
   function handleMouseDown(e: React.MouseEvent) {
     if (seg.isBlackoutMode || refineMode) return;
+    setHighlightParticleIdx(null); // clear particle highlight
     e.preventDefault();
     isPanning.current = true;
     setPanning(true);
@@ -240,382 +251,419 @@ export default function Workspace() {
     });
   }
 
+  async function handleLocateParticle(particleIndex: number) {
+    if (!sessionId) return;
+    let instances = loadedInstances;
+    if (instances.length === 0) {
+      const res = await getInstances(sessionId);
+      instances = res.instances;
+      setLoadedInstances(instances);
+    }
+    setHighlightParticleIdx(particleIndex);
+    setShowStatsDetail(false);
+    seg.setMasksVisible(true);
+  }
+
   const activeRegions = seg.isInvBlackoutMode
     ? seg.invBlackoutRegions
     : seg.blackoutRegions;
   const hasRegions = activeRegions.length > 0;
 
   return (
-    <div className={styles.workspaceRoot}>
+    <>
+      {showStatsDetail && seg.stats && (
+        <StatsDetailView
+          stats={seg.stats}
+          metadata={metadata}
+          groundTruthScore={seg.groundTruthScore}
+          onBack={() => setShowStatsDetail(false)}
+          onLocateParticle={handleLocateParticle}
+        />
+      )}
+      <div className={styles.workspaceRoot} style={{display: showStatsDetail? "none" : "flex" }}>
 
-      {/* topbar */}
-      <header className={styles.topbar}>
-        <div className={styles.topbarLeft}>
-          <div
-            onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
-            title="New workspace"
-            style={{ cursor: "pointer" }}
-          >
-            <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
-          </div>
-          <span className={styles.sessionTag}>
-            session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
-          </span>
-        </div>
-        <div className={styles.topbarRight}>
-          {seg.regionsOutOfSync && (
-            <span className={styles.warnPill}>
-              <AlertTriangle size={11} /> blackout regions changed — re-run seg
-            </span>
-          )}
-
-          {/*Display zoom size and reset to normal on click*/}
-          <span className={styles.statusPill}>{status}</span>
-          {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-            <button className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
-              {Math.round(zoom * 100)}% ✕
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Main workspace */}
-      <div className={styles.workspaceBody}>
-
-        {/* 
-            left sidebar, handles 
-              a. model selection dropdown 
-              b. run seg button 
-              c. hide/show masks
-              d. enter/exit refine mode
-              e. exclude/isolate regions 
-              f. upload/compute gt
-              g. export (modified) masks
-          */}
-        <aside className={styles.sidebar}>
-
-          {/* model selector */}
-          <section className={styles.sidebarSection}>
-            <p className={styles.sidebarLabel}>Model</p>
-            <div className={styles.dropdownWrap}>
-              <button className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
-                {selectedModel} <ChevronDown size={14} />
-              </button>
-              {modelDropdownOpen && (
-                <ul className={styles.dropdownList}>
-                  {models.map(m => (
-                    <li key={m}
-                      className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
-                      onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
-                    >{m}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-
-          {/* actions */}
-          <section className={styles.sidebarSection}>
-            <p className={styles.sidebarLabel}>Actions</p>
-
-            {/*[ACTION]- run seg */}
-            <button
-              className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-              onClick={handleRunSegmentation}
-              disabled={!image || seg.isSegmenting}
+        {/* topbar */}
+        <header className={styles.topbar}>
+          <div className={styles.topbarLeft}>
+            <div
+              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
+              title="New workspace"
+              style={{ cursor: "pointer" }}
             >
-              <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
-            </button>
+              <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
+            </div>
+            <span className={styles.sessionTag}>
+              session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
+            </span>
+          </div>
+          <div className={styles.topbarRight}>
+            {seg.regionsOutOfSync && (
+              <span className={styles.warnPill}>
+                <AlertTriangle size={11} /> blackout regions changed — re-run seg
+              </span>
+            )}
+
+            {/*Display zoom size and reset to normal on click*/}
+            <span className={styles.statusPill}>{status}</span>
+            {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+              <button className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+                {Math.round(zoom * 100)}% ✕
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* Main workspace */}
+        <div className={styles.workspaceBody}>
+
+          {/* 
+              left sidebar, handles 
+                a. model selection dropdown 
+                b. run seg button 
+                c. hide/show masks
+                d. enter/exit refine mode
+                e. exclude/isolate regions 
+                f. upload/compute gt
+                g. export (modified) masks
+            */}
+          <aside className={styles.sidebar}>
+
+            {/* model selector */}
+            <section className={styles.sidebarSection}>
+              <p className={styles.sidebarLabel}>Model</p>
+              <div className={styles.dropdownWrap}>
+                <button className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
+                  {selectedModel} <ChevronDown size={14} />
+                </button>
+                {modelDropdownOpen && (
+                  <ul className={styles.dropdownList}>
+                    {models.map(m => (
+                      <li key={m}
+                        className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
+                        onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
+                      >{m}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
+            {/* actions */}
+            <section className={styles.sidebarSection}>
+              <p className={styles.sidebarLabel}>Actions</p>
+
+              {/*[ACTION]- run seg */}
+              <button
+                className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                onClick={handleRunSegmentation}
+                disabled={!image || seg.isSegmenting}
+              >
+                <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
+              </button>
+            </section>
+            <section>
+              {/*[ACTION]- show/hide masks */}
+              <button className={styles.actionBtn} disabled={!seg.segDone}
+                onClick={() => seg.setMasksVisible(v => !v)}>
+                {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                {seg.masksVisible ? "Hide Masks" : "Show Masks"}
+              </button>
+
+              {/*[ACTION]- refine masks */}
+              <button className={styles.actionBtn} disabled={!seg.segDone}
+                onClick={
+                  refineMode
+                    ? () => {
+                        refine.handleSave();
+                        setTimeout(() => {
+                          seg.setMasksVisible(b => !b);
+                        }, 300);
+
+                      }
+                    : () => {
+                        enterRefineMode();
+
+                        setTimeout(() => {
+                          seg.setMasksVisible(b => !b);
+                        }, 300);
+                      }
+                }
+                >
+                <Sliders size={14} />
+                {refineMode
+                  ? (refine.isSaving ? "Saving..." : "Save Refinements")
+                  : "Refine Masks"}
+              </button>
+
+              {/* discard all changes made while refining masks*/}
+              {refineMode && (
+                <button className={styles.actionBtn} onClick={refine.handleDiscard}>
+                  Discard
+                </button>
+              )} 
           </section>
           <section>
-            {/*[ACTION]- show/hide masks */}
-            <button className={styles.actionBtn} disabled={!seg.segDone}
-              onClick={() => seg.setMasksVisible(v => !v)}>
-              {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-              {seg.masksVisible ? "Hide Masks" : "Show Masks"}
-            </button>
-
-            {/*[ACTION]- refine masks */}
-            <button className={styles.actionBtn} disabled={!seg.segDone}
-              onClick={
-                refineMode
-                  ? () => {
-                      refine.handleSave();
-                      setTimeout(() => {
-                        seg.setMasksVisible(b => !b);
-                      }, 300);
-
-                    }
-                  : () => {
-                      enterRefineMode();
-
-                      setTimeout(() => {
-                        seg.setMasksVisible(b => !b);
-                      }, 300);
-                    }
-              }
-              >
-              <Sliders size={14} />
-              {refineMode
-                ? (refine.isSaving ? "Saving..." : "Save Refinements")
-                : "Refine Masks"}
-            </button>
-
-            {/* discard all changes made while refining masks*/}
-            {refineMode && (
-              <button className={styles.actionBtn} onClick={refine.handleDiscard}>
-                Discard
-              </button>
-            )} 
-        </section>
-        <section>
-            {sessionId && (
-              <ExportPanel
-                sessionId={sessionId}
-                segDone={seg.segDone}
-                refineDone={refineDone}
-                hasStats={!!seg.stats}
-              />
-            )}
-          </section>
-
-          {/* split controls — only shown in refine mode */}
-          {refineMode && (
-            <section className={styles.sidebarSection}>
-              <p className={styles.sidebarLabel}>Refine</p>
-
-              {refine.selectedId !== null && !refine.splitMode && (
-                <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
-                  Split Instance
-                </button>
-              )}
-
-              {refine.splitMode && (
-                <>
-                  <p className={styles.sidebarHint}>
-                    {refine.splitPoints.length} point{refine.splitPoints.length !== 1 ? "s" : ""} placed
-                  </p>
-                  <p className={styles.sidebarHint}>
-                    Click each particle to place a seed point
-                  </p>
-                  <button
-                    className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-                    disabled={refine.splitPoints.length < 2}
-                    onClick={refine.handleConfirmSplit}
-                  >
-                    Confirm Split
-                  </button>
-                  <button className={styles.actionBtn} onClick={refine.handleCancelSplit}>
-                    Cancel Split
-                  </button>
-                </>
+              {sessionId && (
+                <ExportPanel
+                  sessionId={sessionId}
+                  segDone={seg.segDone}
+                  refineDone={refineDone}
+                  hasStats={!!seg.stats}
+                />
               )}
             </section>
-          )}
 
-          {/* [ACTION] blackout regions */}
-          <section className={styles.sidebarSection}>
-            <p className={styles.sidebarLabel}>Blackout Regions</p>
-            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-              <button
-                className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => seg.setIsInvBlackoutMode(false)}
-                disabled={!image}
-              >Exclude</button>
-              <button
-                className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                onClick={() => seg.setIsInvBlackoutMode(true)}
-                disabled={!image}
-              >Isolate</button>
-            </div>
-            <button className={styles.actionBtn} disabled={!image}
-              onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
-              <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
-            </button>
-            {seg.isBlackoutMode && (
-              <button className={styles.actionBtn} onClick={handleApplyBlackout}>
-                Apply
-              </button>
+            {/* split controls — only shown in refine mode */}
+            {refineMode && (
+              <section className={styles.sidebarSection}>
+                <p className={styles.sidebarLabel}>Refine</p>
+
+                {refine.selectedId !== null && !refine.splitMode && (
+                  <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
+                    Split Instance
+                  </button>
+                )}
+
+                {refine.splitMode && (
+                  <>
+                    <p className={styles.sidebarHint}>
+                      {refine.splitPoints.length} point{refine.splitPoints.length !== 1 ? "s" : ""} placed
+                    </p>
+                    <p className={styles.sidebarHint}>
+                      Click each particle to place a seed point
+                    </p>
+                    <button
+                      className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                      disabled={refine.splitPoints.length < 2}
+                      onClick={refine.handleConfirmSplit}
+                    >
+                      Confirm Split
+                    </button>
+                    <button className={styles.actionBtn} onClick={refine.handleCancelSplit}>
+                      Cancel Split
+                    </button>
+                  </>
+                )}
+              </section>
             )}
-            {hasRegions && !seg.isBlackoutMode && (
-              <button className={styles.actionBtn} onClick={() => {
-                seg.clearRegions();
-                if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
-                else liveRegionsRef.current = [];
-                setStatus("Regions cleared.");
-              }}>
-                Clear Regions
+
+            {/* [ACTION] blackout regions */}
+            <section className={styles.sidebarSection}>
+              <p className={styles.sidebarLabel}>Blackout Regions</p>
+              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                <button
+                  className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                  onClick={() => seg.setIsInvBlackoutMode(false)}
+                  disabled={!image}
+                >Exclude</button>
+                <button
+                  className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                  onClick={() => seg.setIsInvBlackoutMode(true)}
+                  disabled={!image}
+                >Isolate</button>
+              </div>
+              <button className={styles.actionBtn} disabled={!image}
+                onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
+                <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
               </button>
-            )}
-            <p className={styles.sidebarHint}>
-              {seg.isInvBlackoutMode
-                ? "Isolate: model only sees selected regions."
-                : "Exclude: model ignores selected regions."}
-            </p>
-          </section>
+              {seg.isBlackoutMode && (
+                <button className={styles.actionBtn} onClick={handleApplyBlackout}>
+                  Apply
+                </button>
+              )}
+              {hasRegions && !seg.isBlackoutMode && (
+                <button className={styles.actionBtn} onClick={() => {
+                  seg.clearRegions();
+                  if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
+                  else liveRegionsRef.current = [];
+                  setStatus("Regions cleared.");
+                }}>
+                  Clear Regions
+                </button>
+              )}
+              <p className={styles.sidebarHint}>
+                {seg.isInvBlackoutMode
+                  ? "Isolate: model only sees selected regions."
+                  : "Exclude: model ignores selected regions."}
+              </p>
+            </section>
 
-          {/* [ACTION] ground truth */}
-          <section className={styles.sidebarSection}>
-            <p className={styles.sidebarLabel}>Ground Truth</p>
-            <button className={styles.actionBtn}
-              onClick={() => gtFileRef.current?.click()}
-              disabled={!sessionId}>
-              <Upload size={14} /> Upload GT
-            </button>
-            <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-              hidden onChange={onGroundTruthFileChange} />
-            <p className={styles.sidebarHint}>
-              {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
-            </p>
-            {seg.gtUrl && (
-              <button className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
-                {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                {seg.gtVisible ? "Hide GT" : "Show GT"}
+            {/* [ACTION] ground truth */}
+            <section className={styles.sidebarSection}>
+              <p className={styles.sidebarLabel}>Ground Truth</p>
+              <button className={styles.actionBtn}
+                onClick={() => gtFileRef.current?.click()}
+                disabled={!sessionId}>
+                <Upload size={14} /> Upload GT
               </button>
-            )}
-          </section>
+              <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
+                hidden onChange={onGroundTruthFileChange} />
+              <p className={styles.sidebarHint}>
+                {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+              </p>
+              {seg.gtUrl && (
+                <button className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                  {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {seg.gtVisible ? "Hide GT" : "Show GT"}
+                </button>
+              )}
+            </section>
 
-        </aside>
+          </aside>
 
-        {/* canvas */}
-        <main className={styles.canvasArea}>
-          {!image ? (
-            <div
-              className={`${styles.dropZone} ${isDragging ? styles.dropZoneDragging : ""}`}
-              onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={onDrop}
-              onClick={() => fileRef.current?.click()}
-            >
-              <Upload size={32} strokeWidth={1.5} />
-              <p className={styles.dropLabel}>Drop image here or click to upload</p>
-              <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
-            </div>
-          ) : (
-            <div
-              className={styles.imageViewport}
-              ref={viewportRef}
-              onWheel={handleWheel}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              style={{
-                position: "relative",
-                display: "inline-block",
-                lineHeight: 0,
-                transform: seg.isBlackoutMode || refineMode
-                  ? "none"
-                  : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-                transformOrigin: "center center",
-                transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                cursor: seg.isBlackoutMode || refineMode
-                  ? "default"
-                  : panning ? "grabbing" : "grab",
-              }}
-            >
-              {/* base image — hidden when blackout/refine canvas is active (they render their own) */}
-              <img
-                src={image}
-                alt="TEM input"
-                className={styles.temImage}
+          {/* canvas */}
+          <main className={styles.canvasArea}>
+            {!image ? (
+              <div
+                className={`${styles.dropZone} ${isDragging ? styles.dropZoneDragging : ""}`}
+                onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload size={32} strokeWidth={1.5} />
+                <p className={styles.dropLabel}>Drop image here or click to upload</p>
+                <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+              </div>
+            ) : (
+              <div
+                className={styles.imageViewport}
+                ref={viewportRef}
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
                 style={{
-                  display: "block", width: "100%", height: "100%",
-                  visibility: seg.isBlackoutMode || refineMode ? "hidden" : "visible",
+                  position: "relative",
+                  display: "inline-block",
+                  lineHeight: 0,
+                  transform: seg.isBlackoutMode || refineMode
+                    ? "none"
+                    : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                  transformOrigin: "center center",
+                  transition: isPanning.current ? "none" : "transform 0.05s ease-out",
+                  cursor: seg.isBlackoutMode || refineMode
+                    ? "default"
+                    : panning ? "grabbing" : "grab",
                 }}
-                onLoad={e => setImgSize({
-                  width: e.currentTarget.naturalWidth,
-                  height: e.currentTarget.naturalHeight,
-                })}
-              />
+              >
+                {/* base image — hidden when blackout/refine canvas is active (they render their own) */}
+                <img
+                  src={image}
+                  alt="TEM input"
+                  className={styles.temImage}
+                  style={{
+                    display: "block", width: "100%", height: "100%",
+                    visibility: seg.isBlackoutMode || refineMode ? "hidden" : "visible",
+                  }}
+                  onLoad={e => setImgSize({
+                    width: e.currentTarget.naturalWidth,
+                    height: e.currentTarget.naturalHeight,
+                  })}
+                />
 
-              {/* blackout canvas */}
-              {seg.isBlackoutMode && imgSize.width > 0 && (
-                <div style={{ position: "absolute", top: 0, left: 0 }}>
-                  <BlackoutCanvas
-                    imageSrc={image} 
-                    width={viewportSize.width}
-                    height={viewportSize.height}
+                {/* blackout canvas */}
+                {seg.isBlackoutMode && imgSize.width > 0 && (
+                  <div style={{ position: "absolute", top: 0, left: 0 }}>
+                    <BlackoutCanvas
+                      imageSrc={image} 
+                      width={viewportSize.width}
+                      height={viewportSize.height}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      isInverse={seg.isInvBlackoutMode}
+                      initialRegions={seg.isInvBlackoutMode ? seg.invBlackoutRegions : seg.blackoutRegions}
+                      onChange={regions => {
+                        if (seg.isInvBlackoutMode) {
+                          liveInverseRegionsRef.current = regions;
+                          seg.setInvBlackoutRegions(regions);
+                        } else {
+                          liveRegionsRef.current = regions;
+                          seg.setBlackoutRegions(regions);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* refine canvas */}
+                {refineMode && imgSize.width > 0 && (
+                  <div style={{ position: "absolute", top: 0, left: 0 }}>
+                    <RefineCanvas
+                      imageSrc={image}
+                      width={viewportSize.width}
+                      height={viewportSize.height}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      instances={refine.instances}
+                      selectedId={refine.selectedId}
+                      viewBox={refine.viewBox}
+                      splitMode={refine.splitMode}
+                      splitPoints={refine.splitPoints}
+                      onSelect={refine.handleSelect}
+                      onDeselect={refine.handleDeselect}
+                      onVertexDragEnd={refine.handleVertexDragEnd}
+                      onVertexDelete={refine.handleVertexDelete}
+                      onEdgeClick={refine.handleEdgeClick}
+                      onSplitPointPlace={refine.handleSplitPointPlace}
+                      onViewBoxChange={refine.setViewBox}
+                    />
+                  </div>
+                )}
+
+                {/* seg mask overlay */}
+                {seg.segDone && seg.masksVisible && seg.maskUrl && (
+                  <img src={seg.maskUrl} style={{
+                    position: "absolute", top: 0, left: 0,
+                    width: "100%", height: "100%",
+                    opacity: 0.5, mixBlendMode: "screen",
+                    pointerEvents: "none",
+                  }} />
+                )}
+
+                {/* GT overlay */}
+                {seg.gtVisible && seg.gtUrl && (
+                  <img src={seg.gtUrl} style={{
+                    position: "absolute", top: 0, left: 0,
+                    width: "100%", height: "100%",
+                    opacity: 0.5, mixBlendMode: "screen",
+                    filter: "hue-rotate(200deg)",
+                    pointerEvents: "none",
+                  }} />
+                )}
+
+                {/* particle highlight from stats table */}
+                {highlightParticleIdx !== null && loadedInstances.length > highlightParticleIdx && !refineMode && !seg.isBlackoutMode && (
+                  <ParticleHighlight
+                    instance={loadedInstances[highlightParticleIdx]}
                     imgWidth={imgSize.width}
                     imgHeight={imgSize.height}
-                    isInverse={seg.isInvBlackoutMode}
-                    initialRegions={seg.isInvBlackoutMode ? seg.invBlackoutRegions : seg.blackoutRegions}
-                    onChange={regions => {
-                      if (seg.isInvBlackoutMode) {
-                        liveInverseRegionsRef.current = regions;
-                        seg.setInvBlackoutRegions(regions);
-                      } else {
-                        liveRegionsRef.current = regions;
-                        seg.setBlackoutRegions(regions);
-                      }
-                    }}
+                    viewportWidth={viewportSize.width}
+                    viewportHeight={viewportSize.height}
                   />
-                </div>
-              )}
+                )}
 
-              {/* refine canvas */}
-              {refineMode && imgSize.width > 0 && (
-                <div style={{ position: "absolute", top: 0, left: 0 }}>
-                  <RefineCanvas
-                    imageSrc={image}
-                    width={viewportSize.width}
-                    height={viewportSize.height}
-                    imgWidth={imgSize.width}
-                    imgHeight={imgSize.height}
-                    instances={refine.instances}
-                    selectedId={refine.selectedId}
-                    viewBox={refine.viewBox}
-                    splitMode={refine.splitMode}
-                    splitPoints={refine.splitPoints}
-                    onSelect={refine.handleSelect}
-                    onDeselect={refine.handleDeselect}
-                    onVertexDragEnd={refine.handleVertexDragEnd}
-                    onVertexDelete={refine.handleVertexDelete}
-                    onEdgeClick={refine.handleEdgeClick}
-                    onSplitPointPlace={refine.handleSplitPointPlace}
-                    onViewBoxChange={refine.setViewBox}
-                  />
-                </div>
-              )}
+              </div>
+            )}
+            <input ref={fileRef} type="file" accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
+              hidden onChange={onFileChange} />
+          </main>
 
-              {/* seg mask overlay */}
-              {seg.segDone && seg.masksVisible && seg.maskUrl && (
-                <img src={seg.maskUrl} style={{
-                  position: "absolute", top: 0, left: 0,
-                  width: "100%", height: "100%",
-                  opacity: 0.5, mixBlendMode: "screen",
-                  pointerEvents: "none",
-                }} />
-              )}
+          {/* right panel */}
 
-              {/* GT overlay */}
-              {seg.gtVisible && seg.gtUrl && (
-                <img src={seg.gtUrl} style={{
-                  position: "absolute", top: 0, left: 0,
-                  width: "100%", height: "100%",
-                  opacity: 0.5, mixBlendMode: "screen",
-                  filter: "hue-rotate(200deg)",
-                  pointerEvents: "none",
-                }} />
-              )}
-            </div>
-          )}
-          <input ref={fileRef} type="file" accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
-            hidden onChange={onFileChange} />
-        </main>
+          <StatsPanel
+            image={image}
+            sessionId={sessionId}
+            metadata={metadata}
+            stats={seg.stats}
+            segDone={seg.segDone}
+            groundTruthScore={seg.groundTruthScore}
+            onViewDetails={() => setShowStatsDetail(true)}
+          />
 
-        {/* right panel */}
-
-        <StatsPanel
-          image={image}
-          sessionId={sessionId}
-          metadata={metadata}
-          stats={seg.stats}
-          segDone={seg.segDone}
-          groundTruthScore={seg.groundTruthScore}
-        />
-
+        </div>
       </div>
-    </div>
+    </>
   );
 }
