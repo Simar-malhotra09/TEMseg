@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, ReferenceLine, CartesianGrid,
+  PieChart, Pie, Cell, ReferenceLine, CartesianGrid,Line, ComposedChart
 } from "recharts";
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
@@ -82,6 +82,46 @@ function HistTooltip({ active, payload, unit }: any) {
   );
 }
 
+/** Compute scaled PDF values to overlay on histogram */
+function addFitCurve(
+  bins: ReturnType<typeof buildBins>,
+  fits: StatsResult["distribution_fits_diameter"],
+  totalParticles: number,
+) {
+  if (!fits?.reliable || !fits.best_model || !fits.fits) return bins;
+
+  const fit = fits.fits[fits.best_model];
+  if (!fit) return bins;
+
+  const binWidth = bins.length > 1 ? bins[1].binStart - bins[0].binStart : 1;
+  const p = fit.params;
+
+  return bins.map(bin => {
+    const x = (bin.binStart + bin.binEnd) / 2;
+    let pdf = 0;
+
+    if (fits.best_model === "normal") {
+      const z = (x - p.mean) / p.std;
+      pdf = Math.exp(-0.5 * z * z) / (p.std * Math.sqrt(2 * Math.PI));
+    } else if (fits.best_model === "lognormal") {
+      if (x > 0) {
+        const lnx = Math.log(x);
+        const z = (lnx - p.mu_log) / p.sigma_log;
+        pdf = Math.exp(-0.5 * z * z) / (x * p.sigma_log * Math.sqrt(2 * Math.PI));
+      }
+    } else if (fits.best_model === "weibull") {
+      if (x > 0) {
+        const c = p.shape;
+        const s = p.scale;
+        pdf = (c / s) * Math.pow(x / s, c - 1) * Math.exp(-Math.pow(x / s, c));
+      }
+    }
+
+    // scale PDF to match histogram counts: expected_count = pdf * binWidth * N
+    return { ...bin, fit: pdf * binWidth * totalParticles };
+  });
+}
+
 export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
   const [sortKey, setSortKey] = useState<SortKey>("index");
@@ -92,8 +132,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const unit = stats.unit ?? "px";
   const particles = stats.particles ?? [];
 
-  // ── histogram data ──────────────────────────────────────────
-  const histData = useMemo(() => {
+  // histogram/pdf 
+const histData = useMemo(() => {
     const values = particles.map(p => {
       if (sizeMode === "diameter") {
         return hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px;
@@ -101,8 +141,14 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
         return hasScale && p.area_real != null ? p.area_real : p.area_px;
       }
     });
-    return buildBins(values, Math.min(20, Math.max(8, Math.ceil(Math.sqrt(particles.length)))));
-  }, [particles, sizeMode, hasScale]);
+    const bins = buildBins(values, Math.min(20, Math.max(8, Math.ceil(Math.sqrt(particles.length)))));
+
+    const fits = sizeMode === "diameter"
+      ? stats.distribution_fits_diameter
+      : stats.distribution_fits_area;
+
+    return addFitCurve(bins, fits, particles.length);
+  }, [particles, sizeMode, hasScale, stats.distribution_fits_diameter, stats.distribution_fits_area]);
 
   const histMean = sizeMode === "diameter"
     ? stats.size_stats.diameter_mean
@@ -194,7 +240,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
 
           <div className={styles.chartWrap}>
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={histData} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+                <ComposedChart data={histData} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
                 <XAxis
                   dataKey="label"
@@ -222,7 +268,15 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
                   label={{ value: "median", position: "top", fill: "#e8c87e", fontSize: 10 }}
                 />
                 <Bar dataKey="count" fill="#7ee8a2" opacity={0.75} radius={[2, 2, 0, 0]} />
-              </BarChart>
+                <Line
+                  dataKey="fit"
+                  type="monotone"
+                  stroke="#e8c87e"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Fitted distribution"
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
 
@@ -230,6 +284,11 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
             <span>Mean: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_mean" : "area_mean"])} {histUnit}</span>
             <span>Std: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_std" : "area_std"])} {histUnit}</span>
             <span>Median: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_median" : "area_median"])} {histUnit}</span>
+            {(() => {
+              const fits = sizeMode === "diameter" ? stats.distribution_fits_diameter : stats.distribution_fits_area;
+              if (!fits?.reliable || !fits.best_model) return null;
+              return <span style={{ color: "#e8c87e" }}>Fit: {fits.best_model}</span>;
+            })()}
           </div>
         </div>
 
