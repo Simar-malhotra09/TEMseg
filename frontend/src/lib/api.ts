@@ -55,6 +55,28 @@ export interface StatsResult {
 
   shape_distribution: Record<string, { count: number; fraction: number }>;
 
+  distribution_fits_diameter: {
+      reliable: boolean;
+      reason?: string;
+      best_model?: string;
+      fits?: Record<string, {
+        params: Record<string, number>;
+        ks_statistic: number;
+        ks_pvalue: number;
+      }>;
+  };
+
+  distribution_fits_area: {
+      reliable: boolean;
+      reason?: string;
+      best_model?: string;
+      fits?: Record<string, {
+        params: Record<string, number>;
+        ks_statistic: number;
+        ks_pvalue: number;
+      }>;
+  };
+
   // per-particle
   particles: {
     area_px: number;

@@ -275,6 +275,52 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
             ))}
           </div>
         </div>
+        {/* distribution fit */}
+        {(() => {
+          const fits = sizeMode === "diameter"
+            ? stats.distribution_fits_diameter
+            : stats.distribution_fits_area;
+          if (!fits?.reliable || !fits.fits) return null;
+          return (
+            <div className={styles.fitCard}>
+              <div className={styles.fitHeader}>
+                <h2 className={styles.chartTitle}>
+                  Distribution Fit — {sizeMode === "diameter" ? "Eq. Diameter" : "Area"} ({histUnit})
+                </h2>
+                <span className={styles.fitBest}>
+                  Best fit: <strong>{fits.best_model}</strong>
+                </span>
+              </div>
+              <div className={styles.fitGrid}>
+                {Object.entries(fits.fits).map(([model, fit]) => {
+                  const isBest = model === fits.best_model;
+                  return (
+                    <div key={model} className={`${styles.fitModel} ${isBest ? styles.fitModelBest : ""}`}>
+                      <div className={styles.fitModelHeader}>
+                        <span className={styles.fitModelName}>{model}</span>
+                        {isBest && <span className={styles.fitBestBadge}>best</span>}
+                      </div>
+                      <div className={styles.fitParams}>
+                        {Object.entries(fit.params).map(([k, v]) => (
+                          <div key={k} className={styles.fitParam}>
+                            <span className={styles.fitParamKey}>{k}</span>
+                            <span className={styles.fitParamVal}>{fmt(v, 4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className={styles.fitGof}>
+                        <span>KS p-value: {fit.ks_pvalue < 0.001 ? "<0.001" : fmt(fit.ks_pvalue, 4)}</span>
+                        <span className={fit.ks_pvalue >= 0.05 ? styles.fitPass : styles.fitFail}>
+                          {fit.ks_pvalue >= 0.05 ? "✓ cannot reject" : "✗ poor fit"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* summary cards */}
