@@ -184,7 +184,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
               <button
                 className={`${styles.toggleBtn} ${sizeMode === "diameter" ? styles.toggleActive : ""}`}
                 onClick={() => setSizeMode("diameter")}
-              >Diameter</button>
+              >Equivalent Diameter</button>
               <button
                 className={`${styles.toggleBtn} ${sizeMode === "area" ? styles.toggleActive : ""}`}
                 onClick={() => setSizeMode("area")}
@@ -283,7 +283,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
           { label: "Particles", value: `${stats.particle_count}` },
           { label: "Coverage", value: `${(stats.coverage * 100).toFixed(1)}%` },
           {
-            label: "Avg Diameter",
+            label: "Avg Eq. Diameter",
             value: hasScale && stats.avg_diameter_real != null
               ? `${fmt(stats.avg_diameter_real)}  ±  ${fmt(stats.size_stats["diameter_std"])} ${unit}`
               : `${fmt(stats.avg_diameter_px)} px`,
@@ -325,7 +325,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
               <tr>
                 {([
                   ["index", "#"],
-                  ["diameter", `Diameter (${hasScale ? unit : "px"})`],
+                  ["diameter", `Eq. Diameter (${hasScale ? unit : "px"})`],
                   ["area", `Area (${hasScale ? unit + "²" : "px²"})`],
                   ["perimeter", `Perimeter (${hasScale ? unit : "px"})`],
                   ["circularity", "Circularity"],
