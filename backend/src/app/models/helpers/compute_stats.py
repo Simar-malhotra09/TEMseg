@@ -1,5 +1,5 @@
 """
-compute_stats.py — Particle statistics from a segmentation mask.
+Particle statistics from a segmentation mask.
 
 All spatial measurements are returned in two forms:
   - *_px   — always present, in pixel units
@@ -14,9 +14,8 @@ Future: user can manually input pixel_size from the frontend.
 import numpy as np
 import cv2 as cv
 import math
-from dataclasses import dataclass, field, asdict
 from typing import Optional
-
+from scipy import stats as sp_stats
 
 
 def _prepare_mask(mask: np.ndarray) -> np.ndarray:
@@ -45,7 +44,6 @@ def _fit_ellipse_safe(cnt):
     return (major, minor)
 
 
-
 def _analyze_particles(mask: np.ndarray):
     """
     Extract per-particle measurements from a binary mask.
@@ -68,7 +66,7 @@ def _analyze_particles(mask: np.ndarray):
         # circularity: 1.0 = perfect circle, <1 = irregular
         circularity = 0.0
         if perimeter_px > 0:
-            circularity = (4 * math.pi * area_px) / (perimeter_px ** 2)
+            circularity = (4 * math.pi * area_px) / (perimeter_px**2)
             circularity = min(circularity, 1.0)  # clamp numerical noise
 
         # aspect ratio from fitted ellipse
@@ -86,17 +84,19 @@ def _analyze_particles(mask: np.ndarray):
         # shape classification based on circularity + aspect ratio
         shape = _classify_shape(circularity, aspect_ratio)
 
-        particles.append({
-            "area_px": float(area_px),
-            "perimeter_px": float(perimeter_px),
-            "diameter_px": float(diameter_px),
-            "major_axis_px": float(major_px),
-            "minor_axis_px": float(minor_px),
-            "circularity": float(circularity),
-            "aspect_ratio": float(aspect_ratio),
-            "shape": shape,
-            "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
-        })
+        particles.append(
+            {
+                "area_px": float(area_px),
+                "perimeter_px": float(perimeter_px),
+                "diameter_px": float(diameter_px),
+                "major_axis_px": float(major_px),
+                "minor_axis_px": float(minor_px),
+                "circularity": float(circularity),
+                "aspect_ratio": float(aspect_ratio),
+                "shape": shape,
+                "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+            }
+        )
 
     return particles
 
@@ -116,9 +116,74 @@ def _classify_shape(circularity: float, aspect_ratio: float) -> str:
         return "irregular"
 
 
-# ---------------------------------------------------------------------------
+def _fit_distributions(diameters: list[float]) -> dict:
+    """
+    Fit lognormal, normal, and Weibull distributions to diameter data.
+    Returns best-fit model + all fitted parameters + goodness-of-fit.
+    Requires at least 10 particles for meaningful fits.
+    """
+    if len(diameters) < 10:
+        return {"reliable": False, "reason": "fewer than 10 particles"}
+
+    arr = np.array(diameters)
+    results = {}
+
+    # Normal
+    try:
+        mu, std = sp_stats.norm.fit(arr)
+        ks_stat, ks_p = sp_stats.kstest(arr, "norm", args=(mu, std))
+        results["normal"] = {
+            "params": {"mean": float(mu), "std": float(std)},
+            "ks_statistic": float(ks_stat),
+            "ks_pvalue": float(ks_p),
+        }
+    except Exception:
+        pass
+
+    # Lognormal
+    try:
+        shape, loc, scale = sp_stats.lognorm.fit(arr, floc=0)
+        mu_log = float(np.log(scale))
+        sigma_log = float(shape)
+        ks_stat, ks_p = sp_stats.kstest(arr, "lognorm", args=(shape, loc, scale))
+        results["lognormal"] = {
+            "params": {
+                "mu_log": mu_log,
+                "sigma_log": sigma_log,
+                "geometric_mean": float(scale),
+            },
+            "ks_statistic": float(ks_stat),
+            "ks_pvalue": float(ks_p),
+        }
+    except Exception:
+        pass
+
+    # Weibull
+    try:
+        c, loc, scale = sp_stats.weibull_min.fit(arr, floc=0)
+        ks_stat, ks_p = sp_stats.kstest(arr, "weibull_min", args=(c, loc, scale))
+        results["weibull"] = {
+            "params": {"shape": float(c), "scale": float(scale)},
+            "ks_statistic": float(ks_stat),
+            "ks_pvalue": float(ks_p),
+        }
+    except Exception:
+        pass
+
+    if not results:
+        return {"reliable": False, "reason": "all fits failed"}
+
+    # pick best model by highest KS p-value (least evidence against fit)
+    best = max(results.items(), key=lambda x: x[1]["ks_pvalue"])
+
+    return {
+        "reliable": True,
+        "best_model": best[0],
+        "fits": results,
+    }
+
+
 # Aggregate stats
-# ---------------------------------------------------------------------------
 
 def compute_stats(
     mask: np.ndarray,
@@ -180,11 +245,15 @@ def compute_stats(
     shape_counts = {}
     for s in shapes:
         shape_counts[s] = shape_counts.get(s, 0) + 1
-    shape_distribution = {k: {"count": v, "fraction": v / count} for k, v in shape_counts.items()}
+    shape_distribution = {
+        k: {"count": v, "fraction": v / count} for k, v in shape_counts.items()
+    }
 
     # size stats
     areas_real = [a * scale_sq for a in areas_px]
     diameters_real = [d * scale for d in diameters_px]
+    distribution_fits_dim = _fit_distributions(diameters_real)
+    distribution_fits_area= _fit_distributions(areas_real)
 
     size_stats = {
         "area_mean": float(np.mean(areas_real)),
@@ -217,34 +286,33 @@ def compute_stats(
         "pixel_unit": pixel_unit,
         "unit": unit,
         "has_scale": has_scale,
-
-        # aggregate (backward compat — frontend reads these)
+        # aggregate (backward compat)
         "particle_count": count,
         "coverage": float(coverage),
         "avg_size": avg_size,
         "avg_circularity": float(np.mean(circularities)),
         "avg_aspect_ratio": float(np.mean(aspect_ratios)),
-
         # detailed aggregate
         "avg_area_px": float(np.mean(areas_px)),
         "avg_diameter_px": float(np.mean(diameters_px)),
         "avg_area_real": float(np.mean(areas_real)) if has_scale else None,
         "avg_diameter_real": float(np.mean(diameters_real)) if has_scale else None,
-
         # distributions
         "size_stats": size_stats,
         "shape_distribution": shape_distribution,
-
+        "distribution_fits_diameter": distribution_fits_dim,
+        "distribution_fits_area": distribution_fits_area,
         # per-particle (for histograms, export)
         "particles": particles,
     }
 
 
-# backward compatibility 
+# backward compatibility
 def compute_particle_count(mask: np.ndarray) -> int:
     mask = _prepare_mask(mask)
     num_labels, _ = cv.connectedComponents(mask)
     return num_labels - 1
+
 
 def compute_avg_size(mask: np.ndarray) -> float:
     mask = _prepare_mask(mask)
@@ -253,6 +321,7 @@ def compute_avg_size(mask: np.ndarray) -> float:
         return 0.0
     areas = [np.sum(labels == label) for label in range(1, num_labels)]
     return float(np.mean(areas))
+
 
 def compute_avg_circularity(mask: np.ndarray) -> float:
     mask = _prepare_mask(mask)
@@ -265,9 +334,12 @@ def compute_avg_circularity(mask: np.ndarray) -> float:
         perim = cv.arcLength(cnt, True)
         if perim == 0:
             continue
-        circs.append((4 * math.pi * area) / (perim ** 2))
+        circs.append((4 * math.pi * area) / (perim**2))
     return float(np.mean(circs)) if circs else 0.0
+
 
 def compute_coverage(mask: np.ndarray) -> float:
     mask = _prepare_mask(mask)
     return float(np.count_nonzero(mask) / mask.size)
+
+
