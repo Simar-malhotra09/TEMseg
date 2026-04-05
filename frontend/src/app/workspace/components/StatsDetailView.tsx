@@ -285,13 +285,13 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
           {
             label: "Avg Diameter",
             value: hasScale && stats.avg_diameter_real != null
-              ? `${fmt(stats.avg_diameter_real)} ${unit}`
+              ? `${fmt(stats.avg_diameter_real)}  ±  ${fmt(stats.size_stats["diameter_std"])} ${unit}`
               : `${fmt(stats.avg_diameter_px)} px`,
           },
           {
             label: "Avg Area",
             value: hasScale && stats.avg_area_real != null
-              ? `${fmt(stats.avg_area_real)} ${unit}²`
+              ? `${fmt(stats.avg_area_real)}  ± ${fmt(stats.size_stats["area_std"])} ${unit}²`
               : `${fmt(stats.avg_area_px)} px²`,
           },
           { label: "Avg Circularity", value: fmt(stats.avg_circularity) },

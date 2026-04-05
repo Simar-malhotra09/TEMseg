@@ -48,7 +48,10 @@ export default function Workspace() {
 
   // stats detail view
   const [showStatsDetail, setShowStatsDetail] = useState(false);
+
+  // highlights particle when it's id gets clicked on the detailed view 
   const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
+
   const [loadedInstances, setLoadedInstances] = useState<Instance[]>([]);
 
   // viewport
@@ -84,10 +87,12 @@ export default function Workspace() {
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
   const [refineDone, setRefineDone] = useState(false);
+
+
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel });
 
-  // refine hook — instantiated when refine mode is entered
+  // refine hook gets instantiated when refine mode is entered
   // imgSize.width guard ensures we don't init with zero dims
   const refine = useRefineState({
     sessionId: sessionId ?? "",
@@ -114,7 +119,8 @@ export default function Workspace() {
     imgHeight: imgSize.height || 1,
   });
 
-  // delete key — only active in refine mode
+  // if in refine mode, del/backsapce 
+  // key deletes the object from the mask 
   useEffect(() => {
     if (!refineMode) return;
     const handler = (e: KeyboardEvent) => {
@@ -148,6 +154,19 @@ export default function Workspace() {
     e.target.value = "";
   }
 
+  // ground truth upload
+  function onGroundTruthFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const activeRegions = seg.isInvBlackoutMode
+      ? liveInverseRegionsRef.current
+      : liveRegionsRef.current;
+    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
+    seg.uploadGT(file, activeRegions, blackout, inverse);
+    e.target.value = "";
+  }
+
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
@@ -155,17 +174,25 @@ export default function Workspace() {
     if (file) handleFile(file);
   }
 
-  // run segmentation — reads live region refs, passes values into hook
+
+  // run segmentation reads live region refs, passes values into hook
   async function handleRunSegmentation() {
     if (!sessionId || !selectedModel) return;
+
+    // pass the correct regions 
     const activeRegions = seg.isInvBlackoutMode
       ? liveInverseRegionsRef.current
       : liveRegionsRef.current;
+
+    // only one of these should be true 
+    // can add guard 
     const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
     const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
     setStatus(`Running ${selectedModel}...`);
     const msg = await seg.runSegmentation(activeRegions, blackout, inverse);
+
+    // if gt available, compute scores 
     if (msg) {
       setStatus(msg);
       if (seg.groundTruth) {
@@ -200,18 +227,6 @@ export default function Workspace() {
     setStatus("Regions applied — ready to segment.");
   }
 
-  // ground truth upload
-  function onGroundTruthFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const activeRegions = seg.isInvBlackoutMode
-      ? liveInverseRegionsRef.current
-      : liveRegionsRef.current;
-    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
-    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
-    seg.uploadGT(file, activeRegions, blackout, inverse);
-    e.target.value = "";
-  }
 
   // css zoom/pan handlers — disabled when blackout or refine active
   function handleWheel(e: React.WheelEvent) {
@@ -251,19 +266,24 @@ export default function Workspace() {
     });
   }
 
+  // locate particle give id 
+  // used for detail view -> click id-> show particle mapping 
   async function handleLocateParticle(particleIndex: number) {
     if (!sessionId) return;
+
     let instances = loadedInstances;
     if (instances.length === 0) {
-      const res = await getInstances(sessionId);
+      const res = await getInstances(sessionId); // this should always be up to date
       instances = res.instances;
       setLoadedInstances(instances);
     }
+
     setHighlightParticleIdx(particleIndex);
-    setShowStatsDetail(false);
+    setShowStatsDetail(false); // pan back to workspace
     seg.setMasksVisible(true);
   }
 
+  // track which regions are to be used
   const activeRegions = seg.isInvBlackoutMode
     ? seg.invBlackoutRegions
     : seg.blackoutRegions;
@@ -271,6 +291,7 @@ export default function Workspace() {
 
   return (
     <>
+      {/*If in stats dashboard hide the workspace*/}
       {showStatsDetail && seg.stats && (
         <StatsDetailView
           stats={seg.stats}
@@ -280,6 +301,8 @@ export default function Workspace() {
           onLocateParticle={handleLocateParticle}
         />
       )}
+
+      {/* Main workspace */}
       <div className={styles.workspaceRoot} style={{display: showStatsDetail? "none" : "flex" }}>
 
         {/* topbar */}
