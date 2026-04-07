@@ -98,16 +98,17 @@ export default function Workspace() {
     sessionId: sessionId ?? "",
     initialInstances: [],
     onSave: async (updated: Instance[]) => {
-      if (!sessionId) return;
-      const result = await saveInstances(sessionId, updated);
-      const ts = Date.now(); // eslint-disable-line
-      seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
-      refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
-      setRefineDone(true);   
-      setRefineMode(false);
-      setStatus("Edited masks saved.");
+        if (!sessionId) return;
+        const result = await saveInstances(sessionId, updated);
+        const ts = Date.now();
+        seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
+        if (result.stats) seg.setStats(result.stats);
+        refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+        setRefineDone(true);
+        setRefineMode(false);
+        setStatus("Edited masks saved.");
     },
     onDiscard: () => {
       refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
