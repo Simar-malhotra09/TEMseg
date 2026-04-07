@@ -7,7 +7,7 @@ from scipy import ndimage
 
 logger = logging.getLogger(__name__)
 
-
+MIN_INSTANCE_AREA=50
 def extract_instances(
     mask: np.ndarray,
     session_dir: Path,
@@ -48,7 +48,9 @@ def extract_instances(
 
         x, y, w, h = cv.boundingRect(contours[0])
         area = int(np.sum(component))
-
+        if area < MIN_INSTANCE_AREA:
+            logger.debug(f"[INSTANCES] Component {inst_id} too small ({area}px), skipping")
+            continue
         instances.append({
             "id": inst_id,
             "contour": contour.tolist(),
