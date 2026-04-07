@@ -1,4 +1,3 @@
-from enum import unique
 import logging
 import time
 from dataclasses import dataclass
@@ -10,7 +9,6 @@ import numpy as np
 import torch
 from fastapi import APIRouter
 from segment_anything import SamPredictor, sam_model_registry
-from torch._C import dtype
 from ultralytics import YOLO
 
 from app.api.live_models import AvailableModels
@@ -100,12 +98,12 @@ class YoloSam(Model):
     def load_image(self, image_path: Path) -> np.ndarray:
         if image_path.suffix == ".npy":
             img = np.load(image_path)
-        elif image_path.suffix== ".emd":
+        elif image_path.suffix == ".emd":
             import hyperspy.api as hs
 
             result = hs.load(str(image_path))
             s = result[0] if isinstance(result, list) else result
-            img= s.data
+            img = s.data
 
         else:
             img = cv.imread(str(image_path), cv.IMREAD_COLOR)
@@ -224,33 +222,42 @@ class YoloSam(Model):
         combined = np.zeros((h_full, w_full), dtype="uint8")
 
         logger.info(
-            f"Starting batch segmentation: {len(patches)} patches, output size {img_shape}"
+            f"[YoloSAM-Batch] Starting: {len(patches)} patches, output size {img_shape}"
         )
 
-        # batch YOLO — one call for all patches
+        # --- Batch YOLO detection ---
+        t0 = time.perf_counter()
         yolo_model = self.components["yolo"]
-        logger.info("Running YOLO batch detection")
-        all_results = yolo_model.predict(
-            source=patches, conf=0.25, iou=0.5, max_det=4000
-        )
 
-        sam_model = self.components["sam"]
-        predictor = SamPredictor(sam_model)
+        if not hasattr(self, "_predictor"):
+            self._predictor = SamPredictor(self.components["sam"])
+        predictor = self._predictor
 
         total_detections = 0
+        t_yolo_total = 0
+        t_sam_total = 0
 
-        for i, (patch, result, (x1, y1)) in enumerate(
-            zip(patches, all_results, offsets)
-        ):
-            boxes = result.boxes.xyxy
+        for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
+            # YOLO per patch (ONNX model is batch=1)
+            t_yolo_start = time.perf_counter()
+            results = yolo_model.predict(
+                source=patch, conf=0.25, iou=0.5, max_det=4000, verbose=False
+            )
+            t_yolo_patch = time.perf_counter() - t_yolo_start
+            t_yolo_total += t_yolo_patch
+
+            boxes = results[0].boxes.xyxy
 
             if boxes is None or len(boxes) == 0:
-                logger.info(f"Patch {i}: no detections")
+                logger.info(f"[YoloSAM-Batch] Patch {i}: no detections, skipping")
                 continue
 
-            logger.info(f"Patch {i}: {len(boxes)} detections")
+            logger.info(
+                f"[YoloSAM-Batch] Patch {i}: {len(boxes)} detections, YOLO={t_yolo_patch:.3f}s"
+            )
 
-            # SAM still per-patch but YOLO was batched
+            # SAM per patch
+            t_sam_start = time.perf_counter()
             predictor.set_image(patch)
             input_boxes = boxes.to(predictor.device)
             transformed_boxes = predictor.transform.apply_boxes_torch(
@@ -263,26 +270,33 @@ class YoloSam(Model):
                 boxes=transformed_boxes,
                 multimask_output=False,
             )
+            t_sam_patch = time.perf_counter() - t_sam_start
+            t_sam_total += t_sam_patch
+            logger.info(f"[YoloSAM-Batch] Patch {i}: SAM={t_sam_patch:.3f}s")
 
             patch_mask = masks.cpu().numpy().astype("uint8")
             patch_mask = np.max(patch_mask, axis=0).squeeze()
 
             x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
-
             combined[y1:y2, x1:x2] = np.maximum(
                 combined[y1:y2, x1:x2], (patch_mask > 0).astype("uint8") * 255
             )
 
             total_detections += len(boxes)
 
-        logger.info(f"Segmentation complete: {total_detections} total detections")
+        t_total = time.perf_counter() - t0
+        logger.info(
+            f"[YoloSAM-Batch] TOTAL={t_total:.3f}s "
+            f"(yolo={t_yolo_total:.3f} | sam={t_sam_total:.3f}) | "
+            f"detections={total_detections}"
+        )
 
         return YoloSAMSegmentationResult(
             segmentation_mask=combined,
             metadata={
                 "detections": total_detections,
-                # "yolo_time_elapsed": yolo_time_elapsed,
-                # "sam_time_elapsed": sam_time_elapsed
+                "yolo_time": round(t_yolo_total, 3),
+                "sam_time": round(t_sam_total, 3),
             },
             model=AvailableModels.yolosam,
         )
