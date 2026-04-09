@@ -9,11 +9,99 @@ import numpy as np
 import cv2 as cv
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+import sys
+import os
+from rsciio.emd import file_reader
 from app.api.live_models import AvailableModels
 
 router = APIRouter(prefix="/images")
 logger = logging.getLogger("routes.images")
 SESSIONS_DIR = Path("sessions")
+
+
+def _ensure_rsciio_plugins():
+    """
+    Fix rsciio IO plugin discovery in frozen (PyInstaller) apps.
+
+    HyperSpy 2.x discovers format readers via entry points at import time.
+    In a frozen app, entry points don't work, so we manually walk the rsciio
+    package directory for specifications.yaml files and inject them into
+    BOTH rsciio.IO_PLUGINS and hyperspy.io.IO_PLUGINS.
+    """
+    import hyperspy.io
+    import rsciio
+    import yaml
+
+    # If HyperSpy already has a full set of plugins, nothing to do.
+    # (In a working non-frozen env, this would typically be 30+ plugins)
+    if len(getattr(hyperspy.io, "IO_PLUGINS", [])) > 5:
+        return
+
+    logger.info(
+        "[RSCIIO] Plugin registry incomplete — scanning for specifications.yaml"
+    )
+
+    # Find the rsciio package directory (works inside _MEIPASS too)
+    rsciio_dir = Path(rsciio.__file__).parent
+    logger.info(f"[RSCIIO] rsciio dir: {rsciio_dir}")
+
+    # Also check _MEIPASS paths in case rsciio.__file__ doesn't point there
+    search_dirs = [rsciio_dir]
+    if getattr(sys, "frozen", False):
+        bundle = Path(sys._MEIPASS)
+        for candidate in [bundle / "rsciio", bundle / "lib" / "rsciio"]:
+            if candidate.exists() and candidate != rsciio_dir:
+                search_dirs.append(candidate)
+
+    plugins = []
+    seen_names = set()
+
+    for base in search_dirs:
+        if not base.exists():
+            continue
+        for dirpath, _, filenames in os.walk(str(base)):
+            if "specifications.yaml" not in filenames:
+                continue
+            spec_file = os.path.join(dirpath, "specifications.yaml")
+            try:
+                with open(spec_file, "r") as f:
+                    specs = yaml.safe_load(f)
+                plugin_name = os.path.basename(dirpath)
+                specs["api"] = f"rsciio.{plugin_name}"
+
+                # Deduplicate
+                name = specs.get("name", plugin_name)
+                if name not in seen_names:
+                    plugins.append(specs)
+                    seen_names.add(name)
+            except Exception as e:
+                logger.warning(f"[RSCIIO] Failed to load {spec_file}: {e}")
+
+    logger.info(f"[RSCIIO] Found {len(plugins)} plugins from specifications.yaml")
+
+    # Log which formats we found (especially check for emd)
+    for p in plugins:
+        exts = p.get("file_extensions", [])
+        logger.info(f"[RSCIIO]   {p.get('name', '?')}: {exts}")
+
+    # Inject into BOTH registries
+    rsciio.IO_PLUGINS.clear()
+    rsciio.IO_PLUGINS.extend(plugins)
+
+    hyperspy.io.IO_PLUGINS.clear()
+    hyperspy.io.IO_PLUGINS.extend(plugins)
+
+    # Verify EMD is there
+    emd_found = any(
+        "emd" in [e.lower() for e in p.get("file_extensions", [])]
+        for p in hyperspy.io.IO_PLUGINS
+    )
+    if emd_found:
+        logger.info(
+            f"[RSCIIO] EMD reader registered successfully ({len(plugins)} total plugins)"
+        )
+    else:
+        logger.error("[RSCIIO] EMD reader NOT found after registration!")
 
 
 def _extract_metadata(filepath: Path, filename: str) -> dict:
@@ -28,10 +116,19 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
 
     try:
         if fname.endswith(".emd"):
-            import hyperspy.api as hs
+            try:
+                _ensure_rsciio_plugins()
+                import hyperspy.api as hs
 
-            result = hs.load(str(filepath))
-            s = result[0] if isinstance(result, list) else result
+                signals = file_reader(str(filepath))
+                s = signals[0]
+                arr = s["data"]
+            except ImportError:
+                logger.warning("[IMG] HyperSpy not available — cannot load EMD files")
+                return {
+                    "error": "EMD format requires HyperSpy which is not available in this build"
+                }
+
             meta["image_shape"] = list(s.data.shape)
 
             # Store all axes calibration
@@ -156,12 +253,25 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
 
         arr = tifffile.imread(str(dest))
     elif fname.endswith(".emd"):
-        import hyperspy.api as hs
+        try:
+            _ensure_rsciio_plugins()
+            import hyperspy.api as hs
 
-        result = hs.load(str(dest))
-        s = result[0] if isinstance(result, list) else result
-        arr = s.data
-
+            signals = file_reader(str(dest))
+            s = signals[0]
+            arr = s["data"]
+        except ImportError:
+            logger.warning("[IMG] HyperSpy not available — cannot load EMD files")
+            return {
+                "error": "EMD format requires HyperSpy which is not available in this build"
+            }
+    elif fname.endswith((".png", ".jpg", ".jpeg")):
+        img = cv.imread(str(dest))
+        if img is not None:
+            # save as preview directly
+            preview_path = session_dir / "original_preview.png"
+            cv.imwrite(str(preview_path), img)
+            preview_url = f"/images/{session_id}/preview"
     if arr is not None:
         logger.info(f"[IMG] img shape: {arr.shape}")
 
@@ -219,7 +329,8 @@ Just sends the first file for now.
 @router.get("/{session_id}/file")
 async def get_image(session_id: str):
     session_dir = SESSIONS_DIR / session_id
-    files = list(session_dir.glob("*"))
+    image_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".npy", ".emd"}
+    files = [f for f in session_dir.glob("org_*") if f.suffix.lower() in image_exts]
 
     if not files:
         return {"error": f"No file exists for session id: {session_id}"}
