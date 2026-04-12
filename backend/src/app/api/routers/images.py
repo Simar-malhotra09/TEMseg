@@ -116,51 +116,33 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
 
     try:
         if fname.endswith(".emd"):
-            try:
-                _ensure_rsciio_plugins()
-                import hyperspy.api as hs
+            _ensure_rsciio_plugins()
+            from rsciio.emd import file_reader
+            signals = file_reader(str(filepath))
+            s = signals[0]
 
-                signals = file_reader(str(filepath))
-                s = signals[0]
-                arr = s["data"]
-            except ImportError:
-                logger.warning("[IMG] HyperSpy not available — cannot load EMD files")
-                return {
-                    "error": "EMD format requires HyperSpy which is not available in this build"
-                }
+            meta["image_shape"] = list(s["data"].shape)
 
-            meta["image_shape"] = list(s.data.shape)
+            # axes are dicts, not HyperSpy objects
+            if "axes" in s:
+                meta["axes"] = []
+                for ax in s["axes"]:
+                    meta["axes"].append({
+                        "name": ax.get("name"),
+                        "scale": float(ax["scale"]) if ax.get("scale") else None,
+                        "offset": float(ax["offset"]) if ax.get("offset") else None,
+                        "units": ax.get("units"),
+                        "size": ax.get("size"),
+                    })
+                if meta["axes"]:
+                    meta["pixel_size"] = meta["axes"][0].get("scale")
+                    meta["pixel_unit"] = meta["axes"][0].get("units")
 
-            # Store all axes calibration
-            meta["axes"] = []
-            for ax in s.axes_manager.signal_axes:
-                meta["axes"].append(
-                    {
-                        "name": ax.name,
-                        "scale": float(ax.scale) if ax.scale else None,
-                        "offset": float(ax.offset) if ax.offset else None,
-                        "units": ax.units if ax.units else None,
-                        "size": ax.size,
-                    }
-                )
-
-            # Convenience fields
-            if meta["axes"]:
-                meta["pixel_size"] = meta["axes"][0].get("scale")
-                meta["pixel_unit"] = meta["axes"][0].get("units")
-
-            # Store all original metadata from the file
-            if hasattr(s, "original_metadata"):
-                try:
-                    meta["original_metadata"] = s.original_metadata.as_dictionary()
-                except Exception:
-                    meta["original_metadata"] = str(s.original_metadata)
-
-            if hasattr(s, "metadata"):
-                try:
-                    meta["hyperspy_metadata"] = s.metadata.as_dictionary()
-                except Exception:
-                    meta["hyperspy_metadata"] = str(s.metadata)
+            # original metadata is already a dict
+            if "original_metadata" in s:
+                meta["original_metadata"] = s["original_metadata"]
+            if "metadata" in s:
+                meta["hyperspy_metadata"] = s["metadata"]
 
             logger.info(
                 f"[META] EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}"
@@ -255,8 +237,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     elif fname.endswith(".emd"):
         try:
             _ensure_rsciio_plugins()
-            import hyperspy.api as hs
-
+            from rsciio.emd import file_reader
             signals = file_reader(str(dest))
             s = signals[0]
             arr = s["data"]
