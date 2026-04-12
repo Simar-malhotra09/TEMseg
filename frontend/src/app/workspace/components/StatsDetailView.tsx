@@ -3,7 +3,9 @@
 import { useState, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, ReferenceLine, CartesianGrid,Line, ComposedChart
+  PieChart, Pie, Cell, ReferenceLine, CartesianGrid,
+  ComposedChart, Line,
+  ScatterChart, Scatter, ZAxis,
 } from "recharts";
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
@@ -32,14 +34,19 @@ interface Props {
 }
 
 type SizeMode = "diameter" | "area";
-type SortKey = "index" | "diameter" | "area" | "perimeter" | "circularity" | "aspect_ratio" | "shape";
+type SortKey = "index" | "diameter" | "area" | "perimeter" | "circularity" | "solidity" | "aspect_ratio" | "n_vertices" | "shape";
 type SortDir = "asc" | "desc";
 
 const SHAPE_COLORS: Record<string, string> = {
-  circular: "#7ee8a2",
+  spherical: "#7ee8a2",
+  "quasi-spherical": "#a2d4e8",
+  faceted: "#c8a2e8",
+  triangular: "#e8d47e",
   elongated: "#e8c87e",
+  rod: "#e8a27e",
   irregular: "#e87e7e",
 };
+ 
 
 function fmt(val: number, decimals = 2): string {
   if (Math.abs(val) >= 1000) return val.toFixed(0);
@@ -47,7 +54,10 @@ function fmt(val: number, decimals = 2): string {
   return val.toFixed(Math.min(decimals + 2, 6));
 }
 
-/** Build histogram bin data from an array of values */
+
+// Histogram related  
+
+// Build histogram bin data from an array of values 
 function buildBins(values: number[], binCount = 20) {
   if (values.length === 0) return [];
   const min = Math.min(...values);
@@ -70,7 +80,7 @@ function buildBins(values: number[], binCount = 20) {
   return bins;
 }
 
-/** Custom tooltip for histogram */
+// Custom tooltip for histogram 
 function HistTooltip({ active, payload, unit }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -82,7 +92,7 @@ function HistTooltip({ active, payload, unit }: any) {
   );
 }
 
-/** Compute scaled PDF values to overlay on histogram */
+// Compute scaled PDF values to overlay on histogram
 function addFitCurve(
   bins: ReturnType<typeof buildBins>,
   fits: StatsResult["distribution_fits_diameter"],
@@ -121,6 +131,7 @@ function addFitCurve(
     return { ...bin, fit: pdf * binWidth * totalParticles };
   });
 }
+
 
 export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle }: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
@@ -180,6 +191,8 @@ const histData = useMemo(() => {
         case "circularity": va = a.circularity; vb = b.circularity; break;
         case "aspect_ratio": va = a.aspect_ratio; vb = b.aspect_ratio; break;
         case "shape": va = a.shape; vb = b.shape; break;
+        case "solidity": va = a.solidity ?? 1; vb = b.solidity ?? 1; break;
+        case "n_vertices": va = a.n_vertices ?? 0; vb = b.n_vertices ?? 0; break;
         default: va = a.index; vb = b.index;
       }
       if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va);
@@ -294,36 +307,64 @@ const histData = useMemo(() => {
 
         {/* shape distribution */}
         <div className={styles.chartCard}>
-          <h2 className={styles.chartTitle}>Shape Distribution</h2>
-
+          <h2 className={styles.chartTitle}>Shape Analysis</h2>
+ 
+          {/* scatter: circularity vs aspect ratio */}
           <div className={styles.chartWrap}>
             <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={shapeData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={3}
-                  dataKey="value"
-                  nameKey="name"
-                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                >
-                  {shapeData.map((entry) => (
-                    <Cell key={entry.name} fill={SHAPE_COLORS[entry.name] ?? "#888"} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value: any, name: any) => [`${value} particles`, name]}
-                  contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 4, fontSize: 12 }}
-                  itemStyle={{ color: "#e8e6e1" }}
+              <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
+                <XAxis
+                  dataKey="aspect_ratio"
+                  type="number"
+                  domain={['auto', 'auto']}
+                  tick={{ fill: "#666", fontSize: 10 }}
+                  label={{ value: "Aspect Ratio", position: "bottom", offset: 10, fill: "#555", fontSize: 11 }}
                 />
-              </PieChart>
+                <YAxis
+                  dataKey="circularity"
+                  type="number"
+                  domain={[0, 1]}
+                  tick={{ fill: "#666", fontSize: 10 }}
+                  label={{ value: "Circularity", angle: -90, position: "insideLeft", offset: 0, fill: "#555", fontSize: 11 }}
+                />
+                <ZAxis dataKey="solidity" range={[30, 150]} />
+                <Tooltip
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0].payload;
+                    return (
+                      <div className={styles.tooltip}>
+                        <p>#{d.id} — {d.shape}</p>
+                        <p>Circularity: {(d.circularity ?? 0).toFixed(3)}</p>
+                        <p>Aspect Ratio: {(d.aspect_ratio ?? 0).toFixed(3)}</p>
+                        <p>Solidity: {(d.solidity ?? 0).toFixed(3)}</p>
+                      </div>
+                    );
+                  }}
+                  cursor={{ strokeDasharray: "3 3" }}
+                />
+                {Object.entries(
+                  particles.reduce((acc: Record<string, any[]>, p) => {
+                    const s = p.shape;
+                    if (!acc[s]) acc[s] = [];
+                    acc[s].push(p);
+                    return acc;
+                  }, {})
+                ).map(([shapeName, pts]) => (
+                  <Scatter
+                    key={shapeName}
+                    name={shapeName}
+                    data={pts}
+                    fill={SHAPE_COLORS[shapeName] ?? "#888"}
+                    opacity={0.8}
+                  />
+                ))}
+              </ScatterChart>
             </ResponsiveContainer>
           </div>
-
-          {/* legend + stats */}
+ 
+          {/* shape distribution bars + legend */}
           <div className={styles.shapeLegend}>
             {shapeData.map(entry => (
               <div key={entry.name} className={styles.legendItem}>
@@ -432,9 +473,10 @@ const histData = useMemo(() => {
                   ["index", "#"],
                   ["diameter", `Eq. Diameter (${hasScale ? unit : "px"})`],
                   ["area", `Area (${hasScale ? unit + "²" : "px²"})`],
-                  ["perimeter", `Perimeter (${hasScale ? unit : "px"})`],
-                  ["circularity", "Circularity"],
-                  ["aspect_ratio", "Aspect Ratio"],
+                  ["circularity", "Circ."],
+                  ["solidity", "Solidity"],
+                  ["aspect_ratio", "Asp. Ratio"],
+                  ["n_vertices", "Vertices"],
                   ["shape", "Shape"],
                 ] as [SortKey, string][]).map(([key, label]) => (
                   <th key={key} onClick={() => handleSort(key)} className={styles.th}>
@@ -457,9 +499,10 @@ const histData = useMemo(() => {
                   </td>
                   <td className={styles.td}>{fmt(hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px)}</td>
                   <td className={styles.td}>{fmt(hasScale && p.area_real != null ? p.area_real : p.area_px)}</td>
-                  <td className={styles.td}>{fmt(hasScale && p.perimeter_real != null ? p.perimeter_real : p.perimeter_px)}</td>
                   <td className={styles.td}>{fmt(p.circularity)}</td>
+                  <td className={styles.td}>{fmt(p.solidity ?? 1)}</td>
                   <td className={styles.td}>{fmt(p.aspect_ratio)}</td>
+                  <td className={styles.td}>{p.n_vertices ?? "—"}</td>
                   <td className={styles.td}>
                     <span className={styles.shapeBadge} style={{ borderColor: SHAPE_COLORS[p.shape] ?? "#888", color: SHAPE_COLORS[p.shape] ?? "#888" }}>
                       {p.shape}

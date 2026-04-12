@@ -103,6 +103,8 @@ export default function Workspace() {
         const ts = Date.now();
         seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
         if (result.stats) seg.setStats(result.stats);
+        setLoadedInstances(updated);  // load newly refined instances 
+        setHighlightParticleIdx(null); // clear stale 
         refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
         setZoom(1);
         setPan({ x: 0, y: 0 });

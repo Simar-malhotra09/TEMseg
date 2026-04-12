@@ -79,21 +79,28 @@ export interface StatsResult {
 
   // per-particle
   particles: {
-    area_px: number;
-    area_real?: number;
-    perimeter_px: number;
-    perimeter_real?: number;
-    diameter_px: number;
-    diameter_real?: number;
-    major_axis_px: number;
-    major_axis_real?: number;
-    minor_axis_px: number;
-    minor_axis_real?: number;
-    circularity: number;
-    aspect_ratio: number;
-    shape: string;
+      id: number;
+      area_px: number;
+      area_real?: number;
+      perimeter_px: number;
+      perimeter_real?: number;
+      diameter_px: number;
+      diameter_real?: number;
+      major_axis_px: number;
+      major_axis_real?: number;
+      minor_axis_px: number;
+      minor_axis_real?: number;
+      circularity: number;
+      solidity: number;
+      convexity: number;
+      rectangularity: number;
+      aspect_ratio: number;
+      n_vertices: number;
+      shape: string;
+      bbox: { x: number; y: number; w: number; h: number };
   }[];
 }
+
 
 export interface SegmentResponse {
   model: string;
