@@ -32,19 +32,32 @@ def _fit_ellipse_safe(cnt):
 
 # shape distribution
 # this needs to be a lot more robust 
-def _classify_shape(circularity: float, aspect_ratio: float) -> str:
+def _classify_shape(
+    circularity: float,
+    aspect_ratio: float,
+    solidity: float,
+    n_vertices: int,
+) -> str:
     """
-    Simple shape classification:
-      - circular:   high circularity, low aspect ratio
-      - elongated:  high aspect ratio (rods, wires)
-      - irregular:  everything else
+    Shape classification using multiple descriptors.
+    Categories chosen for TEM nanoparticle relevance.
     """
-    if circularity > 0.85 and aspect_ratio < 1.3:
-        return "circular"
-    elif aspect_ratio > 2.0:
+    if aspect_ratio > 2.5:
+        return "rod"
+    if circularity > 0.90 and solidity > 0.95 and aspect_ratio < 1.2:
+        return "spherical"
+    if solidity > 0.92 and circularity > 0.70:
+        if n_vertices <= 4:
+            return "triangular"
+        elif n_vertices <= 7:
+            return "faceted"
+        else:
+            return "quasi-spherical"
+    if aspect_ratio > 1.5:
         return "elongated"
-    else:
+    if solidity < 0.85:
         return "irregular"
+    return "quasi-spherical"
 
 
 # pdf distribution
@@ -149,7 +162,7 @@ def compute_stats_from_instances(
             )
             if exact_contours:
                 cnt = exact_contours[0]
-                area_px = float(np.sum(component))  # pixel count is ground truth
+                area_px = float(np.sum(component))
                 perimeter_px = float(cv.arcLength(cnt, True))
             else:
                 cnt = np.array(inst["contour"], dtype=np.int32)
@@ -165,13 +178,40 @@ def compute_stats_from_instances(
 
         diameter_px = _equivalent_diameter_px(area_px)
 
-        # circularity from exact contour
+        # circularity
         circularity = 0.0
         if perimeter_px > 0:
             circularity = (4 * math.pi * area_px) / (perimeter_px ** 2)
             circularity = min(circularity, 1.0)
 
-        # aspect ratio
+        # solidity = area / convex hull area
+        solidity = 1.0
+        try:
+            hull = cv.convexHull(cnt)
+            hull_area = cv.contourArea(hull)
+            if hull_area > 0:
+                solidity = area_px / hull_area
+                solidity = min(solidity, 1.0)
+        except Exception:
+            pass
+
+        # convexity = convex hull perimeter / perimeter
+        convexity = 1.0
+        try:
+            hull = cv.convexHull(cnt)
+            hull_perim = cv.arcLength(hull, True)
+            if perimeter_px > 0:
+                convexity = hull_perim / perimeter_px
+                convexity = min(convexity, 1.0)
+        except Exception:
+            pass
+
+        # rectangularity = area / bounding rect area
+        x, y, w, h = cv.boundingRect(cnt)
+        rect_area = w * h
+        rectangularity = area_px / rect_area if rect_area > 0 else 0.0
+
+        # aspect ratio from ellipse fit or min area rect
         aspect_ratio = 1.0
         major_px = diameter_px
         minor_px = diameter_px
@@ -180,7 +220,12 @@ def compute_stats_from_instances(
             major_px, minor_px = ellipse
             aspect_ratio = major_px / minor_px if minor_px > 0 else 1.0
 
-        shape = _classify_shape(circularity, aspect_ratio)
+        # vertex count from simplified contour (for faceted shape detection)
+        epsilon = 0.02 * perimeter_px
+        approx = cv.approxPolyDP(cnt, epsilon, True)
+        n_vertices = len(approx)
+
+        shape = _classify_shape(circularity, aspect_ratio, solidity, n_vertices)
 
         p = {
             "id": inst_id,
@@ -190,7 +235,11 @@ def compute_stats_from_instances(
             "major_axis_px": float(major_px),
             "minor_axis_px": float(minor_px),
             "circularity": float(circularity),
+            "solidity": float(solidity),
+            "convexity": float(convexity),
+            "rectangularity": float(rectangularity),
             "aspect_ratio": float(aspect_ratio),
+            "n_vertices": n_vertices,
             "shape": shape,
             "bbox": inst["bbox"],
         }
