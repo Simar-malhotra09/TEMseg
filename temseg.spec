@@ -20,7 +20,7 @@ Notes:
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata, collect_all
 
 block_cipher = None
 
@@ -45,6 +45,30 @@ datas += collect_data_files("torchvision")
 datas += collect_data_files("numpy")
 datas += collect_data_files("certifi")
 
+datas += collect_data_files("hyperspy")
+datas += copy_metadata("hyperspy")
+
+# collect_all() returns a 3-tuple: (datas, binaries, hiddenimports)
+# — it must be unpacked, NOT appended directly to datas.
+_hs_datas, _hs_binaries, _hs_hiddenimports = collect_all("hyperspy")
+datas += _hs_datas
+extra_binaries = _hs_binaries
+extra_hiddenimports = _hs_hiddenimports
+
+datas += collect_data_files("rosettasciio")
+datas += copy_metadata("rosettasciio")
+
+# rsciio: we need ALL subdirectories (emd/, tiff/, dm3/, etc.) because each
+# contains a specifications.yaml that HyperSpy uses to register the format.
+# collect_data_files("rsciio") should grab them, but we also add an explicit
+# recursive glob to be safe.
+datas += collect_data_files("rsciio")
+import rsciio
+_rsciio_dir = Path(rsciio.__file__).parent
+for _subdir in _rsciio_dir.iterdir():
+    if _subdir.is_dir() and not _subdir.name.startswith("_"):
+        # Bundle each format subdirectory (emd/, tiff/, bruker/, etc.)
+        datas += [(str(_subdir), f"rsciio/{_subdir.name}")]
 # ---------------------------------------------------------------------------
 # Hidden imports PyInstaller tends to miss
 # ---------------------------------------------------------------------------
@@ -101,6 +125,16 @@ hiddenimports = [
     "onnxruntime",
     "ultralytics",
     "segment_anything",
+    # HyperSpy (lazy imports PyInstaller misses)
+    "hyperspy.io",
+    "hyperspy.io.plugins",
+    "hyperspy.signal",
+    "hyperspy.signals",
+    "hyperspy._components",
+    "hyperspy.datasets",
+    "hyperspy.utils",
+    "hyperspy.misc",
+    "hyperspy.extensions",
     # Backend app modules (PyInstaller can't trace string-based uvicorn import)
     "app",
     "app.api",
@@ -133,7 +167,10 @@ hiddenimports += collect_submodules("torch")
 hiddenimports += collect_submodules("torchvision")
 hiddenimports += collect_submodules("onnxruntime")
 hiddenimports += collect_submodules("ultralytics")
-
+hiddenimports += collect_submodules("hyperspy")
+hiddenimports += collect_submodules("rosettasciio")
+hiddenimports += collect_submodules("rsciio")  # actual package providing IO plugins
+hiddenimports += extra_hiddenimports  # from collect_all("hyperspy")
 # Deduplicate
 hiddenimports = list(set(hiddenimports))
 
@@ -170,12 +207,12 @@ a = Analysis(
     pathex=[
         str(ROOT / "backend" / "src"),
     ],
-    binaries=[],
+    binaries=extra_binaries,  # from collect_all("hyperspy")
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(ROOT / "rthook_hyperspy.py")],
     excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

@@ -17,12 +17,37 @@ from pathlib import Path
 import webview
 
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="[launcher] %(message)s",
+)
+log = logging.getLogger("launcher")
+
 if getattr(sys, "frozen", False):
     import ssl
     import certifi
     os.environ["SSL_CERT_FILE"] = certifi.where()
     ssl._create_default_https_context = ssl.create_default_context
-
+    try:
+        import yaml
+        import rsciio
+        if not rsciio.IO_PLUGINS:
+            bundle = Path(sys._MEIPASS)
+            rsciio_data = bundle / "rsciio"
+            if not rsciio_data.exists():
+                # check Resources
+                rsciio_data = bundle.parent / "Resources" / "rsciio"
+            if rsciio_data.exists():
+                for sub, _, _ in os.walk(str(rsciio_data)):
+                    specsf = os.path.join(sub, "specifications.yaml")
+                    if os.path.isfile(specsf):
+                        with open(specsf, "r") as stream:
+                            specs = yaml.safe_load(stream)
+                            specs["api"] = "rsciio.%s" % os.path.split(sub)[1]
+                            rsciio.IO_PLUGINS.append(specs)
+                log.info(f"Manually loaded {len(rsciio.IO_PLUGINS)} rsciio IO plugins")
+    except Exception as e:
+        log.warning(f"Failed to load rsciio plugins: {e}")
 
 def _is_frozen() -> bool:
     return getattr(sys, "frozen", False)
@@ -76,11 +101,6 @@ def _backend_src_dir() -> Path:
 
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[launcher] %(message)s",
-)
-log = logging.getLogger("launcher")
 
 
 
