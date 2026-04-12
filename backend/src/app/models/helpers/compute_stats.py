@@ -31,6 +31,7 @@ def _fit_ellipse_safe(cnt):
 
 
 # shape distribution
+# this needs to be a lot more robust 
 def _classify_shape(circularity: float, aspect_ratio: float) -> str:
     """
     Simple shape classification:
@@ -114,66 +115,8 @@ def _fit_distributions(diameters: list[float]) -> dict:
     }
 
 
-def _analyze_particles(mask: np.ndarray):
-    """
-    Extract per-particle measurements from a binary mask.
-    Returns a list of dicts, one per particle.
-    """
-    mask = _prepare_mask(mask)
-    num_labels, labels = cv.connectedComponents(mask)
-    contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-
-    particles = []
-
-    for cnt in contours:
-        area_px = cv.contourArea(cnt)
-        if area_px < 1:
-            continue
-
-        perimeter_px = cv.arcLength(cnt, True)
-        diameter_px = _equivalent_diameter_px(area_px)
-
-        # circularity: 1.0 = perfect circle, <1 = irregular
-        circularity = 0.0
-        if perimeter_px > 0:
-            circularity = (4 * math.pi * area_px) / (perimeter_px**2)
-            circularity = min(circularity, 1.0)  # clamp numerical noise
-
-        # aspect ratio from fitted ellipse
-        aspect_ratio = 1.0
-        major_px = diameter_px
-        minor_px = diameter_px
-        ellipse = _fit_ellipse_safe(cnt)
-        if ellipse is not None:
-            major_px, minor_px = ellipse
-            aspect_ratio = major_px / minor_px if minor_px > 0 else 1.0
-
-        # bounding box
-        x, y, w, h = cv.boundingRect(cnt)
-
-        # shape classification based on circularity + aspect ratio
-        shape = _classify_shape(circularity, aspect_ratio)
-
-        particles.append(
-            {
-                "area_px": float(area_px),
-                "perimeter_px": float(perimeter_px),
-                "diameter_px": float(diameter_px),
-                "major_axis_px": float(major_px),
-                "minor_axis_px": float(minor_px),
-                "circularity": float(circularity),
-                "aspect_ratio": float(aspect_ratio),
-                "shape": shape,
-                "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
-            }
-        )
-
-    return particles
-
 
 # Aggregate stats
-
-
 def compute_stats_from_instances(
     instances: list[dict],
     mask: np.ndarray,
