@@ -78,7 +78,7 @@ async def get_instances(session_id: str):
         raise HTTPException(status_code=500, detail="Failed to read mask.png")
 
     binary = (cv.cvtColor(mask_bgr, cv.COLOR_BGR2GRAY) > 0).astype(np.uint8)
-    instances, _ = extract_instances(binary, session_dir, save=True)
+    instances, labeled= extract_instances(binary, session_dir, save=True)
 
     logger.info(f"[MASKS] Recomputed and saved {len(instances)} instances")
     return {"instances": instances}
@@ -125,7 +125,7 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
 
     binary = (labeled > 0).astype(np.uint8)
     stats = compute_stats_from_instances(
-        req.instances, binary, pixel_size=pixel_size, pixel_unit=pixel_unit
+        req.instances, binary, pixel_size=pixel_size, pixel_unit=pixel_unit, labeled_mask=labeled
     )
     logger.info(f"[MASKS] Recomputed stats | {stats['particle_count']} particles")
 

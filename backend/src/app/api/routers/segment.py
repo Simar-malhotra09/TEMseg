@@ -169,7 +169,7 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Pre-computing instances for session={req.session_id}")
     try:
         binary = (mask > 0).astype(np.uint8)
-        instances, _ = extract_instances(binary, session_dir, save=True)
+        instances, labeld= extract_instances(binary, session_dir, save=True)
         logger.info(f"[SEG] Pre-computed {len(instances)} instances and saved to disk")
     except Exception as e:
         # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
@@ -194,7 +194,7 @@ async def segment(req: SegmentRequest, request: Request):
     #     instances, mask, pixel_size=pixel_size, pixel_unit=pixel_unit
     # )
 
-    stats_results:StatsResponse= model_inst.compute_stats(instances, mask, pixel_size, pixel_unit)
+    stats_results:StatsResponse= model_inst.compute_stats(instances, mask, pixel_size, pixel_unit, labeld)
 
     t_stats = time.perf_counter() - t4
     logger.info(

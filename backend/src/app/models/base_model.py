@@ -148,13 +148,16 @@ class Model(ABC):
         instances: List[Dict[str, Any]],
         mask: np.ndarray,
         pixel_size: float | None = None,
-        pixel_unit: str | None = None
+        pixel_unit: str | None = None,
+        labeled_mask:np.ndarray | None=None
     ) -> StatsResponse:   
 
         stats_results = compute_stats_from_instances(
             instances, mask,
             pixel_size=pixel_size,
-            pixel_unit=pixel_unit
+            pixel_unit=pixel_unit,
+            labeled_mask= labeled_mask
+
         )
 
         return StatsResponse.model_validate(stats_results)
