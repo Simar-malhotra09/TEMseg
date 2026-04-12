@@ -116,7 +116,7 @@ export interface UploadResponse {
   session_id: string;
   filename: string;
   preview_url: string;
-  image_info: Record<String, String>;
+  image_info: Record<string, string>;
 }
 
 export interface Instance {

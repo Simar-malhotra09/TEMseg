@@ -297,7 +297,7 @@ export default function Workspace() {
         <StatsDetailView
           stats={seg.stats}
           metadata={metadata}
-          groundTruthScore={seg.groundTruthScore}
+          groundTruthScore={seg.groundTruthScore as any}
           onBack={() => setShowStatsDetail(false)}
           onLocateParticle={handleLocateParticle}
         />
@@ -682,7 +682,7 @@ export default function Workspace() {
             metadata={metadata}
             stats={seg.stats}
             segDone={seg.segDone}
-            groundTruthScore={seg.groundTruthScore}
+            groundTruthScore={seg.groundTruthScore as any}
             onViewDetails={() => setShowStatsDetail(true)}
           />
 

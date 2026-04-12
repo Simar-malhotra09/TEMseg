@@ -308,14 +308,14 @@ const histData = useMemo(() => {
                   paddingAngle={3}
                   dataKey="value"
                   nameKey="name"
-                  label={({ name, fraction }) => `${name} ${(fraction * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                 >
                   {shapeData.map((entry) => (
                     <Cell key={entry.name} fill={SHAPE_COLORS[entry.name] ?? "#888"} />
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number, name: string) => [`${value} particles`, name]}
+                  formatter={(value: any, name: any) => [`${value} particles`, name]}
                   contentStyle={{ background: "#161616", border: "1px solid #2a2a2a", borderRadius: 4, fontSize: 12 }}
                   itemStyle={{ color: "#e8e6e1" }}
                 />

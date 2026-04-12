@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import styles from "./StatsPanel.module.css";
-import { StatsResult } from "@/lib/api";
-
+import type { StatsResult } from "@/lib/api";
 interface Particle {
   area_px: number;
   area_real?: number;
@@ -59,7 +58,7 @@ interface Props {
   image: string | null;
   sessionId: string | null;
   metadata: Metadata | null;
-  stats: Stats | null;
+  stats: StatsResult | null;
   segDone: boolean;
   groundTruthScore: GTScores | null;
   onViewDetails?: () => void;
@@ -274,7 +273,7 @@ export default function StatsPanel({
           {sizeOpen && (
             <>
               <MiniHistogram
-                values={stats.particles.map(p =>
+                values={stats.particles.map((p:any) =>
                   hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px
                 )}
               />
@@ -318,7 +317,7 @@ export default function StatsPanel({
           </button>
           {shapeOpen && (
             <div className={styles.shapeGrid}>
-              {Object.entries(stats.shape_distribution).map(([shape, data]) => (
+            {Object.entries(stats.shape_distribution).map(([shape, data]: [string, any]) => (
                 <ShapeBar
                   key={shape}
                   label={shape}
