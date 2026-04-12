@@ -65,7 +65,7 @@ echo "[3/4] Checking PyInstaller..."
 
 if ! python -c "import PyInstaller" 2>/dev/null; then
     echo "  Installing PyInstaller..."
-    pip install pyinstaller
+    uv pip install pyinstaller
 fi
 echo "  PyInstaller OK"
 
@@ -80,6 +80,28 @@ echo "  This will take a few minutes..."
 rm -rf build/TEMseg dist/TEMseg dist/TEMseg.app
 
 pyinstaller temseg.spec --noconfirm
+
+# -------------------------------------------
+# Step 4b: Fix rsciio — PyInstaller fails to bundle its subdirectories
+# -------------------------------------------
+RSCIIO_SRC=$(python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)")
+RSCIIO_DEST="dist/TEMseg.app/Contents/Frameworks/rsciio"
+
+if [ -d "$RSCIIO_SRC" ]; then
+    echo "  Copying rsciio from $RSCIIO_SRC ..."
+    # Remove the broken/empty one PyInstaller created
+    rm -rf "$RSCIIO_DEST"
+    # Copy the entire package from the venv
+    cp -R "$RSCIIO_SRC" "$RSCIIO_DEST"
+    # Verify emd is there
+    if [ -f "$RSCIIO_DEST/emd/specifications.yaml" ]; then
+        echo "  rsciio/emd OK"
+    else
+        echo "  WARNING: rsciio/emd/specifications.yaml still missing!"
+    fi
+else
+    echo "  WARNING: Could not find rsciio source at $RSCIIO_SRC"
+fi
 
 if [ -d "dist/TEMseg.app" ]; then
     echo ""
