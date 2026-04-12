@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from pathlib import Path
+from app.models.base_model import StatsResponse
 from fastapi import APIRouter, Request
 import logging
 import time
@@ -36,7 +37,7 @@ class SegmentResponse(BaseModel):
     model: AvailableModels
     mask_url: str
     metadata: Dict[str, Any]
-    stats: Dict
+    stats: StatsResponse
     time_elapsed: float
 
 
@@ -189,9 +190,11 @@ async def segment(req: SegmentRequest, request: Request):
         pixel_size = meta.get("pixel_size")
         pixel_unit = meta.get("pixel_unit")
 
-    stats_results = compute_stats_from_instances(
-        instances, mask, pixel_size=pixel_size, pixel_unit=pixel_unit
-    )
+    # stats_results = compute_stats_from_instances(
+    #     instances, mask, pixel_size=pixel_size, pixel_unit=pixel_unit
+    # )
+
+    stats_results:StatsResponse= model_inst.compute_stats(instances, mask, pixel_size, pixel_unit)
 
     t_stats = time.perf_counter() - t4
     logger.info(

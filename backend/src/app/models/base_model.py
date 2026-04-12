@@ -2,8 +2,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import List, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Literal
 
+from app.models.helpers.compute_stats import compute_stats_from_instances
 import numpy as np
 
 # from app.models.helpers.compute_stats import (
@@ -43,29 +46,77 @@ class SegmentationResult:
     model: str
     metadata: Dict[str, Any] | None = None
 
+class Particle(BaseModel):
+    id: int
+    # pixel-space
+    area_px: float
+    perimeter_px: float
+    diameter_px: float
+    major_axis_px: float
+    minor_axis_px: float
 
-"""
-    List all available stats
-"""
+    # shape
+    circularity: float
+    aspect_ratio: float
+    shape: str  
 
+    bbox: dict
 
-# class StatType(str, Enum):
-#     PARTICLE_COUNT = "particle_count"
-#     AVG_SIZE = "avg_size"
-#     AVG_CIRCULARITY = "avg_circularity"
-#     COVERAGE = "coverage"
-#
-#
-# @dataclass
-# class StatsConfig:
-#     enabled: Set[StatType]
-#
-#
-# @dataclass
-# class StatsResult:
-#     values: dict[StatType, float]
-#
-#
+    # optional real-world units
+    area_real: Optional[float] = None
+    perimeter_real: Optional[float] = None
+    diameter_real: Optional[float] = None
+    major_axis_real: Optional[float] = None
+    minor_axis_real: Optional[float] = None
+
+class ShapeStats(BaseModel):
+    count: int
+    fraction: float
+
+class SizeStats(BaseModel):
+    area_mean: float
+    area_std: float
+    area_min: float
+    area_max: float
+    area_median: float
+
+    diameter_mean: float
+    diameter_std: float
+    diameter_min: float
+    diameter_max: float
+    diameter_median: float
+
+    unit: str
+
+class StatsResponse(BaseModel):
+    # scale info
+    pixel_size: Optional[float]
+    pixel_unit: Optional[str]
+    unit: str
+    has_scale: bool
+
+    # aggregate (compat)
+    particle_count: int
+    coverage: float
+    avg_size: float
+    avg_circularity: float
+    avg_aspect_ratio: float
+
+    # detailed aggregate
+    avg_area_px: float
+    avg_diameter_px: float
+    avg_area_real: Optional[float] = None
+    avg_diameter_real: Optional[float] = None
+
+    # distributions
+    size_stats: SizeStats
+    shape_distribution: Dict[str, ShapeStats]
+    distribution_fits_diameter: Dict = Field(default_factory=dict)
+    distribution_fits_area: Dict = Field(default_factory=dict)
+
+    # per-particle
+    particles: List[Particle]
+
 class Model(ABC):
     def __init__(self, config: ModelConfig):
         self.config = config
@@ -91,19 +142,19 @@ class Model(ABC):
             print(f"Path:      {comp.path}")
             print("-" * 40)
 
-    # def compute_stats(self, mask, config: StatsConfig) -> StatsResult:
-    #     results = {}
-    #
-    #     if StatType.PARTICLE_COUNT in config.enabled:
-    #         results[StatType.PARTICLE_COUNT] = compute_particle_count(mask)
-    #
-    #     if StatType.AVG_SIZE in config.enabled:
-    #         results[StatType.AVG_SIZE] = compute_avg_size(mask)
-    #
-    #     if StatType.AVG_CIRCULARITY in config.enabled:
-    #         results[StatType.AVG_CIRCULARITY] = compute_avg_circularity(mask)
-    #
-    #     if StatType.COVERAGE in config.enabled:
-    #         results[StatType.COVERAGE] = compute_coverage(mask)
-    #
-    #     return StatsResult(values=results)
+
+    def compute_stats(
+        self,
+        instances: List[Dict[str, Any]],
+        mask: np.ndarray,
+        pixel_size: float | None = None,
+        pixel_unit: str | None = None
+    ) -> StatsResponse:   
+
+        stats_results = compute_stats_from_instances(
+            instances, mask,
+            pixel_size=pixel_size,
+            pixel_unit=pixel_unit
+        )
+
+        return StatsResponse.model_validate(stats_results)
