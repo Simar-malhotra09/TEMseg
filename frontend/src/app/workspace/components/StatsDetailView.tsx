@@ -31,7 +31,9 @@ interface Props {
   groundTruthScore: GTScores | null;
   onBack: () => void;
   onLocateParticle?: (particleIndex: number) => void;
+  onLocateShape?:(shape: string)=> void; 
 }
+
 
 type SizeMode = "diameter" | "area";
 type SortKey = "index" | "diameter" | "area" | "perimeter" | "circularity" | "solidity" | "aspect_ratio" | "n_vertices" | "shape";
@@ -133,7 +135,7 @@ function addFitCurve(
 }
 
 
-export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle }: Props) {
+export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle, onLocateShape}: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
   const [sortKey, setSortKey] = useState<SortKey>("index");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -504,7 +506,14 @@ const histData = useMemo(() => {
                   <td className={styles.td}>{fmt(p.aspect_ratio)}</td>
                   <td className={styles.td}>{p.n_vertices ?? "—"}</td>
                   <td className={styles.td}>
-                    <span className={styles.shapeBadge} style={{ borderColor: SHAPE_COLORS[p.shape] ?? "#888", color: SHAPE_COLORS[p.shape] ?? "#888" }}>
+                    <span
+                      className={`${styles.shapeBadge} ${onLocateShape ? styles.shapeBadgeClickable : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLocateShape?.(p.shape);
+                      }}
+                      style={{ borderColor: SHAPE_COLORS[p.shape] ?? "#888", color: SHAPE_COLORS[p.shape] ?? "#888" }}
+                    >
                       {p.shape}
                     </span>
                   </td>

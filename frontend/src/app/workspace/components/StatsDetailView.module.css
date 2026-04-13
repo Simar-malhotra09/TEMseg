@@ -433,3 +433,10 @@
 .fitFail {
   color: #e87e7e;
 }
+
+.shapeBadgeClickable {
+  cursor: pointer;
+}
+.shapeBadgeClickable:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

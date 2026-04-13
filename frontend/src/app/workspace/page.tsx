@@ -51,6 +51,7 @@ export default function Workspace() {
 
   // highlights particle when it's id gets clicked on the detailed view 
   const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
+  const [highlightShape, setHighlightShape] = useState<string | null>(null);
 
   const [loadedInstances, setLoadedInstances] = useState<Instance[]>([]);
 
@@ -246,6 +247,7 @@ export default function Workspace() {
   function handleMouseDown(e: React.MouseEvent) {
     if (seg.isBlackoutMode || refineMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
+    setHighlightShape(null);
     e.preventDefault();
     isPanning.current = true;
     setPanning(true);
@@ -273,7 +275,7 @@ export default function Workspace() {
   // used for detail view -> click id-> show particle mapping 
   async function handleLocateParticle(particleIndex: number) {
     if (!sessionId) return;
-
+    setHighlightShape(null);  // clear shape highlight
     let instances = loadedInstances;
     if (instances.length === 0) {
       const res = await getInstances(sessionId); // this should always be up to date
@@ -284,6 +286,24 @@ export default function Workspace() {
     setHighlightParticleIdx(particleIndex);
     setShowStatsDetail(false); // pan back to workspace
     seg.setMasksVisible(true);
+  }
+
+  async function handleLocateShape(shape:string) {
+
+    if(!sessionId) return;
+
+    setHighlightParticleIdx(null);  // clear particle id highlight
+    let instances= loadedInstances;
+    if (instances.length === 0) {
+      const res = await getInstances(sessionId); // this should always be up to date
+      instances = res.instances;
+      setLoadedInstances(instances);
+    }
+
+    setHighlightShape(shape);
+    setShowStatsDetail(false); // pan back to workspace
+    seg.setMasksVisible(true);
+    setStatus(`Highlighting all particles of shape: ${shape}`);
   }
 
   // track which regions are to be used
@@ -302,6 +322,7 @@ export default function Workspace() {
           groundTruthScore={seg.groundTruthScore as any}
           onBack={() => setShowStatsDetail(false)}
           onLocateParticle={handleLocateParticle}
+          onLocateShape={handleLocateShape}
         />
       )}
 
@@ -669,6 +690,26 @@ export default function Workspace() {
                     viewportHeight={viewportSize.height}
                   />
                 )}
+
+                {/* highlights all particles of that shape selected from stats table */}
+                {highlightShape !== null && !refineMode && !seg.isBlackoutMode &&
+                  loadedInstances
+                    .filter(inst => {
+                      // find this instance's shape from stats
+                      const particle = seg.stats?.particles?.find((p: any) => p.id === inst.id);
+                      return particle?.shape === highlightShape;
+                    })
+                    .map(inst => (
+                      <ParticleHighlight
+                        key={inst.id}
+                        instance={inst}
+                        imgWidth={imgSize.width}
+                        imgHeight={imgSize.height}
+                        viewportWidth={viewportSize.width}
+                        viewportHeight={viewportSize.height}
+                      />
+                    ))
+                }
 
               </div>
             )}
