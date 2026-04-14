@@ -413,7 +413,7 @@ const histData = useMemo(() => {
                     style={{ background: SHAPE_COLORS[entry.name] ?? "#888" }}
                   />
                   <span className={styles.legendLabel}>
-                    {isActive && "* "}{entry.name}
+                    {entry.name}
                   </span>
                   <span className={styles.legendVal}>
                     {entry.value} ({(entry.fraction * 100).toFixed(1)}%)

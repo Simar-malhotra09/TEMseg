@@ -451,6 +451,18 @@
   opacity: 1;
 }
 .legendItemActive {
-  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  background: #121612;
   border-radius: 3px;
+}
+
+.legendItemActive::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: #7ee8a2;
 }
