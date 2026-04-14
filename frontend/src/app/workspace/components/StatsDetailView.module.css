@@ -440,3 +440,17 @@
 .shapeBadgeClickable:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+.legendItemInactive {
+  opacity: 0.35;
+}
+.legendItem {
+  transition: opacity 0.15s;
+}
+.legendItem:hover {
+  opacity: 1;
+}
+.legendItemActive {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}

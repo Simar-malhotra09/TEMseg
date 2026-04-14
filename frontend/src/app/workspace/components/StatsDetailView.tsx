@@ -140,7 +140,9 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const [sortKey, setSortKey] = useState<SortKey>("index");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
-
+  const [activeShapes, setActiveShapes] = useState<Set<string>>(new Set(
+    Object.keys(stats.shape_distribution)
+  ));
   const hasScale = stats.has_scale;
   const unit = stats.unit ?? "px";
   const particles = stats.particles ?? [];
@@ -218,6 +220,35 @@ const histData = useMemo(() => {
       ? <ChevronUp size={10} className={styles.sortIconActive} />
       : <ChevronDown size={10} className={styles.sortIconActive} />;
   }
+
+  function toggleShape(shape: string) {
+    setActiveShapes(prev => {
+      const next = new Set(prev);
+      if (next.has(shape)) {
+        next.delete(shape);
+      } else {
+        next.add(shape);
+      }
+      return next;
+    });
+  }
+  const filteredParticles = useMemo(() => {
+    return particles.filter(p => activeShapes.has(p.shape));
+  }, [particles, activeShapes]);
+
+  function jitter(val: number, amount = 0.02): number {
+    return val + (Math.random() - 0.5) * amount;
+  }
+
+  const scatterData = useMemo(() => {
+      return particles
+        .filter(p => activeShapes.has(p.shape))
+        .map(p => ({
+          ...p,
+          aspect_ratio_j: p.aspect_ratio + ((((p.id ?? 0) * 7) % 100) / 100 - 0.5) * 0.05,
+          circularity_j: p.circularity + ((((p.id ?? 0) * 13) % 100) / 100 - 0.5) * 0.03,
+        }));
+  }, [particles, activeShapes]);
 
   return (
     <div className={styles.root}>
@@ -317,14 +348,14 @@ const histData = useMemo(() => {
               <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
                 <XAxis
-                  dataKey="aspect_ratio"
+                  dataKey="aspect_ratio_j"
                   type="number"
                   domain={['auto', 'auto']}
                   tick={{ fill: "#666", fontSize: 10 }}
                   label={{ value: "Aspect Ratio", position: "bottom", offset: 10, fill: "#555", fontSize: 11 }}
                 />
                 <YAxis
-                  dataKey="circularity"
+                  dataKey="circularity_j"
                   type="number"
                   domain={[0, 1]}
                   tick={{ fill: "#666", fontSize: 10 }}
@@ -347,7 +378,7 @@ const histData = useMemo(() => {
                   cursor={{ strokeDasharray: "3 3" }}
                 />
                 {Object.entries(
-                  particles.reduce((acc: Record<string, any[]>, p) => {
+                  scatterData.reduce((acc: Record<string, any[]>, p) => {
                     const s = p.shape;
                     if (!acc[s]) acc[s] = [];
                     acc[s].push(p);
@@ -359,7 +390,7 @@ const histData = useMemo(() => {
                     name={shapeName}
                     data={pts}
                     fill={SHAPE_COLORS[shapeName] ?? "#888"}
-                    opacity={0.8}
+                    opacity={activeShapes.size === 0 || activeShapes.has(shapeName) ? 0.7 : 0.1}
                   />
                 ))}
               </ScatterChart>
@@ -368,13 +399,28 @@ const histData = useMemo(() => {
  
           {/* shape distribution bars + legend */}
           <div className={styles.shapeLegend}>
-            {shapeData.map(entry => (
-              <div key={entry.name} className={styles.legendItem}>
-                <span className={styles.legendDot} style={{ background: SHAPE_COLORS[entry.name] ?? "#888" }} />
-                <span className={styles.legendLabel}>{entry.name}</span>
-                <span className={styles.legendVal}>{entry.value} ({(entry.fraction * 100).toFixed(1)}%)</span>
-              </div>
-            ))}
+            {shapeData.map(entry => {
+              const isActive = activeShapes.has(entry.name);
+              return (
+                <div
+                  key={entry.name}
+                  className={`${styles.legendItem} ${isActive ? styles.legendItemActive : ""}`}
+                  onClick={() => toggleShape(entry.name)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <span
+                    className={styles.legendDot}
+                    style={{ background: SHAPE_COLORS[entry.name] ?? "#888" }}
+                  />
+                  <span className={styles.legendLabel}>
+                    {isActive && "* "}{entry.name}
+                  </span>
+                  <span className={styles.legendVal}>
+                    {entry.value} ({(entry.fraction * 100).toFixed(1)}%)
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
         {/* distribution fit */}
@@ -463,8 +509,9 @@ const histData = useMemo(() => {
           <h2 className={styles.chartTitle}>Per-Particle Data</h2>
           {onLocateParticle && (
             <span className={styles.tableHint}>
-              <Crosshair size={10} /> Click a row to locate on canvas
+              <Crosshair size={10} /> Click a row to locate particle or click a shape type to locate all particles of same shape on canvas
             </span>
+              
           )}
         </div>
         <div className={styles.tableWrap}>
