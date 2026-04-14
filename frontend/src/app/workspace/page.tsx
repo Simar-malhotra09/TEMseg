@@ -286,6 +286,7 @@ export default function Workspace() {
     setHighlightParticleIdx(particleIndex);
     setShowStatsDetail(false); // pan back to workspace
     seg.setMasksVisible(true);
+    setStatus(`Highlighting particle id: ${particleIndex+1}`);
   }
 
   async function handleLocateShape(shape:string) {
