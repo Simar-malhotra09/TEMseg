@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Any
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Literal
+from typing import Optional
 
 from app.models.helpers.compute_stats import compute_stats_from_instances
 import numpy as np
@@ -46,6 +45,7 @@ class SegmentationResult:
     model: str
     metadata: Dict[str, Any] | None = None
 
+
 class Particle(BaseModel):
     id: int
     # pixel-space
@@ -58,7 +58,7 @@ class Particle(BaseModel):
     # shape
     circularity: float
     aspect_ratio: float
-    shape: str  
+    shape: str
 
     bbox: dict
 
@@ -69,9 +69,11 @@ class Particle(BaseModel):
     major_axis_real: Optional[float] = None
     minor_axis_real: Optional[float] = None
 
+
 class ShapeStats(BaseModel):
     count: int
     fraction: float
+
 
 class SizeStats(BaseModel):
     area_mean: float
@@ -87,6 +89,7 @@ class SizeStats(BaseModel):
     diameter_median: float
 
     unit: str
+
 
 class StatsResponse(BaseModel):
     # scale info
@@ -117,6 +120,7 @@ class StatsResponse(BaseModel):
     # per-particle
     particles: List[Particle]
 
+
 class Model(ABC):
     def __init__(self, config: ModelConfig):
         self.config = config
@@ -142,22 +146,21 @@ class Model(ABC):
             print(f"Path:      {comp.path}")
             print("-" * 40)
 
-
     def compute_stats(
         self,
         instances: List[Dict[str, Any]],
         mask: np.ndarray,
         pixel_size: float | None = None,
         pixel_unit: str | None = None,
-        labeled_mask:np.ndarray | None=None
-    ) -> StatsResponse:   
+        labeled_mask: np.ndarray | None = None,
+    ) -> dict:
 
         stats_results = compute_stats_from_instances(
-            instances, mask,
+            instances,
+            mask,
             pixel_size=pixel_size,
             pixel_unit=pixel_unit,
-            labeled_mask= labeled_mask
-
+            labeled_mask=labeled_mask,
         )
 
-        return StatsResponse.model_validate(stats_results)
+        return stats_results
