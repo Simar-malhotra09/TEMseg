@@ -2,7 +2,7 @@ import io
 import logging
 import zipfile
 from pathlib import Path
-
+import json 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -44,6 +44,7 @@ def _find_original_image(session_dir: Path) -> Path | None:
     return p if p.exists() else None
 
 
+
 @router.post("/{session_id}")
 async def export_session(session_id: str, body: ExportRequest):
     """
@@ -56,7 +57,7 @@ async def export_session(session_id: str, body: ExportRequest):
       refined_mask_png  — mask.png (same file, post-refinement if saved)
       refined_mask_npy  — instances.npy (post-refinement if saved)
       instances_json    — instances.json
-      stats_csv         — empty CSV stub (stats not yet persisted server-side)
+      stats_csv         — currently does not account for client side modifications, specifically refinements
     """
     logger.info(f"[EXPORT] POST export | session={session_id} | items={body.items}")
 
@@ -135,10 +136,34 @@ async def export_session(session_id: str, body: ExportRequest):
             logger.info("[EXPORT] Adding instances_json")
 
         elif item == "stats_csv":
-            # stats are not yet persisted server-side — export empty stub
-            csv_bytes = b"metric,value\n"
-            entries.append(("stats.csv", csv_bytes))
-            logger.info("[EXPORT] Adding stats_csv (stub)")
+                    stats_path = session_dir / "stats.json"
+                    if not stats_path.exists():
+                        logger.warning(f"[EXPORT] stats.json not found | session={session_id}")
+                        continue
+                    
+                    with open(stats_path) as f:
+                        stats = json.load(f)
+                    
+                    # build per-particle CSV
+                    particles = stats.get("particles", [])
+                    unit = stats.get("unit", "px")
+                    has_scale = stats.get("has_scale", False)
+                    
+                    header = f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape\n"
+                    rows = []
+                    for p in particles:
+                        area = p.get("area_real", p["area_px"]) if has_scale else p["area_px"]
+                        diam = p.get("diameter_real", p["diameter_px"]) if has_scale else p["diameter_px"]
+                        perim = p.get("perimeter_real", p["perimeter_px"]) if has_scale else p["perimeter_px"]
+                        rows.append(
+                            f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
+                            f"{p['circularity']:.4f},{p.get('solidity', 0):.4f},"
+                            f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']}\n"
+                        )
+                    
+                    csv_bytes = (header + "".join(rows)).encode("utf-8")
+                    entries.append(("stats.csv", csv_bytes))
+                    logger.info(f"[EXPORT] Adding stats_csv | {len(particles)} particles")
 
     if not entries:
         logger.warning(f"[EXPORT] No files found to export | session={session_id}")

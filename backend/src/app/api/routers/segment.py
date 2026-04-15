@@ -1,6 +1,5 @@
 from typing import List, Dict, Any
 from pathlib import Path
-from app.models.base_model import StatsResponse
 from fastapi import APIRouter, Request
 import logging
 import time
@@ -19,7 +18,6 @@ from app.api.utils import (
 )
 from app.api.instances import extract_instances
 
-from app.models.helpers.compute_stats import compute_stats_from_instances
 
 from pydantic import BaseModel
 
@@ -37,7 +35,7 @@ class SegmentResponse(BaseModel):
     model: AvailableModels
     mask_url: str
     metadata: Dict[str, Any]
-    stats: StatsResponse
+    stats: dict
     time_elapsed: float
 
 
@@ -169,7 +167,7 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Pre-computing instances for session={req.session_id}")
     try:
         binary = (mask > 0).astype(np.uint8)
-        instances, labeld= extract_instances(binary, session_dir, save=True)
+        instances, labeld = extract_instances(binary, session_dir, save=True)
         logger.info(f"[SEG] Pre-computed {len(instances)} instances and saved to disk")
     except Exception as e:
         # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
@@ -194,7 +192,9 @@ async def segment(req: SegmentRequest, request: Request):
     #     instances, mask, pixel_size=pixel_size, pixel_unit=pixel_unit
     # )
 
-    stats_results:StatsResponse= model_inst.compute_stats(instances, mask, pixel_size, pixel_unit, labeld)
+    stats_results: dict = model_inst.compute_stats(
+        instances, mask, pixel_size, pixel_unit, labeld
+    )
 
     t_stats = time.perf_counter() - t4
     logger.info(
@@ -206,6 +206,13 @@ async def segment(req: SegmentRequest, request: Request):
         f"(load={t_load:.3f} | infer={t_inference:.3f} | "
         f"colorize={t_colorize:.3f} | save={t_save:.3f} | stats={t_stats:.3f})"
     )
+
+    # save stats to file
+    if stats_results:
+        stats_path = session_dir / "stats.json"
+        with open(stats_path, "w") as f:
+            json.dump(stats_results, f)
+        logger.info(f"[SEG] Stats saved to {stats_path}")
 
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",
