@@ -31,7 +31,7 @@ def _fit_ellipse_safe(cnt):
 
 
 # shape distribution
-# this needs to be a lot more robust 
+# this needs to be a lot more robust
 def _classify_shape(
     circularity: float,
     aspect_ratio: float,
@@ -128,14 +128,14 @@ def _fit_distributions(diameters: list[float]) -> dict:
     }
 
 
-
 # Aggregate stats
 def compute_stats_from_instances(
     instances: list[dict],
     mask: np.ndarray,
     pixel_size: float | None = None,
     pixel_unit: str | None = None,
-    labeled_mask: np.ndarray | None= None # mask with each pixel being the particle id, 0 for bg
+    labeled_mask: np.ndarray
+    | None = None,  # mask with each pixel being the particle id, 0 for bg
 ) -> dict:
     """
     Compute stats using pre-extracted instances (from instances.json).
@@ -181,7 +181,7 @@ def compute_stats_from_instances(
         # circularity
         circularity = 0.0
         if perimeter_px > 0:
-            circularity = (4 * math.pi * area_px) / (perimeter_px ** 2)
+            circularity = (4 * math.pi * area_px) / (perimeter_px**2)
             circularity = min(circularity, 1.0)
 
         # solidity = area / convex hull area
@@ -257,13 +257,22 @@ def compute_stats_from_instances(
 
     if count == 0:
         return {
-            "pixel_size": pixel_size, "pixel_unit": pixel_unit,
-            "unit": unit, "has_scale": has_scale,
-            "particle_count": 0, "coverage": coverage,
-            "avg_size": 0.0, "avg_circularity": 0.0, "avg_aspect_ratio": 0.0,
-            "avg_area_px": 0.0, "avg_diameter_px": 0.0,
-            "avg_area_real": None, "avg_diameter_real": None,
-            "particles": [], "shape_distribution": {}, "size_stats": {},
+            "pixel_size": pixel_size,
+            "pixel_unit": pixel_unit,
+            "unit": unit,
+            "has_scale": has_scale,
+            "particle_count": 0,
+            "coverage": coverage,
+            "avg_size": 0.0,
+            "avg_circularity": 0.0,
+            "avg_aspect_ratio": 0.0,
+            "avg_area_px": 0.0,
+            "avg_diameter_px": 0.0,
+            "avg_area_real": None,
+            "avg_diameter_real": None,
+            "particles": [],
+            "shape_distribution": {},
+            "size_stats": {},
             "distribution_fits_diameter": {"reliable": False, "reason": "no particles"},
             "distribution_fits_area": {"reliable": False, "reason": "no particles"},
         }
@@ -280,7 +289,9 @@ def compute_stats_from_instances(
     shape_counts = {}
     for s in shapes:
         shape_counts[s] = shape_counts.get(s, 0) + 1
-    shape_distribution = {k: {"count": v, "fraction": v / count} for k, v in shape_counts.items()}
+    shape_distribution = {
+        k: {"count": v, "fraction": v / count} for k, v in shape_counts.items()
+    }
 
     size_stats = {
         "area_mean": float(np.mean(areas_real)),
@@ -300,9 +311,12 @@ def compute_stats_from_instances(
     distribution_fits_area = _fit_distributions(areas_real)
 
     return {
-        "pixel_size": pixel_size, "pixel_unit": pixel_unit,
-        "unit": unit, "has_scale": has_scale,
-        "particle_count": count, "coverage": float(coverage),
+        "pixel_size": pixel_size,
+        "pixel_unit": pixel_unit,
+        "unit": unit,
+        "has_scale": has_scale,
+        "particle_count": count,
+        "coverage": float(coverage),
         "avg_size": float(np.mean(areas_px)),
         "avg_circularity": float(np.mean(circularities)),
         "avg_aspect_ratio": float(np.mean(aspect_ratios)),
