@@ -1,0 +1,12 @@
+## Mask overlay horizontal misalignment in desktop build (PyWebView)
+**Date:** 2026-05-12
+**Commit:** bbee82c
+**File:** frontend/src/app/workspace/page.tsx
+
+**Problem:** Segmentation mask and GT overlays were horizontally offset from the base image in the PyInstaller desktop build, but perfectly aligned in the browser. The offset scaled with distance from the left edge (a stretch mismatch, not a constant translation).
+
+**Root cause:** The base <img> had an inline style `width: "100%"; height: "100%"` that overrode the CSS module's `width: auto; height: auto`. Inside `imageViewport` (an `inline-block` element centered by flex), this created a circular sizing dependency: the image asked for 100% of its container, while the container shrink-wrapped to its content. Browsers and PyWebView's older WebKit resolved this differently, causing the container width to diverge from the image's natural aspect-ratio-constrained width. The overlay at `width: 100%` filled the (wrong) container, producing the stretch mismatch.
+
+**Fix:** Removed the inline `width: "100%"; height: "100%"` from the base image. Both image and overlay now rely on the same sizing path: `width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 48px)` from the CSS module, with the overlay filling the container at `width: 100%; height: 100%`. The container shrink-wraps correctly because the image no longer forces a width.
+
+**Lesson:** Never mix `inline-block` shrink-wrap containers with `width: 100%` on the child — different WebKit versions resolve the circular dependency differently. Keep sizing explicit or consistent across browser and desktop targets.
