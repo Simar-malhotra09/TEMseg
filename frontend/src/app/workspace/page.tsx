@@ -602,7 +602,7 @@ export default function Workspace() {
                   alt="TEM input"
                   className={styles.temImage}
                   style={{
-                    display: "block", width: "100%", height: "100%",
+                    display: "block",
                     visibility: seg.isBlackoutMode || refineMode ? "hidden" : "visible",
                   }}
                   onLoad={e => setImgSize({
