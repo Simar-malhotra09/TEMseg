@@ -234,6 +234,59 @@ a.binaries = [
 ]
 
 # ---------------------------------------------------------------------------
+# Post-analysis size pruning
+# ---------------------------------------------------------------------------
+
+# Patterns to exclude from a.datas (src_path check)
+_exclude_data_patterns = [
+    # dev session data — user runtime state, not app code
+    "/sessions/",
+    "backend_src/sessions",
+    # test directories across packages
+    "hyperspy/tests/",
+    "rsciio/tests/",
+    "numpy/_core/tests/",
+    "numpy/f2py/tests/",
+    "numpy/lib/tests/",
+    "numpy/random/tests/",
+    "numpy/typing/tests/",
+    "pint/testsuite/",
+    "backend_src/app/api/tests/",
+    # metadata — MUST keep .dist-info for importlib.metadata (torchvision, etc.)
+    ".egg-info/",
+    # polars — pulled in transitively, not used directly
+    "_polars_runtime_32/",
+    "_polars_runtime",
+]
+
+_pruned_count = 0
+_pruned_bytes = 0
+
+def _should_exclude_data(src):
+    src_str = str(src)
+    for pat in _exclude_data_patterns:
+        if pat in src_str:
+            return True
+    return False
+
+new_datas = []
+for entry in a.datas:
+    # a.datas entries are (dest_name, src_path, type) or (dest_name, src_path)
+    src = entry[1] if len(entry) > 1 else entry[0]
+    if _should_exclude_data(src):
+        _pruned_count += 1
+        try:
+            _pruned_bytes += Path(src).stat().st_size
+        except Exception:
+            pass
+    else:
+        new_datas.append(entry)
+
+a.datas = new_datas
+
+print(f"[TEMseg.spec] Pruned {_pruned_count} data entries (~{_pruned_bytes // (1024*1024)}MB)")
+
+# ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 
