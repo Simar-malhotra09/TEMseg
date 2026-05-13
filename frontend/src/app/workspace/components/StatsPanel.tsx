@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import styles from "./StatsPanel.module.css";
 import type { StatsResult } from "@/lib/api";
 interface Particle {
@@ -196,6 +196,12 @@ export default function StatsPanel({
           <p className={styles.hint}>Run segmentation to see particle statistics.</p>
         ) : stats ? (
           <div className={styles.grid}>
+            {stats.particle_count > 200 && (
+              <div className={styles.warnRow}>
+                <AlertTriangle size={12} />
+                <span>{stats.particle_count} particles — UI may be laggy.</span>
+              </div>
+            )}
             <div className={styles.row}>
               <span className={styles.label}>Particles</span>
               <span className={styles.val}>{stats.particle_count}</span>

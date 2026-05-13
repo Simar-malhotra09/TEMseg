@@ -170,3 +170,16 @@
 .detailsBtn:hover {
   border-color: #7ee8a2;
 }
+
+.warnRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #1e1e1e;
+  border: 1px solid #3a2a1a;
+  border-radius: 4px;
+  color: #e8c87e;
+  font-size: 11px;
+  line-height: 1.4;
+}

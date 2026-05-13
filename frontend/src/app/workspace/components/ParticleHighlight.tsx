@@ -30,6 +30,11 @@ export default function ParticleHighlight({
   const cx = instance.bbox.x + instance.bbox.w / 2;
   const cy = instance.bbox.y + instance.bbox.h / 2;
 
+  // scale label to particle size so it doesn't dwarf small particles
+  const bboxMin = Math.min(instance.bbox.w, instance.bbox.h);
+  const labelR = Math.max(4, Math.min(12, bboxMin * 0.35));
+  const fontSize = Math.max(8, Math.min(14, bboxMin * 0.45));
+
   return (
     <svg
       className={styles.overlay}
@@ -67,14 +72,14 @@ export default function ParticleHighlight({
       />
 
       {/* ID label */}
-      <circle cx={cx} cy={cy} r={12} fill="#0d0d0d" fillOpacity={0.8} stroke="#7ee8a2" strokeWidth={1.5} />
+      <circle cx={cx} cy={cy} r={labelR} fill="#0d0d0d" fillOpacity={0.8} stroke="#7ee8a2" strokeWidth={1} />
       <text
         x={cx}
         y={cy}
         textAnchor="middle"
         dominantBaseline="central"
         fill="#7ee8a2"
-        fontSize={30}
+        fontSize={fontSize}
         fontWeight={700}
         fontFamily="monospace"
       >
