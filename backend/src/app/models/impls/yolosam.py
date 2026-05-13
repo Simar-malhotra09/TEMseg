@@ -178,15 +178,40 @@ class YoloSam(Model):
             predictor.set_image(image)
             logger.info("[YoloSAM-SAM] Encoding image with SAM")
 
-        masks, _, _ = predictor.predict_torch(
-            point_coords=None,
-            point_labels=None,
-            boxes=transformed_boxes,
-            multimask_output=False,
-        )
-        masks_np = masks.cpu().numpy().astype("uint8")
+        # Batch boxes to avoid RAM spike on images with many detections.
+        # predict_torch allocates (N, 1, H, W) masks; thousands of boxes
+        # can exhaust system RAM. We chunk and reduce incrementally.
+        box_batch_size = kwargs.get("box_batch_size", 64)
+        n_boxes = len(transformed_boxes)
 
-        combined_mask = np.max(masks_np, axis=0)
+        if n_boxes <= box_batch_size:
+            masks, _, _ = predictor.predict_torch(
+                point_coords=None,
+                point_labels=None,
+                boxes=transformed_boxes,
+                multimask_output=False,
+            )
+            masks_np = masks.cpu().numpy().astype("uint8")
+            combined_mask = np.max(masks_np, axis=0)
+        else:
+            logger.info(
+                f"[YoloSAM-SAM] Batching {n_boxes} boxes in chunks of {box_batch_size}"
+            )
+            combined_mask = np.zeros(image.shape[:2], dtype="uint8")
+            for i in range(0, n_boxes, box_batch_size):
+                batch = transformed_boxes[i : i + box_batch_size]
+                masks, _, _ = predictor.predict_torch(
+                    point_coords=None,
+                    point_labels=None,
+                    boxes=batch,
+                    multimask_output=False,
+                )
+                batch_np = masks.cpu().numpy().astype("uint8")
+                batch_max = np.max(batch_np, axis=0)
+                combined_mask = np.maximum(combined_mask, batch_max)
+                del masks, batch_np, batch_max
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
 
         sam_time_elapsed = time.perf_counter() - sam_start
 
