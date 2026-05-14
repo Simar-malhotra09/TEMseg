@@ -55,7 +55,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
         sessionId, selectedModel, activeRegions, blackout, inverse
       );
       if ('error' in result || 'warning' in result) {
-        return result.warning ?? result.error ?? "Segmentation returned no results.";
+        return "Segmentation returned no results.";
       }
 
       setCommittedRegions(blackout ? activeRegions : []);
