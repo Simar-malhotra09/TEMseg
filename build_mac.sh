@@ -109,13 +109,13 @@ if [ -d "dist/TEMseg.app" ]; then
     echo "  BUILD SUCCESSFUL"
     echo "========================================"
     echo ""
-    echo "  Output: dist/TEMseg.app"
+    echo "  Output: dist"
     echo ""
-    SIZE=$(du -sh "dist/TEMseg.app" | cut -f1)
+    SIZE=$(du -sh "dist" | cut -f1)
     echo "  Size: $SIZE"
     echo ""
-    echo "  To run:"
-    echo "    open dist/TEMseg.app"
+    # echo "  To run:"
+    # echo "    open dist/TEMseg.app"
     echo ""
     echo "  Note: Model weights will be downloaded on first launch"
     echo "  to ~/Library/Application Support/TEMseg/weights/"
