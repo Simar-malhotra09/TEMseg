@@ -139,7 +139,7 @@ async def segment(req: SegmentRequest, request: Request):
             "metadata": result.metadata,
             "stats": {},
             "model": req.model,
-            "warning": "Mask contains no detected particles",
+            "warning": "No particles were detected! ",
         }
 
     save_mask = colorize_components_inplace(mask) if req.colorize else mask

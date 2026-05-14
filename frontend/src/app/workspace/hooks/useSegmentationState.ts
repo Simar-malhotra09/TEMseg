@@ -54,6 +54,10 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
       const result = await segmentImage(
         sessionId, selectedModel, activeRegions, blackout, inverse
       );
+      if ('error' in result || 'warning' in result) {
+        return result.warning ?? result.error ?? "Segmentation returned no results.";
+      }
+
       setCommittedRegions(blackout ? activeRegions : []);
       setInvCommittedRegions(inverse ? activeRegions : []);
       setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
