@@ -352,7 +352,7 @@ export default function Workspace() {
             )}
 
             {/*Display zoom size and reset to normal on click*/}
-            <span className={styles.statusPill}>{status}</span>
+            <span className={styles.statusPill} key={status}>{status}</span>
             {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
               <button className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
                 {Math.round(zoom * 100)}% ✕

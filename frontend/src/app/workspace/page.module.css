@@ -24,12 +24,19 @@ flex-shrink: 0;
 .logoAccent { color: #7ee8a2; }
 .sessionTag { color: #555; font-size: 11px; }
 .statusPill {
-background: #161616;
-border: 1px solid #2a2a2a;
-padding: 4px 12px;
-border-radius: 100px;
-color: #888;
-font-size: 11px;
+  background: #90ee90; color: #0d0d0d; border-color: #7ee8a2;
+  border: 1px solid #2a2a2a;
+  padding: 4px 12px;
+  border-radius: 100px;
+  /* color: #888; */
+  font-size: 11px;
+  /* animation: statusFlash 1.5s ease-out; */
+}
+
+@keyframes statusFlash {
+  0% { background: #90ee90; color: #0d0d0d; border-color: #7ee8a2; }
+  70% { background: #1a2a1e; color: #7ee8a2; border-color: #2a3a2e; }
+  100% { background: #161616; color: #888; border-color: #2a2a2a; }
 }
 
 /* Body */
@@ -205,7 +212,6 @@ border-bottom: 1px solid #1a1a1a;
 /*   mix-blend-mode: screen; /* makes black transparent, shows colored mask */ 
 /* } */
 
-.statusPill,
 .warnPill {
   display: inline-flex;
   align-items: center;
