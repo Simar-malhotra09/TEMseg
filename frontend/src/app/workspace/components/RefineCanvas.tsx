@@ -29,6 +29,9 @@ interface Props {
   onEdgeClick: (instId: number, pos: [number, number]) => void;
   onSplitPointPlace: (pos: [number, number]) => void;
   onPastePlace?: (pos: [number, number]) => void;
+  onRotateStart?: () => void;
+  onRotateDrag?: (pos: [number, number]) => void;
+  onRotateEnd?: () => void;
   onViewBoxChange: (vb: ViewBox) => void;
 }
 
@@ -50,6 +53,7 @@ export default function RefineCanvas({
   clipboard = null,
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
   onEdgeClick, onSplitPointPlace, onPastePlace,
+  onRotateStart, onRotateDrag, onRotateEnd,
   onViewBoxChange,
 }: Props) {
 
@@ -59,6 +63,8 @@ export default function RefineCanvas({
   const panStart = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
   // tracks which vertex is being dragged and its live position during drag
   const draggingVertex = useRef<{ instId: number; vi: number; pos: [number, number] } | null>(null);
+  // tracks rotation handle drag
+  const rotating = useRef(false);
   // local render-only state for smooth vertex drag — does not go to parent until mouseup
   const [dragPos, setDragPos] = useLocalDragState();
   // mouse position in image space for paste-mode ghost preview
@@ -103,6 +109,13 @@ export default function RefineCanvas({
       if (svgRef.current) svgRef.current.style.cursor = "grabbing";
       return;
     }
+    const target = e.target as Element;
+    if (target.getAttribute("data-rotate-handle") === "true") {
+      e.stopPropagation();
+      rotating.current = true;
+      if (onRotateStart) onRotateStart();
+      return;
+    }
     if (pasteMode) {
       if (onPastePlace) onPastePlace(toImageSpace(e.clientX, e.clientY));
       return;
@@ -111,9 +124,9 @@ export default function RefineCanvas({
       onSplitPointPlace(toImageSpace(e.clientX, e.clientY));
       return;
     }
-    const tag = (e.target as Element).tagName;
+    const tag = target.tagName;
     if (tag === "svg" || tag === "image") onDeselect();
-  }, [viewBox, pasteMode, splitMode, toImageSpace, onPastePlace, onSplitPointPlace, onDeselect]);
+  }, [viewBox, pasteMode, splitMode, toImageSpace, onPastePlace, onSplitPointPlace, onDeselect, onRotateStart]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (panStart.current) {
@@ -123,6 +136,10 @@ export default function RefineCanvas({
         x: Math.min(Math.max(vx - (e.clientX - mx) / width * viewBox.w, 0), imgWidth - viewBox.w),
         y: Math.min(Math.max(vy - (e.clientY - my) / height * viewBox.h, 0), imgHeight - viewBox.h),
       });
+      return;
+    }
+    if (rotating.current) {
+      if (onRotateDrag) onRotateDrag(toImageSpace(e.clientX, e.clientY));
       return;
     }
     if (pasteMode) {
@@ -135,7 +152,7 @@ export default function RefineCanvas({
       // update local render state for smooth drag — parent not notified until mouseup
       setDragPos({ instId: draggingVertex.current.instId, vi: draggingVertex.current.vi, pos });
     }
-  }, [viewBox, width, height, imgWidth, imgHeight, pasteMode, toImageSpace, onViewBoxChange, setDragPos]);
+  }, [viewBox, width, height, imgWidth, imgHeight, pasteMode, toImageSpace, onViewBoxChange, onRotateDrag, setDragPos]);
 
   const handleMouseUp = useCallback(() => {
     if (draggingVertex.current) {
@@ -144,10 +161,14 @@ export default function RefineCanvas({
       onVertexDragEnd(instId, vi, pos);
       setDragPos(null);
     }
+    if (rotating.current) {
+      rotating.current = false;
+      if (onRotateEnd) onRotateEnd();
+    }
     draggingVertex.current = null;
     panStart.current = null;
     if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : "default";
-  }, [onVertexDragEnd, setDragPos, pasteMode]);
+  }, [onVertexDragEnd, setDragPos, onRotateEnd, pasteMode]);
 
   const pointsStr = (contour: [number, number][]) =>
     contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -246,6 +267,40 @@ export default function RefineCanvas({
                     />
                   );
                 })}
+
+                {/* rotation handle */}
+                {(() => {
+                  const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
+                  const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
+                  // place handle above centroid, scaled by bbox size
+                  const handleDist = Math.max(inst.bbox.h, inst.bbox.w) * 0.6 + 20;
+                  const hx = cx;
+                  const hy = cy - handleDist;
+                  return (
+                    <g>
+                      {/* dashed line from centroid to handle */}
+                      <line
+                        x1={cx} y1={cy}
+                        x2={hx} y2={hy}
+                        stroke="#fff"
+                        strokeWidth={1 * s2i}
+                        strokeDasharray={`${3 * s2i},${2 * s2i}`}
+                        opacity={0.6}
+                        style={{ pointerEvents: "none" }}
+                      />
+                      {/* rotation handle circle */}
+                      <circle
+                        data-rotate-handle="true"
+                        cx={hx} cy={hy}
+                        r={VERTEX_RADIUS * 1.5 * s2i}
+                        fill="#fff"
+                        stroke={color}
+                        strokeWidth={1.5 * s2i}
+                        style={{ cursor: "grab" }}
+                      />
+                    </g>
+                  );
+                })()}
               </>
             )}
           </g>

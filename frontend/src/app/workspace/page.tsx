@@ -690,6 +690,9 @@ export default function Workspace() {
                       onEdgeClick={refine.handleEdgeClick}
                       onSplitPointPlace={refine.handleSplitPointPlace}
                       onPastePlace={refine.handlePastePlace}
+                      onRotateStart={refine.handleRotateStart}
+                      onRotateDrag={refine.handleRotateDrag}
+                      onRotateEnd={refine.handleRotateEnd}
                       onViewBoxChange={refine.setViewBox}
                     />
                   </div>
