@@ -20,6 +20,7 @@ interface Props {
   splitPoints: [number, number][];
   pasteMode?: boolean;
   clipboard?: Instance | null;
+  polygonOpacity?: number;
 
   // events — all business logic handled by parent via useRefineState
   onSelect: (id: number) => void;
@@ -51,6 +52,7 @@ export default function RefineCanvas({
   instances, selectedId, viewBox, splitMode, splitPoints,
   pasteMode = false,
   clipboard = null,
+  polygonOpacity = 0.2,
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
   onEdgeClick, onSplitPointPlace, onPastePlace,
   onRotateStart, onRotateDrag, onRotateEnd,
@@ -218,7 +220,8 @@ export default function RefineCanvas({
           <g key={inst.id}>
             <polygon
               points={pts}
-              fill={`${color}33`}
+              fill={color}
+              fillOpacity={polygonOpacity}
               stroke={color}
               strokeWidth={isSelected ? 2.5 * s2i : 1.5 * s2i}
               opacity={isSelected ? 1 : 0.7}

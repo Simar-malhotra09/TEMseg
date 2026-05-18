@@ -141,10 +141,16 @@ export default function Workspace() {
       if (e.key === "Escape") {
         if (refine.pasteMode) refine.handleCancelPaste();
       }
+      if (e.key === "[") {
+        refine.setPolygonOpacity(Math.max(0.05, refine.polygonOpacity - 0.05));
+      }
+      if (e.key === "]") {
+        refine.setPolygonOpacity(Math.min(1, refine.polygonOpacity + 0.05));
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode]);
+  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.polygonOpacity, refine.setPolygonOpacity]);
 
   // image upload
   async function handleFile(file: File) {
@@ -476,6 +482,18 @@ export default function Workspace() {
               <section className={styles.sidebarSection}>
                 <p className={styles.sidebarLabel}>Refine</p>
 
+                <div style={{ marginBottom: 8 }}>
+                  <p className={styles.sidebarHint}>Fill opacity {(refine.polygonOpacity * 100).toFixed(0)}%</p>
+                  <input
+                    type="range"
+                    min={5}
+                    max={100}
+                    value={Math.round(refine.polygonOpacity * 100)}
+                    onChange={e => refine.setPolygonOpacity(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
+                </div>
+
                 {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
                   <>
                     <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
@@ -683,6 +701,7 @@ export default function Workspace() {
                       splitPoints={refine.splitPoints}
                       pasteMode={refine.pasteMode}
                       clipboard={refine.clipboard}
+                      polygonOpacity={refine.polygonOpacity}
                       onSelect={refine.handleSelect}
                       onDeselect={refine.handleDeselect}
                       onVertexDragEnd={refine.handleVertexDragEnd}

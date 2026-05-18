@@ -44,6 +44,9 @@ export function useRefineState({
   // original contour before rotation starts (for handle-based rotation)
   const [rotateOriginal, setRotateOriginal] = useState<[number, number][] | null>(null);
 
+  // global polygon fill opacity in refine mode
+  const [polygonOpacity, setPolygonOpacity] = useState(0.2);
+
   // always-current ref — handlers read from this, never from stale closure over state
   const instancesRef = useRef(instances);
 
@@ -273,6 +276,7 @@ export function useRefineState({
     setPasteMode(false);
     setRotationDeg(0);
     setRotateOriginal(null);
+    setPolygonOpacity(0.2);
     onDiscard();
   }, [initialInstances, commit, onDiscard]);
 
@@ -287,6 +291,7 @@ export function useRefineState({
     setPasteMode(false);
     setRotationDeg(0);
     setRotateOriginal(null);
+    setPolygonOpacity(0.2);
   }, []);
 
 
@@ -302,6 +307,7 @@ export function useRefineState({
     clipboard,
     pasteMode,
     rotationDeg,
+    polygonOpacity,
     reinit,
     // handlers
     handleSelect,
@@ -323,6 +329,7 @@ export function useRefineState({
     handleRotateStart,
     handleRotateDrag,
     handleRotateEnd,
+    setPolygonOpacity,
     handleDiscard,
   };
 }
