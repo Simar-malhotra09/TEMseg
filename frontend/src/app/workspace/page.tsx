@@ -484,6 +484,26 @@ export default function Workspace() {
                     <button className={styles.actionBtn} onClick={refine.handleCopy}>
                       Copy (⌘C)
                     </button>
+                    <div style={{ marginTop: 6 }}>
+                      <p className={styles.sidebarHint}>Rotate {refine.rotationDeg.toFixed(0)}°</p>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button className={styles.actionBtn} style={{ flex: 1 }} onClick={() => refine.handleRotate(-15)}>
+                          -15°
+                        </button>
+                        <button className={styles.actionBtn} style={{ flex: 1 }} onClick={() => refine.handleRotate(-5)}>
+                          -5°
+                        </button>
+                        <button className={styles.actionBtn} style={{ flex: 1 }} onClick={() => refine.handleRotate(5)}>
+                          +5°
+                        </button>
+                        <button className={styles.actionBtn} style={{ flex: 1 }} onClick={() => refine.handleRotate(15)}>
+                          +15°
+                        </button>
+                      </div>
+                      <button className={styles.actionBtn} onClick={() => refine.handleSetRotation(0)}>
+                        Reset Rotation
+                      </button>
+                    </div>
                   </>
                 )}
 
