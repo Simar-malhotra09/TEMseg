@@ -141,10 +141,14 @@ export default function Workspace() {
       if (e.key === "Escape") {
         if (refine.pasteMode) refine.handleCancelPaste();
       }
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        refine.handleRotate(e.shiftKey ? -15 : 15);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode]);
+  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.handleRotate]);
 
   // image upload
   async function handleFile(file: File) {
