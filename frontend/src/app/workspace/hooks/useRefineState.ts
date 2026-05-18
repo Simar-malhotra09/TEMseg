@@ -41,6 +41,8 @@ export function useRefineState({
 
   // rotation state — applies to selected instance or clipboard preview
   const [rotationDeg, setRotationDeg] = useState(0);
+  // original contour before rotation starts (for handle-based rotation)
+  const [rotateOriginal, setRotateOriginal] = useState<[number, number][] | null>(null);
 
   // always-current ref — handlers read from this, never from stale closure over state
   const instancesRef = useRef(instances);
@@ -213,58 +215,30 @@ export function useRefineState({
     setPasteMode(false);
   }, [clipboard, commit]);
 
-  // rotate selected instance by delta degrees (in-place)
-  const handleRotate = useCallback((deltaDeg: number) => {
+  // start rotation drag — capture original contour
+  const handleRotateStart = useCallback(() => {
     if (selectedId === null) return;
     const inst = instancesRef.current.find(i => i.id === selectedId);
     if (!inst) return;
+    setRotateOriginal(inst.contour);
+  }, [selectedId]);
 
-    const newDeg = rotationDeg + deltaDeg;
-    setRotationDeg(newDeg);
+  // during rotation drag — compute angle from centroid to mouse, rotate original contour
+  const handleRotateDrag = useCallback((mousePos: [number, number]) => {
+    if (selectedId === null || !rotateOriginal) return;
+    const [mx, my] = mousePos;
 
-    const rad = (newDeg * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
+    const cx = rotateOriginal.reduce((s, [x]) => s + x, 0) / rotateOriginal.length;
+    const cy = rotateOriginal.reduce((s, [, y]) => s + y, 0) / rotateOriginal.length;
 
-    // centroid
-    const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
-    const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
-
-    const rotated = inst.contour.map(([x, y]) => {
-      const dx = x - cx;
-      const dy = y - cy;
-      return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as [number, number];
-    });
-
-    const xs = rotated.map(p => p[0]);
-    const ys = rotated.map(p => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-
-    commit(
-      instancesRef.current.map(i =>
-        i.id === selectedId
-          ? { ...i, contour: rotated, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } }
-          : i
-      )
-    );
-  }, [selectedId, rotationDeg, commit]);
-
-  const handleSetRotation = useCallback((deg: number) => {
-    if (selectedId === null) return;
-    const inst = instancesRef.current.find(i => i.id === selectedId);
-    if (!inst) return;
-
+    const deg = (Math.atan2(my - cy, mx - cx) * 180) / Math.PI - 90;
     setRotationDeg(deg);
 
     const rad = (deg * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
 
-    const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
-    const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
-
-    const rotated = inst.contour.map(([x, y]) => {
+    const rotated = rotateOriginal.map(([x, y]) => {
       const dx = x - cx;
       const dy = y - cy;
       return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as [number, number];
@@ -282,7 +256,12 @@ export function useRefineState({
           : i
       )
     );
-  }, [selectedId, commit]);
+  }, [selectedId, rotateOriginal, commit]);
+
+  // end rotation drag — clear original
+  const handleRotateEnd = useCallback(() => {
+    setRotateOriginal(null);
+  }, []);
 
   const handleDiscard = useCallback(() => {
     commit(initialInstances);
@@ -293,6 +272,7 @@ export function useRefineState({
     setClipboard(null);
     setPasteMode(false);
     setRotationDeg(0);
+    setRotateOriginal(null);
     onDiscard();
   }, [initialInstances, commit, onDiscard]);
 
@@ -306,6 +286,7 @@ export function useRefineState({
     setClipboard(null);
     setPasteMode(false);
     setRotationDeg(0);
+    setRotateOriginal(null);
   }, []);
 
 
@@ -339,8 +320,9 @@ export function useRefineState({
     handleEnterPaste,
     handleCancelPaste,
     handlePastePlace,
-    handleRotate,
-    handleSetRotation,
+    handleRotateStart,
+    handleRotateDrag,
+    handleRotateEnd,
     handleDiscard,
   };
 }
