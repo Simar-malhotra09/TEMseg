@@ -39,6 +39,9 @@ export function useRefineState({
   const [clipboard, setClipboard] = useState<Instance | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
 
+  // rotation state — applies to selected instance or clipboard preview
+  const [rotationDeg, setRotationDeg] = useState(0);
+
   // always-current ref — handlers read from this, never from stale closure over state
   const instancesRef = useRef(instances);
 
@@ -48,8 +51,14 @@ export function useRefineState({
   }, []);
 
   // select / deselect
-  const handleSelect = useCallback((id: number) => setSelectedId(id), []);
-  const handleDeselect = useCallback(() => setSelectedId(null), []);
+  const handleSelect = useCallback((id: number) => {
+    setSelectedId(id);
+    setRotationDeg(0);
+  }, []);
+  const handleDeselect = useCallback(() => {
+    setSelectedId(null);
+    setRotationDeg(0);
+  }, []);
 
   // vertex drag end — canvas calls this on mouseup with final position
   const handleVertexDragEnd = useCallback((instId: number, vi: number, pos: [number, number]) => {
@@ -204,6 +213,77 @@ export function useRefineState({
     setPasteMode(false);
   }, [clipboard, commit]);
 
+  // rotate selected instance by delta degrees (in-place)
+  const handleRotate = useCallback((deltaDeg: number) => {
+    if (selectedId === null) return;
+    const inst = instancesRef.current.find(i => i.id === selectedId);
+    if (!inst) return;
+
+    const newDeg = rotationDeg + deltaDeg;
+    setRotationDeg(newDeg);
+
+    const rad = (newDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    // centroid
+    const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
+    const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
+
+    const rotated = inst.contour.map(([x, y]) => {
+      const dx = x - cx;
+      const dy = y - cy;
+      return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as [number, number];
+    });
+
+    const xs = rotated.map(p => p[0]);
+    const ys = rotated.map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+    commit(
+      instancesRef.current.map(i =>
+        i.id === selectedId
+          ? { ...i, contour: rotated, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } }
+          : i
+      )
+    );
+  }, [selectedId, rotationDeg, commit]);
+
+  const handleSetRotation = useCallback((deg: number) => {
+    if (selectedId === null) return;
+    const inst = instancesRef.current.find(i => i.id === selectedId);
+    if (!inst) return;
+
+    setRotationDeg(deg);
+
+    const rad = (deg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
+    const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
+
+    const rotated = inst.contour.map(([x, y]) => {
+      const dx = x - cx;
+      const dy = y - cy;
+      return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as [number, number];
+    });
+
+    const xs = rotated.map(p => p[0]);
+    const ys = rotated.map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+    commit(
+      instancesRef.current.map(i =>
+        i.id === selectedId
+          ? { ...i, contour: rotated, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } }
+          : i
+      )
+    );
+  }, [selectedId, commit]);
+
   const handleDiscard = useCallback(() => {
     commit(initialInstances);
     setSelectedId(null);
@@ -212,6 +292,7 @@ export function useRefineState({
     setSplitInstanceId(null);
     setClipboard(null);
     setPasteMode(false);
+    setRotationDeg(0);
     onDiscard();
   }, [initialInstances, commit, onDiscard]);
 
@@ -224,6 +305,7 @@ export function useRefineState({
     setSplitInstanceId(null);
     setClipboard(null);
     setPasteMode(false);
+    setRotationDeg(0);
   }, []);
 
 
@@ -238,6 +320,7 @@ export function useRefineState({
     isSaving,
     clipboard,
     pasteMode,
+    rotationDeg,
     reinit,
     // handlers
     handleSelect,
@@ -256,6 +339,8 @@ export function useRefineState({
     handleEnterPaste,
     handleCancelPaste,
     handlePastePlace,
+    handleRotate,
+    handleSetRotation,
     handleDiscard,
   };
 }
