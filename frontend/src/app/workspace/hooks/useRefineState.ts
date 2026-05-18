@@ -35,6 +35,10 @@ export function useRefineState({
   const [splitInstanceId, setSplitInstanceId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // copy-paste state
+  const [clipboard, setClipboard] = useState<Instance | null>(null);
+  const [pasteMode, setPasteMode] = useState(false);
+
   // always-current ref — handlers read from this, never from stale closure over state
   const instancesRef = useRef(instances);
 
@@ -147,12 +151,67 @@ export function useRefineState({
     finally { setIsSaving(false); }
   }, [onSave]);
 
+  // copy selected instance to clipboard
+  const handleCopy = useCallback(() => {
+    if (selectedId === null) return;
+    const inst = instancesRef.current.find(i => i.id === selectedId);
+    if (!inst) return;
+    setClipboard(inst);
+    setPasteMode(false);
+  }, [selectedId]);
+
+  // enter paste mode — user will click on canvas to place
+  const handleEnterPaste = useCallback(() => {
+    if (!clipboard) return;
+    setPasteMode(true);
+    setSelectedId(null);
+  }, [clipboard]);
+
+  const handleCancelPaste = useCallback(() => {
+    setPasteMode(false);
+  }, []);
+
+  // place copied polygon at clicked position (image-space coords)
+  const handlePastePlace = useCallback((pos: [number, number]) => {
+    if (!clipboard) return;
+    const [px, py] = pos;
+
+    // compute centroid of clipboard contour
+    const cx = clipboard.contour.reduce((s, [x]) => s + x, 0) / clipboard.contour.length;
+    const cy = clipboard.contour.reduce((s, [, y]) => s + y, 0) / clipboard.contour.length;
+
+    // shift contour so centroid lands at click position
+    const shiftedContour = clipboard.contour.map(([x, y]) =>
+      [x + (px - cx), y + (py - cy)] as [number, number]
+    );
+
+    // compute new bbox
+    const xs = shiftedContour.map(p => p[0]);
+    const ys = shiftedContour.map(p => p[1]);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+    const maxId = instancesRef.current.reduce((m, i) => Math.max(m, i.id), 0);
+    const newInstance: Instance = {
+      id: maxId + 1,
+      contour: shiftedContour,
+      bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+      area: clipboard.area,
+    };
+
+    commit([...instancesRef.current, newInstance]);
+    setSelectedId(newInstance.id);
+    setPasteMode(false);
+  }, [clipboard, commit]);
+
   const handleDiscard = useCallback(() => {
     commit(initialInstances);
     setSelectedId(null);
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
+    setClipboard(null);
+    setPasteMode(false);
     onDiscard();
   }, [initialInstances, commit, onDiscard]);
 
@@ -163,6 +222,8 @@ export function useRefineState({
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
+    setClipboard(null);
+    setPasteMode(false);
   }, []);
 
 
@@ -175,6 +236,8 @@ export function useRefineState({
     splitPoints,
     splitInstanceId,
     isSaving,
+    clipboard,
+    pasteMode,
     reinit,
     // handlers
     handleSelect,
@@ -189,6 +252,10 @@ export function useRefineState({
     handleConfirmSplit,
     setViewBox,
     handleSave,
+    handleCopy,
+    handleEnterPaste,
+    handleCancelPaste,
+    handlePastePlace,
     handleDiscard,
   };
 }

@@ -123,18 +123,28 @@ export default function Workspace() {
     imgHeight: imgSize.height || 1,
   });
 
-  // if in refine mode, del/backsapce 
-  // key deletes the object from the mask 
+  // if in refine mode, keyboard shortcuts
   useEffect(() => {
     if (!refineMode) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Backspace" || e.key === "Delete") {
         refine.handleDeleteSelected();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        refine.handleCopy();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        refine.handleEnterPaste();
+      }
+      if (e.key === "Escape") {
+        if (refine.pasteMode) refine.handleCancelPaste();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refineMode, refine.handleDeleteSelected]);
+  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode]);
 
   // image upload
   async function handleFile(file: File) {
@@ -461,15 +471,37 @@ export default function Workspace() {
               )}
             </section>
 
-            {/* split controls — only shown in refine mode */}
+            {/* refine controls — only shown in refine mode */}
             {refineMode && (
               <section className={styles.sidebarSection}>
                 <p className={styles.sidebarLabel}>Refine</p>
 
-                {refine.selectedId !== null && !refine.splitMode && (
-                  <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
-                    Split Instance
+                {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
+                  <>
+                    <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
+                      Split Instance
+                    </button>
+                    <button className={styles.actionBtn} onClick={refine.handleCopy}>
+                      Copy (⌘C)
+                    </button>
+                  </>
+                )}
+
+                {refine.clipboard && !refine.pasteMode && !refine.splitMode && (
+                  <button className={styles.actionBtn} onClick={refine.handleEnterPaste}>
+                    Paste (⌘V)
                   </button>
+                )}
+
+                {refine.pasteMode && (
+                  <>
+                    <p className={styles.sidebarHint}>
+                      Click on image to place copied polygon
+                    </p>
+                    <button className={styles.actionBtn} onClick={refine.handleCancelPaste}>
+                      Cancel (Esc)
+                    </button>
+                  </>
                 )}
 
                 {refine.splitMode && (
@@ -649,12 +681,15 @@ export default function Workspace() {
                       viewBox={refine.viewBox}
                       splitMode={refine.splitMode}
                       splitPoints={refine.splitPoints}
+                      pasteMode={refine.pasteMode}
+                      clipboard={refine.clipboard}
                       onSelect={refine.handleSelect}
                       onDeselect={refine.handleDeselect}
                       onVertexDragEnd={refine.handleVertexDragEnd}
                       onVertexDelete={refine.handleVertexDelete}
                       onEdgeClick={refine.handleEdgeClick}
                       onSplitPointPlace={refine.handleSplitPointPlace}
+                      onPastePlace={refine.handlePastePlace}
                       onViewBoxChange={refine.setViewBox}
                     />
                   </div>

@@ -18,6 +18,8 @@ interface Props {
   viewBox: ViewBox;
   splitMode: boolean;
   splitPoints: [number, number][];
+  pasteMode?: boolean;
+  clipboard?: Instance | null;
 
   // events — all business logic handled by parent via useRefineState
   onSelect: (id: number) => void;
@@ -26,6 +28,7 @@ interface Props {
   onVertexDelete: (instId: number, vi: number) => void;
   onEdgeClick: (instId: number, pos: [number, number]) => void;
   onSplitPointPlace: (pos: [number, number]) => void;
+  onPastePlace?: (pos: [number, number]) => void;
   onViewBoxChange: (vb: ViewBox) => void;
 }
 
@@ -43,8 +46,11 @@ const EDGE_HIT_WIDTH = 8; // constant screen-space px
 export default function RefineCanvas({
   imageSrc, width, height, imgWidth, imgHeight,
   instances, selectedId, viewBox, splitMode, splitPoints,
+  pasteMode = false,
+  clipboard = null,
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
-  onEdgeClick, onSplitPointPlace, onViewBoxChange,
+  onEdgeClick, onSplitPointPlace, onPastePlace,
+  onViewBoxChange,
 }: Props) {
 
   // pure interaction refs — no business logic, just mechanics
@@ -55,6 +61,8 @@ export default function RefineCanvas({
   const draggingVertex = useRef<{ instId: number; vi: number; pos: [number, number] } | null>(null);
   // local render-only state for smooth vertex drag — does not go to parent until mouseup
   const [dragPos, setDragPos] = useLocalDragState();
+  // mouse position in image space for paste-mode ghost preview
+  const [pasteCursor, setPasteCursor] = useState<[number, number] | null>(null);
 
   // scale factor: image pixels per screen pixel at current zoom
   // used to keep stroke widths and vertex sizes visually constant
@@ -95,13 +103,17 @@ export default function RefineCanvas({
       if (svgRef.current) svgRef.current.style.cursor = "grabbing";
       return;
     }
+    if (pasteMode) {
+      if (onPastePlace) onPastePlace(toImageSpace(e.clientX, e.clientY));
+      return;
+    }
     if (splitMode) {
       onSplitPointPlace(toImageSpace(e.clientX, e.clientY));
       return;
     }
     const tag = (e.target as Element).tagName;
     if (tag === "svg" || tag === "image") onDeselect();
-  }, [viewBox, splitMode, toImageSpace, onSplitPointPlace, onDeselect]);
+  }, [viewBox, pasteMode, splitMode, toImageSpace, onPastePlace, onSplitPointPlace, onDeselect]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (panStart.current) {
@@ -113,13 +125,17 @@ export default function RefineCanvas({
       });
       return;
     }
+    if (pasteMode) {
+      setPasteCursor(toImageSpace(e.clientX, e.clientY));
+      return;
+    }
     if (draggingVertex.current) {
       const pos = toImageSpace(e.clientX, e.clientY);
       draggingVertex.current.pos = pos;
       // update local render state for smooth drag — parent not notified until mouseup
       setDragPos({ instId: draggingVertex.current.instId, vi: draggingVertex.current.vi, pos });
     }
-  }, [viewBox, width, height, imgWidth, imgHeight, toImageSpace, onViewBoxChange, setDragPos]);
+  }, [viewBox, width, height, imgWidth, imgHeight, pasteMode, toImageSpace, onViewBoxChange, setDragPos]);
 
   const handleMouseUp = useCallback(() => {
     if (draggingVertex.current) {
@@ -130,8 +146,8 @@ export default function RefineCanvas({
     }
     draggingVertex.current = null;
     panStart.current = null;
-    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : "default";
-  }, [onVertexDragEnd, setDragPos]);
+    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : "default";
+  }, [onVertexDragEnd, setDragPos, pasteMode]);
 
   const pointsStr = (contour: [number, number][]) =>
     contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -157,7 +173,7 @@ export default function RefineCanvas({
       width={width}
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      style={{ display: "block", userSelect: "none", cursor: splitMode ? "crosshair" : "default" }}
+      style={{ display: "block", userSelect: "none", cursor: pasteMode ? "copy" : splitMode ? "crosshair" : "default" }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -235,6 +251,28 @@ export default function RefineCanvas({
           </g>
         );
       })}
+
+      {/* paste mode ghost — polygon following cursor */}
+      {pasteMode && clipboard && pasteCursor && (
+        <g style={{ pointerEvents: "none" }}>
+          {(() => {
+            const [px, py] = pasteCursor;
+            const cx = clipboard.contour.reduce((s, [x]) => s + x, 0) / clipboard.contour.length;
+            const cy = clipboard.contour.reduce((s, [, y]) => s + y, 0) / clipboard.contour.length;
+            const ghostPts = clipboard.contour.map(([x, y]) => `${x + (px - cx)},${y + (py - cy)}`).join(" ");
+            return (
+              <polygon
+                points={ghostPts}
+                fill="none"
+                stroke="#fff"
+                strokeWidth={2 * s2i}
+                strokeDasharray={`${4 * s2i},${3 * s2i}`}
+                opacity={0.8}
+              />
+            );
+          })()}
+        </g>
+      )}
 
       {/* split point markers — on top of everything */}
       {splitMode && splitPoints.map(([x, y], i) => (
