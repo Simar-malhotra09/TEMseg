@@ -141,7 +141,10 @@ def compute_stats_from_instances(
     Compute stats using pre-extracted instances (from instances.json).
     This ensures particle IDs match between stats and the canvas overlay.
     """
-    has_scale = pixel_size is not None and pixel_size > 0
+
+    # I added this placeholder '-' in commit 836855bd05011e60c1d96038b00240566da4756f
+    # this is hacky and needs to be fixed later. 
+    has_scale = pixel_size!= '-' and pixel_size is not None and pixel_size > 0
     scale = pixel_size if has_scale else 1.0
     scale_sq = scale * scale if scale else 1.0
     unit = pixel_unit if has_scale else "px"
