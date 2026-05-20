@@ -181,6 +181,11 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
     except Exception as e:
         logger.warning(f"[META] Metadata extraction failed (non-fatal): {e}")
 
+    if not meta.__contains__("pixel_size"):
+        meta["pixel_size"]= '-'
+    if not meta.__contains__("pixel_unit"):
+        meta["pixel_size"]= '-'
+
     return meta
 
 

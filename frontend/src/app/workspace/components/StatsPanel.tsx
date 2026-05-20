@@ -173,7 +173,13 @@ export default function StatsPanel({
               <div className={styles.row}>
                 <span className={styles.label}>Pixel Size</span>
                 <span className={styles.val}>
-                  {metadata.pixel_size.toFixed(4)} {metadata.pixel_unit ?? ""}
+                  {metadata.pixel_size == null || metadata.pixel_size === "-"
+                    ? "Not Found"
+                    : metadata.pixel_size.toFixed(4)}
+
+                  {metadata.pixel_unit == null || metadata.pixel_unit === "-"
+                    ? ""
+                    : " " + metadata.pixel_unit}
                 </span>
               </div>
             )}
