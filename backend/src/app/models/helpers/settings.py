@@ -1,8 +1,9 @@
 """
 Weight path resolution — works in three contexts:
 
-1. FROZEN (PyInstaller .app):
-   ~/Library/Application Support/TEMseg/weights/
+1. FROZEN (PyInstaller .app / .exe):
+   macOS : ~/Library/Application Support/TEMseg/weights/
+   Windows: ~/AppData/Local/TEMseg/weights/
 
 2. DEV with TEMSEG_WEIGHTS_DIR env var override:
    whatever the env var points to
@@ -11,6 +12,7 @@ Weight path resolution — works in three contexts:
    backend/weights/  (resolved via parents[4] from this file)
 """
 
+import os
 import sys
 import platform
 from pathlib import Path
@@ -22,37 +24,53 @@ def _app_support_weights_dir() -> Path:
     if system == "Darwin":
         return Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
     elif system == "Windows":
-        app_data = Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
-        return app_data
+        return Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
     else:
         # Linux / other
         return Path.home() / ".local" / "share" / "TEMseg" / "weights"
 
 
-def _is_frozen() -> bool:
-    """True when running inside a PyInstaller bundle."""
-    return getattr(sys, "frozen", False)
+def _dev_weights_dir() -> Path:
+    """Dev fallback: backend/weights/ relative to this file."""
+    return Path(__file__).resolve().parents[4] / "weights"
 
 
+def _resolve_weights_dir() -> Path:
+    """
+    Resolve weights directory with priority:
+      1. TEMSEG_WEIGHTS_DIR env var
+      2. Frozen app bundle -> platform-specific app data dir
+      3. Dev -> backend/weights/
+    """
+    if env_dir := os.environ.get("TEMSEG_WEIGHTS_DIR"):
+        return Path(env_dir)
+
+    if getattr(sys, "frozen", False):
+        return _app_support_weights_dir()
+
+    return _dev_weights_dir()
 
 
-WEIGHTS_DIR = _app_support_weights_dir()
+WEIGHTS_DIR = _resolve_weights_dir()
 
 
 class Settings:
-    WEIGHTS_DIR         = WEIGHTS_DIR
-    YOLO_MODEL_PATH     = WEIGHTS_DIR / "best12x.onnx"
-    SAM_MODEL_PATH      = WEIGHTS_DIR / "sam_vit_b_01ec64.pth"
+    WEIGHTS_DIR = WEIGHTS_DIR
+    YOLO_MODEL_PATH = WEIGHTS_DIR / "best12x.onnx"
+    SAM_MODEL_PATH = WEIGHTS_DIR / "sam_vit_b_01ec64.pth"
     MASKRCNN_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model.pth"
 
     @classmethod
     def weights_present(cls) -> bool:
         """Check if all required weight files exist."""
-        return all(p.exists() for p in [
-            cls.YOLO_MODEL_PATH,
-            cls.SAM_MODEL_PATH,
-            cls.MASKRCNN_MODEL_PATH,
-        ])
+        return all(
+            p.exists()
+            for p in [
+                cls.YOLO_MODEL_PATH,
+                cls.SAM_MODEL_PATH,
+                cls.MASKRCNN_MODEL_PATH,
+            ]
+        )
 
     @classmethod
     def missing_weights(cls) -> list[str]:
