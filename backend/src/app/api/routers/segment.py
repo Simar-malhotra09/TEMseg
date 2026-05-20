@@ -37,6 +37,7 @@ class SegmentResponse(BaseModel):
     metadata: Dict[str, Any]
     stats: dict
     time_elapsed: float
+    debug_boxes_url: str | None = None
 
 
 router = APIRouter(prefix="/segment")
@@ -156,6 +157,30 @@ async def segment(req: SegmentRequest, request: Request):
     if not success:
         return {"error": "Failed to save mask"}
 
+    # ── save YOLO debug boxes overlay ────────────────────────────
+    debug_boxes_url = None
+    if (
+        hasattr(result, "detection_boxes")
+        and result.detection_boxes is not None
+        and len(result.detection_boxes) > 0
+    ):
+        debug_img = img.copy()
+        if debug_img.ndim == 2:
+            debug_img = cv.cvtColor(debug_img, cv.COLOR_GRAY2BGR)
+        elif debug_img.shape[2] == 3 and debug_img.dtype != np.uint8:
+            debug_img = (
+                (debug_img - debug_img.min())
+                / (debug_img.max() - debug_img.min() + 1e-8)
+                * 255
+            ).astype(np.uint8)
+        for box in result.detection_boxes.astype(int):
+            x1, y1, x2, y2 = box
+            cv.rectangle(debug_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        boxes_path = session_dir / "yolo_boxes_debug.png"
+        cv.imwrite(str(boxes_path), debug_img)
+        debug_boxes_url = f"/images/{req.session_id}/yolo-boxes-debug"
+        logger.info(f"[SEG] Saved YOLO boxes debug overlay to {boxes_path}")
+
     # ── cache embedding ──────────────────────────────────────────
     if hasattr(result, "embedding") and result.embedding is not None:
         cache[req.session_id] = result.embedding
@@ -220,4 +245,5 @@ async def segment(req: SegmentRequest, request: Request):
         stats=stats_results,
         model=req.model,
         time_elapsed=elapsed,
+        debug_boxes_url=debug_boxes_url,
     )

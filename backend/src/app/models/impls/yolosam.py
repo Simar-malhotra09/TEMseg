@@ -29,6 +29,7 @@ class SAMEmbedding:
 @dataclass
 class YoloSAMSegmentationResult(SegmentationResult):
     embedding: SAMEmbedding | None = None
+    detection_boxes: np.ndarray | None = None
 
 
 class YoloSam(Model):
@@ -133,7 +134,7 @@ class YoloSam(Model):
     ) -> YoloSAMSegmentationResult:
         logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
 
-        # ensure predictor exists — created once, reused across calls
+        # ensure predictor exists for reuse 
         if not hasattr(self, "_predictor"):
             self._predictor = SamPredictor(self.components["sam"])
         predictor = self._predictor
@@ -144,6 +145,9 @@ class YoloSam(Model):
             source=image, conf=0.25, iou=0.5, max_det=4000, verbose=False
         )
         t1 = time.perf_counter()
+        # we want to return these boxes 
+        # and overlay on the image 
+        # we can see point of failure, 
         boxes = results[0].boxes.xyxy
         logger.info(f"[YoloSAM-Yolo] predict={t1 - t0:.3f}s | boxes={len(boxes)}")
 
@@ -163,6 +167,7 @@ class YoloSam(Model):
                 segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
                 metadata={"detections": 0},
                 model=AvailableModels.yolosam,
+                detection_boxes=np.array([]).reshape(0, 4),
             )
 
         # --- SAM Segmentation ---
@@ -234,6 +239,7 @@ class YoloSam(Model):
                 original_size=predictor.original_size,
                 input_size=predictor.input_size,
             ),
+            detection_boxes=boxes.cpu().numpy(),
         )
 
     def segment_batch(
@@ -261,6 +267,7 @@ class YoloSam(Model):
         total_detections = 0
         t_yolo_total = 0
         t_sam_total = 0
+        all_boxes: list[np.ndarray] = []
 
         for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
             # YOLO per patch (ONNX model is batch=1)
@@ -307,6 +314,12 @@ class YoloSam(Model):
                 combined[y1:y2, x1:x2], (patch_mask > 0).astype("uint8") * 255
             )
 
+            # Offset boxes to full-image coordinates
+            boxes_np = boxes.cpu().numpy()
+            boxes_np[:, [0, 2]] += x1
+            boxes_np[:, [1, 3]] += y1
+            all_boxes.append(boxes_np)
+
             total_detections += len(boxes)
 
         t_total = time.perf_counter() - t0
@@ -316,6 +329,8 @@ class YoloSam(Model):
             f"detections={total_detections}"
         )
 
+        detection_boxes = np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)
+
         return YoloSAMSegmentationResult(
             segmentation_mask=combined,
             metadata={
@@ -324,4 +339,5 @@ class YoloSam(Model):
                 "sam_time": round(t_sam_total, 3),
             },
             model=AvailableModels.yolosam,
+            detection_boxes=detection_boxes,
         )

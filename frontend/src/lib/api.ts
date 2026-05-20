@@ -108,6 +108,7 @@ export interface SegmentResponse {
   metadata: Record<string, number>;
   stats: StatsResult;
   time_elapsed: number;
+  debug_boxes_url?: string;
 }
 
 export interface GTResponse {

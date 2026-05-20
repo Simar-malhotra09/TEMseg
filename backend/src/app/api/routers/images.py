@@ -361,3 +361,11 @@ async def get_instances_debug(session_id: str):
     if not path.exists():
         return {"error": "No debug image — call /masks/{session_id}/instances first"}
     return FileResponse(path)
+
+
+@router.get("/{session_id}/yolo-boxes-debug")
+async def get_yolo_boxes_debug(session_id: str):
+    path = SESSIONS_DIR / session_id / "yolo_boxes_debug.png"
+    if not path.exists():
+        return {"error": "No YOLO boxes debug image — run segmentation with YoloSAM first"}
+    return FileResponse(path)
