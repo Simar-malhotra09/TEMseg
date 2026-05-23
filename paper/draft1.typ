@@ -22,23 +22,13 @@ application logo clears the current workspace, removes the loaded image, and res
 workflow state.
 
 
-#figure(
-  placement: none,
-  image("./figs/image_upload2.png"),
-  caption: [Clicking open desktop native file explorer; click a valid file or drag and drop.]
-) <fig:IMGUP2>
 
 
 == Choosing models
 The initial goal of this tool was to provide accessible support for state-of-the-art particle
 segmentation models, especially for users without dedicated GPU hardware. At present,
-the application provides access to two segmentation pipelines as can be seen in @fig:MODELS:
+the application provides access to two segmentation pipelines as can be seen in @fig:left-sidebar :
 
-#figure(
-  placement: none,
-  image("./figs/models.png"),
-  caption: [Drop-down menu to easily switch between models used for segmentation.]
-) <fig:MODELS>
 
 === YoloSAM by Ardra Genc et al.
 #linebreak()
@@ -193,13 +183,45 @@ inference speed over segmentation fidelity
   placement: top,
   scope: "parent",
   grid(
-    columns: 3,
+    columns: 2,
     gutter: 12pt,
-    [(a) \ #image("./figs/model_outputs_overlayed.png", width: 100%)],
-    [(b) \ #image("./figs/ground_truth.png", width: 100%)],
-    [(c) \ #image("./figs/org_image.png", width: 100%)],
+    [(a) \ #image("./figs/model_outputs_overlayed.png", width: 75%)],
+    [(b) \ #image("./figs/ground_truth.png", width: 75%)],
+    [(c) \ #image("./figs/org_image.png", width: 75%) ],
+    [(d) \ #image("./figs/model_output_rncc.png", width: 75%)],
   ),
   caption: [
-    (a) Original TEM micrograph. (b) Manually annotated ground truths. (c) Segmentation mask using YoloSAM overlayed with colorized instance labels.
+    \ (a) Original TEM micrograph. \ (b) Manually annotated ground truths. \
+    (c) Segmentation mask using YoloSAM overlayed with colorized instance labels. \
+    (d) Segmentation mask using MaskRCNN overlayed with colorized instance labels.
   ],
 ) <fig:SEG>
+
+== Segmentation
+Once an image has been loaded and a segmentation model has been selected, the user may start inference by clicking the Run Segmentation button located in the right sidebar. After processing completes, the generated segmentation masks are automatically overlaid on top of the original image. 
+
+Users may toggle the visibility of these overlays at any time using the Show / Hide Masks control. This allows rapid comparison between the raw image and the model predictions without altering the underlying segmentation results. 
+
+Standard image navigation operations are fully supported during analysis, including zooming and panning across the image canvas. The current zoom level is displayed near the top-right status area, and clicking the zoom percentage resets the viewport back to the default centered view. 
+
+#figure(
+  placement: none,
+  image("./figs/left_sidebar2.png"),
+  caption: [Left sidebar]
+) <fig:left-sidebar>
+
+
+== Refinement Mode 
+Although the provided segmentation models achieve strong performance, their outputs are still constrained by the limitations of automated inference and are not always perfect. To address this, the application provides an interactive refinement mode that allows users to correct segmentation masks without restarting the workflow. 
+
+Clicking the Refine Mode button switches the application into an editing interface where all generated masks are converted into editable polygons. Individual polygon vertices can be moved directly to better align masks with particle boundaries. Additional vertices may be inserted by clicking along a polygon edge, allowing users to represent more complex geometries, while double-clicking a vertex removes it. 
+
+Each polygon also contains a movable centroid handle that enables rotation and orientation adjustment. Standard editing shortcuts are supported: pressing Delete or Backspace removes the selected polygon, while Ctrl+Z and Ctrl+Y provide undo and redo functionality. These tools enable efficient correction of common segmentation errors, such as slight over-segmentation or under-segmentation around particle boundaries. 
+
+For larger errors such as severely incorrect masks or completely missed particles, users may duplicate an existing polygon with a similar shape using copy-paste operations (Ctrl+C / Ctrl+V). The duplicated polygon can then be repositioned and refined manually to fit the target particle. This significantly reduces the effort required to annotate missing structures from scratch. 
+
+A particularly common failure case in TEM nanoparticle analysis occurs when adjacent particles appear fused together with weak or indistinguishable boundaries. In these cases, the model may incorrectly segment multiple particles as a single instance. To address this, the application includes a Split Instance mode accessible from the sidebar. In this mode, users place a set of foreground marker points over the desired particle regions. Thesepoints are then passed to Segment Anything Model (SAM) as prompt inputs, allowing the selected particle region to be re-segmented into multiple instances. The resulting masks may then be further refined manually if required. 
+
+Because refinement operations are performed interactively, changes must be explicitly saved using the Save Refinements option in the sidebar. Exiting refinement mode without saving discards all unsaved edits. 
+
+Overall, refinement mode provides a practical balance between automated segmentation and human correction, enabling users to efficiently achieve the level of accuracy required for downstream quantitative analysis.
