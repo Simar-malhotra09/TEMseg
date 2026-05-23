@@ -34,6 +34,12 @@ The initial goal of this tool was to provide accessible support for state-of-the
 segmentation models, especially for users without dedicated GPU hardware. At present,
 the application provides access to two segmentation pipelines as can be seen in @fig:MODELS:
 
+#figure(
+  placement: none,
+  image("./figs/models.png"),
+  caption: [Drop-down menu to easily switch between models used for segmentation.]
+) <fig:MODELS>
+
 === YoloSAM by Ardra Genc et al.
 #linebreak()
 YoloSAM is a dual-model segmentation pipeline that combines YOLOv8 for object
@@ -71,58 +77,129 @@ subsequent runs. Only the lightweight decoder stage is recomputed. This reduces
 repeat-call SAM runtime from $4.48 plus.minus 2.28$s to $1.43 plus.minus 1.70$ s ($3.1 times$ faster), and overall
 re-run time from $5.98 plus.minus 2.32$ s to $2.47 plus.minus 1.70$s ($2.4 times$ faster). 
 
-All implementation related improvement are summarized in the table below: 
-#table(
-  columns: (1fr, 1.2fr, 1.2fr),
-  inset: 5pt,
-  align: (left, left, left),
-  table.header(
-    [*Category*], [*Original model by Genc et al.*], [*TemSeg implementation*],
-  ),
-
-  [YOLOv8 inference backend],
-  [PyTorch eager mode on the published `best12x.pt` checkpoint.],
-  [`best12x.onnx` exported once at packaging, served via ONNX Runtime with
-   ahead-of-time graph optimisation and CPU-tuned kernels.
-   _Measured: 1.52 ± 0.15 s → 1.09 ± 0.15 s per image (1.4× faster, n = 31)._],
-
-  [SAM predictor lifecycle],
-  [`sam_model_registry["vit_b"](...)` is rebuilt, moved to device, and wrapped
-   in a fresh `SamPredictor` on every segmentation call.],
-  [Predictor is constructed once at process start and reused for all subsequent
-   calls; weight load and host-to-device transfer cost is paid once.
-   _Measured: removes ≈ 1 s of per-image overhead (7.11 s → 6.05 s end-to-end)._],
-
-  [SAM image-embedding cache],
-  [No cache. The ViT-B image encoder runs from scratch on every call, even
-   when the user re-segments the same image during refinement.],
-  [Encoder output (`features`, `original_size`, `input_size`) is returned with
-   the segmentation result and threaded back into the next call to bypass the
-   encoder entirely; only the prompt-conditioned mask decoder runs on reruns.
-   _Measured: SAM stage 4.48 s → 1.43 s on rerun (3.1×); end-to-end rerun
-    5.98 s → 2.47 s (2.4×)._],
-
-  [Memory robustness on dense images],
-  [Single `predict_torch` call over all detections, which allocates an
-   $(N, 1, H, W)$ mask tensor; exhausts RAM on images with thousands of
-   particles.],
-  [Detections are processed in chunks of 64 boxes with incremental
-   $max$-reduction over partial masks; bounded peak memory regardless of
-   particle count.],
-
-  [Patch-wise inference for large images],
-  [Not provided; whole-image inference only.],
-  [`segment_batch()` accepts a list of image patches with offsets, runs YOLO
-   and SAM per patch, and stitches masks back into the full image.],
-
-  [Output equivalence],
-  [---],
-  [Verified per image: median mask IoU vs. the reference implementation
-   = 0.98; mean IoU against hand-labelled ground truth 0.841 ± 0.062 (ours)
-   vs. 0.840 ± 0.064 (reference) — within statistical noise of identical.],
-)
+All implementation related improvement are summarized in the @fig:table1 
+// #pagebreak()
 #figure(
-  placement: none,
-  image("./figs/models.png"),
-  caption: [Drop-down menu to easily switch between models used for segmentation.]
-) <fig:MODELS>
+  placement: top,
+  scope: "parent",
+  caption: [Engineering deltas between the original YoloSAM pipeline and the TemSeg implementation. Numbers from 31 TEM images on CPU (Apple Silicon).],
+)[
+  #show table: set text(size: 9pt)
+  #table(
+    columns: (1fr, 1.4fr, 1.6fr),
+    inset: 6pt,
+    align: (left + horizon, left + top, left + top),
+    table.header(
+      [*Category*], [*Original (Genc et al.)*], [*TemSeg implementation*],
+    ),
+
+    [YOLOv8 inference backend],
+    [Detector weights served through a general-purpose deep-learning framework in
+     dynamic (eager) execution mode.
+     #linebreak()
+     #linebreak()
+
+    Measured: $1.52 plus.minus 0.15$ s
+   ],
+    [Detector weights exported to a static inference graph at packaging time and
+     served through a dedicated inference runtime, which applies ahead-of-time
+     graph optimisation and hardware-tuned kernels.
+     #linebreak()
+     #linebreak()
+    Measured: $1.09 plus.minus 0.15$ s per
+     image, $1.4 times$ faster.],
+
+    [SAM predictor lifecycle],
+    [The segmentation model is reloaded from disk and transferred onto the
+     compute device on every segmentation call.
+     #linebreak()
+     #linebreak()
+     Measured: $7.11 plus.minus 0.18$s 
+
+   ],
+    [The segmentation model is loaded once at process start and reused across
+     all subsequent calls; weight loading and device-transfer cost is paid
+     exactly once.
+     #linebreak()
+     #linebreak()
+     Measured: $6.05 plus.minus 0.23$ s (removes $approx 1$s end-to-end).],
+
+    [SAM image-embedding cache],
+    [No cache. The image encoder is by far the dominant cost of the
+     segmentation stage and runs from scratch on every call, including when the
+     user re-segments the same image during interactive refinement.
+     #linebreak()
+     #linebreak()
+    Measured: segmentation stage $4.48$s and end-to-end rerun $5.98$s
+
+   ],
+    [Encoded image features are returned alongside the segmentation result and
+     threaded back into the next call on the same image, bypassing the encoder
+     entirely; only the prompt-conditioned mask decoder runs on reruns.
+     #linebreak()
+     #linebreak()
+     Measured: segmentation stage $1.43$s on rerun
+     ($3.1 times$); end-to-end  $2.47$s ($2.4 times$).],
+  )
+]<fig:table1>
+#linebreak()
+Despite these optimizations, segmentation quality remains effectively unchanged. The
+median mask IoU between our implementation and the reference pipeline is $0.98$, while
+IoU against manually annotated ground truth is $0.841 plus.minus 0.062$ for our implementation
+compared to $0.840 plus.minus 0.064$ for the reference implementation. All benchmarks were
+performed on CPU-only Apple Silicon hardware across four ground-truth images and 
+twenty-seven additional TEM images. Raw benchmark CSV files, aggregation scripts, and
+evaluation harnesses are included in the supplementary materials.
+
+
+=== MaskRCNN
+#linebreak()
+We also trained a custom Mask R-CNN model as part of this work. The primary goal was
+not to achieve state-of-the-art segmentation accuracy, but rather to demonstrate the
+feasibility of a modular “plug-and-play” framework in which different segmentation models
+can be swapped dynamically within the application.
+
+The model was trained entirely on a synthetic dataset generated procedurally for this
+project. Synthetic TEM-like images were created by approximating backgrounds with
+Gaussian noise and generating particle-like structures from simple geometric primitives
+such as circles, ellipses, and cylinders. Shape perturbations and standard augmentation
+techniques including contrast variation, scaling, rotation, and deformation were then
+applied to improve generalization.
+
+Although the resulting model performs substantially worse than YoloSAM in terms of
+segmentation quality, it offers significantly lower inference latency and provides a useful
+lightweight alternative for rapid experimentation and interactive workflows.
+
+On the same four hand-annotated ground-truth images, the model achieved a mean
+runtime of $1.62 plus.minus 0.73$s per image on CPU, approximately $4 times$ faster than the first-call
+runtime of YoloSAM. However, segmentation accuracy was both lower and
+less stable, with a mask IoU against ground truth of $0.696 plus.minus 0.195$, compared to $0.841 plus.minus
+0.062$ for YoloSAM.
+
+Performance degradation was most pronounced on densely populated TEM images
+containing large numbers of small, visually similar particles. On the most challenging
+benchmark image ($approx 300$ densely packed particles), Mask R-CNN achieved an IoU of $0.39$,
+while YoloSAM maintained an IoU of $0.85$. This is consistent with the known limitations of
+Mask R-CNN on small, crowded, and near-identical object instances, which are
+characteristic of nanoparticle TEM imagery.
+
+Based on these results, YoloSAM is used as the primary segmentation pipeline within the
+application, while Mask R-CNN serves as a lightweight secondary option prioritizing
+inference speed over segmentation fidelity
+
+#pagebreak()
+
+#figure(
+  placement: top,
+  scope: "parent",
+  grid(
+    columns: 3,
+    gutter: 12pt,
+    [(a) \ #image("./figs/model_outputs_overlayed.png", width: 100%)],
+    [(b) \ #image("./figs/ground_truth.png", width: 100%)],
+    [(c) \ #image("./figs/org_image.png", width: 100%)],
+  ),
+  caption: [
+    (a) Original TEM micrograph. (b) Manually annotated ground truths. (c) Segmentation mask using YoloSAM overlayed with colorized instance labels.
+  ],
+) <fig:SEG>
