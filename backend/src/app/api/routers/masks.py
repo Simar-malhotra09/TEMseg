@@ -52,6 +52,22 @@ class InstancesResponse(BaseModel):
     instances: List[Instance]
 
 
+class ProposeSimilarRequest(BaseModel):
+    # cosine-sim floor for seed candidates (0..1, higher = stricter)
+    sim_threshold: float = 0.75
+    # cap on number of returned proposals (cost control)
+    max_proposals: int = 50
+    # NMS radius in pixels between accepted seed peaks
+    nms_distance: int = 20
+    # reject proposal if its area < this * median(existing areas)
+    min_area_ratio: float = 0.3
+    # reject proposal if IoU with any existing instance > this
+    iou_dedupe: float = 0.2
+    # reject proposal whose area > this fraction of the full image
+    # — kills SAM's "select everything" failure mode for ambiguous prompts
+    max_image_fraction: float = 0.05
+
+
 @router.post("/{session_id}/instances")
 async def get_instances(session_id: str):
     logger.info(f"[MASKS] GET instances | session={session_id}")
@@ -333,4 +349,346 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     return {
         "instances": new_instances,
         "mask_url": f"/images/{session_id}/mask",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /masks/{session_id}/propose-similar
+#
+# Use the user's already-annotated instances as in-context examples to find
+# more visually-similar particles in the SAME image. Returns proposals only —
+# nothing is written to disk. The frontend overlays them; the user accepts /
+# rejects, then commits the kept ones via the existing PUT /masks/.../instances.
+#
+# Algorithm:
+#   1. Reuse cached SAM embedding (predictor.features, shape (1, 256, 64, 64)).
+#   2. Build a prototype: average L2-normalized embedding vectors taken inside
+#      each existing instance mask (downsampled to embedding grid).
+#   3. Cosine-similarity map between prototype and every embedding pixel.
+#   4. Upsample to image res; mask out regions inside existing instances.
+#   5. Pick local maxima above sim_threshold via greedy NMS — these are seeds.
+#   6. For each seed, run SAM predict() with a single foreground point.
+#   7. Constrain to "not already annotated" regions; reject by area / IoU.
+#   8. Return surviving candidates as instance dicts (with provisional IDs).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _embedding_feature_map(predictor) -> np.ndarray:
+    """Pull SAM image features into a (H_e, W_e, C) L2-normalized numpy array."""
+    feats = predictor.features  # (1, C, H_e, W_e) torch tensor
+    feats_np = feats.squeeze(0).cpu().numpy()  # (C, H_e, W_e)
+    feats_np = np.transpose(feats_np, (1, 2, 0))  # (H_e, W_e, C)
+    norms = np.linalg.norm(feats_np, axis=-1, keepdims=True)
+    norms = np.maximum(norms, 1e-8)
+    return feats_np / norms
+
+
+def _instance_prototype(
+    feat_map: np.ndarray, labeled: np.ndarray, instance_ids: list[int]
+) -> np.ndarray:
+    """Mean L2-normalized feature vector across pixels inside the given instances."""
+    h_e, w_e, _ = feat_map.shape
+    labeled_small = cv.resize(
+        labeled.astype(np.int32), (w_e, h_e), interpolation=cv.INTER_NEAREST
+    )
+    inside = np.isin(labeled_small, instance_ids)
+    if not inside.any():
+        raise ValueError("No example pixels mapped onto embedding grid — instances too small")
+    vecs = feat_map[inside]
+    proto = vecs.mean(axis=0)
+    n = np.linalg.norm(proto)
+    if n < 1e-8:
+        raise ValueError("Prototype norm is zero — embedding likely degenerate")
+    return proto / n
+
+
+def _greedy_peak_nms(
+    score_map: np.ndarray, threshold: float, min_distance: int, max_peaks: int
+) -> list[tuple[int, int]]:
+    """Return up to max_peaks (y, x) coordinates of local maxima above threshold."""
+    candidates = np.argwhere(score_map >= threshold)
+    if len(candidates) == 0:
+        return []
+    scores = score_map[candidates[:, 0], candidates[:, 1]]
+    order = np.argsort(-scores)
+    picked: list[tuple[int, int]] = []
+    d2 = min_distance * min_distance
+    for idx in order:
+        y, x = int(candidates[idx, 0]), int(candidates[idx, 1])
+        if any((y - py) ** 2 + (x - px) ** 2 < d2 for py, px in picked):
+            continue
+        picked.append((y, x))
+        if len(picked) >= max_peaks:
+            break
+    return picked
+
+
+def _mask_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
+    inter = int(np.logical_and(mask_a, mask_b).sum())
+    if inter == 0:
+        return 0.0
+    union = int(np.logical_or(mask_a, mask_b).sum())
+    return inter / union if union else 0.0
+
+
+@router.post("/{session_id}/propose-similar")
+async def propose_similar(
+    session_id: str, body: ProposeSimilarRequest, request: Request
+):
+    t_start = time.time()
+    logger.info(
+        f"[PROPOSE] session={session_id} | thr={body.sim_threshold} | "
+        f"max={body.max_proposals} | nms={body.nms_distance}px"
+    )
+
+    session_dir = _session_dir(session_id)
+
+    # ── 1. load existing instances ───────────────────────────────────────────
+    cached = load_instances(session_dir)
+    if cached is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No existing instances — annotate at least one particle first",
+        )
+    instances, labeled = cached
+    if not instances:
+        raise HTTPException(
+            status_code=400,
+            detail="Existing instances list is empty — annotate at least one particle first",
+        )
+
+    existing_ids = [i["id"] for i in instances]
+    existing_areas = [i["area"] for i in instances]
+    median_area = float(np.median(existing_areas))
+    min_area = max(50.0, body.min_area_ratio * median_area)
+    logger.info(
+        f"[PROPOSE] {len(instances)} examples | median area={median_area:.0f}px | "
+        f"floor={min_area:.0f}px"
+    )
+
+    # ── 2. cached SAM embedding ──────────────────────────────────────────────
+    embedding_cache = getattr(request.app.state, "embedding_cache", {})
+    embedding = embedding_cache.get(session_id)
+    if embedding is None:
+        raise HTTPException(
+            status_code=400,
+            detail="SAM embedding not cached — re-run segmentation to restore it",
+        )
+
+    models = request.app.state.models
+    yolosam = models.get(AvailableModels.yolosam.value)
+    if yolosam is None:
+        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+
+    predictor = yolosam._predictor
+    predictor.features = embedding.features
+    predictor.original_size = embedding.original_size
+    predictor.input_size = embedding.input_size
+    predictor.is_image_set = True
+
+    h_img, w_img = embedding.original_size
+    logger.info(f"[PROPOSE] Image size {h_img}x{w_img} | embedding restored")
+
+    # ── 3. prototype + similarity map ────────────────────────────────────────
+    feat_map = _embedding_feature_map(predictor)  # (H_e, W_e, C)
+    try:
+        proto = _instance_prototype(feat_map, labeled, existing_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    sim_small = feat_map @ proto  # (H_e, W_e)
+    logger.info(
+        f"[PROPOSE] sim range [{sim_small.min():.3f}, {sim_small.max():.3f}] | "
+        f"mean={sim_small.mean():.3f}"
+    )
+
+    # upsample to image resolution
+    sim = cv.resize(sim_small, (w_img, h_img), interpolation=cv.INTER_LINEAR)
+
+    # mask out regions inside any existing instance
+    existing_any = (labeled > 0).astype(np.uint8)
+    # dilate a bit so seeds don't land on instance borders
+    dilated = cv.dilate(
+        existing_any, cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
+    )
+    sim[dilated > 0] = -1.0
+
+    # ── 4. NMS to pick seed points ───────────────────────────────────────────
+    peaks = _greedy_peak_nms(
+        sim, body.sim_threshold, body.nms_distance, body.max_proposals
+    )
+    logger.info(f"[PROPOSE] {len(peaks)} seed peaks above threshold")
+
+    if not peaks:
+        return {
+            "proposals": [],
+            "median_area": median_area,
+            "sim_threshold": body.sim_threshold,
+            "message": "No regions above similarity threshold",
+        }
+
+    # ── 5. SAM predict per seed, dedupe ──────────────────────────────────────
+    existing_mask = existing_any.astype(bool)
+    proposals: list[dict] = []
+    max_id = max(existing_ids)
+    next_id = max_id + 1
+    image_area = float(h_img * w_img)
+    max_area = body.max_image_fraction * image_area
+    log_median = np.log(max(median_area, 1.0))
+
+    for i, (py, px) in enumerate(peaks):
+        point_coords = np.array([[float(px), float(py)]])
+        point_labels = np.array([1])
+        try:
+            masks, scores, _ = predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                multimask_output=True,
+            )
+        except Exception as e:
+            logger.warning(f"[PROPOSE] SAM predict failed at seed {i}: {e}")
+            continue
+
+        # SAM returns 3 masks (roughly small/medium/large) for one point.
+        # Pick the one whose constrained area is closest in log-scale to the
+        # user's median annotated area — picking by score biases toward "huge",
+        # which produces the "select-everything" failure mode.
+        best_idx = -1
+        best_area = 0
+        best_constrained = None
+        best_log_dist = float("inf")
+        for k in range(masks.shape[0]):
+            m = (masks[k].astype(np.uint8) > 0) & (~existing_mask)
+            a = int(m.sum())
+            if a < min_area or a > max_area:
+                continue
+            log_dist = abs(np.log(max(a, 1.0)) - log_median)
+            if log_dist < best_log_dist:
+                best_log_dist = log_dist
+                best_idx = k
+                best_area = a
+                best_constrained = m
+        if best_idx < 0 or best_constrained is None:
+            logger.debug(
+                f"[PROPOSE] seed {i} rejected: no mask within area window "
+                f"[{min_area:.0f}, {max_area:.0f}]"
+            )
+            continue
+        constrained = best_constrained.astype(np.uint8)
+        area = best_area
+
+        # IoU against every existing instance (uses labeled mask, no per-inst loop)
+        # cheap proxy: overlap-to-area ratio with the existing union — already handled by constrain
+        # full IoU dedupe: compare this proposal to each existing instance individually
+        proposal_mask = constrained.astype(bool)
+        # quick rejection if a single existing instance dominates
+        worst_iou = 0.0
+        for eid in existing_ids:
+            inst_mask = labeled == eid
+            iou = _mask_iou(proposal_mask, inst_mask)
+            if iou > worst_iou:
+                worst_iou = iou
+            if iou > body.iou_dedupe:
+                break
+        if worst_iou > body.iou_dedupe:
+            logger.debug(f"[PROPOSE] seed {i} rejected: IoU {worst_iou:.2f}")
+            continue
+
+        # contour
+        contours, _ = cv.findContours(
+            constrained, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            continue
+        largest = max(contours, key=cv.contourArea)
+        epsilon = 0.01 * cv.arcLength(largest, True)
+        approx = cv.approxPolyDP(largest, epsilon, True).squeeze()
+        if approx.ndim < 2 or len(approx) < 3:
+            continue
+        x, y, w, h = cv.boundingRect(largest)
+
+        # similarity score that produced this seed (for ranking in UI)
+        seed_sim = float(sim[py, px]) if sim[py, px] > 0 else 0.0
+
+        proposals.append(
+            {
+                "id": next_id,
+                "contour": approx.tolist(),
+                "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+                "area": area,
+                "sam_score": float(scores[best_idx]),
+                "similarity": seed_sim,
+                "seed": [int(px), int(py)],
+            }
+        )
+        # block this region from being re-proposed by later seeds
+        existing_mask = np.logical_or(existing_mask, proposal_mask)
+        next_id += 1
+
+    # ── 6. debug overlay PNG for visual verification ─────────────────────────
+    # Renders: original image + existing instances (green) + proposals (yellow)
+    # + seed points (red). Saved to session_dir for the user to inspect.
+    # Prefer original_preview.png — the org_*.emd source can't be read by cv.imread.
+    debug_url = None
+    preview_path = session_dir / "original_preview.png"
+    if not preview_path.exists():
+        orig_files = list(session_dir.glob("org_*"))
+        preview_path = orig_files[0] if orig_files else None
+
+    if preview_path and proposals:
+        try:
+            orig = cv.imread(str(preview_path))
+            if orig is None:
+                logger.warning(
+                    f"[PROPOSE] cv.imread returned None for {preview_path} — "
+                    f"skipping debug overlay"
+                )
+            else:
+                if orig.shape[:2] != (h_img, w_img):
+                    orig = cv.resize(orig, (w_img, h_img))
+                overlay = orig.copy()
+                # existing instances in green outline
+                for eid in existing_ids:
+                    inst_contour_mask = (labeled == eid).astype(np.uint8)
+                    c, _ = cv.findContours(
+                        inst_contour_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+                    )
+                    cv.drawContours(overlay, c, -1, (0, 200, 0), 2)
+                # proposals in yellow outline + ID label
+                for p in proposals:
+                    pts = np.array(p["contour"], dtype=np.int32).reshape(-1, 1, 2)
+                    cv.polylines(overlay, [pts], True, (0, 255, 255), 3)
+                    sx, sy = p["seed"]
+                    cv.circle(overlay, (sx, sy), 6, (0, 0, 255), -1)
+                    cv.putText(
+                        overlay,
+                        f"#{p['id']} sim={p['similarity']:.2f}",
+                        (p["bbox"]["x"], max(p["bbox"]["y"] - 6, 12)),
+                        cv.FONT_HERSHEY_SIMPLEX,
+                        0.6,
+                        (0, 255, 255),
+                        2,
+                    )
+                debug_path = session_dir / "proposals_debug.png"
+                cv.imwrite(str(debug_path), overlay)
+                debug_url = f"/images/{session_id}/proposals-debug"
+                logger.info(f"[PROPOSE] Debug overlay saved → {debug_path}")
+        except Exception as e:
+            logger.warning(f"[PROPOSE] Debug overlay render failed: {e}")
+
+    t_total = time.time() - t_start
+    logger.info(
+        f"[PROPOSE] Returning {len(proposals)} proposals from {len(peaks)} seeds | "
+        f"total={t_total:.2f}s"
+    )
+
+    return {
+        "proposals": proposals,
+        "median_area": median_area,
+        "sim_threshold": body.sim_threshold,
+        "seed_count": len(peaks),
+        "debug_overlay_path": str(session_dir / "proposals_debug.png")
+        if debug_url
+        else None,
+        "debug_overlay_url": debug_url,
+        "elapsed": round(t_total, 3),
     }
