@@ -8,7 +8,8 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints } from "@/lib/api";
+import { MousePointerClick } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
@@ -72,6 +73,48 @@ export default function Workspace() {
     return () => observer.disconnect();
   }, [image]);
 
+  // Restore session from ?session=... on mount (e.g. after page refresh).
+  // Validates by fetching metadata; on 404 we silently clear the query.
+  // Also rehydrates seg state (mask + stats) so the UI shows what's on disk.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const restored = params.get("session");
+    if (!restored) return;
+    (async () => {
+      const meta = await getSessionMetadata(restored).catch(() => null);
+      if (!meta) {
+        window.history.replaceState(null, "", "/workspace");
+        setStatus("Previous session no longer available — upload an image to start.");
+        return;
+      }
+      setSessionId(restored);
+      setImage(`${BASE_URL}/images/${restored}/preview`);
+      setMetadata(meta);
+
+      // Rehydrate seg state from disk in parallel — both calls return null on 404
+      // (i.e. no segmentation run yet for this session).
+      const [stats, instRes] = await Promise.all([
+        getStats(restored).catch(() => null),
+        getInstances(restored).catch(() => ({ instances: [] as Instance[] })),
+      ]);
+      if (stats) {
+        seg.setStats(stats);
+        seg.setSegDone(true);
+        // Cache-bust so the browser doesn't show a stale mask.png.
+        seg.setMaskUrl(`${BASE_URL}/images/${restored}/mask?t=${Date.now()}`);
+        seg.setMasksVisible(true);
+      }
+      if (instRes?.instances) setLoadedInstances(instRes.instances);
+
+      setStatus(
+        stats
+          ? `Restored session ${restored.slice(0, 8)} — ${stats.particle_count} particles.`
+          : `Restored session ${restored.slice(0, 8)} — ready.`,
+      );
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // zoom/pan 
   // only active in `normal` mode. (outside blackout/refine.. modes)
   const [zoom, setZoom] = useState(1);
@@ -88,6 +131,10 @@ export default function Workspace() {
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
   const [refineDone, setRefineDone] = useState(false);
+
+  // bootstrap mode — click points on the image to add particles via SAM
+  const [bootstrapMode, setBootstrapMode] = useState(false);
+  const [bootstrapBusy, setBootstrapBusy] = useState(false);
 
 
   // segmentation hook
@@ -164,7 +211,8 @@ export default function Workspace() {
     setSessionId(result.session_id);
     setImage(`${BASE_URL}${result.preview_url}`);
     if (result.image_info) setMetadata(result.image_info);
-    window.history.replaceState(null, "", `/workspace/${result.session_id}`);
+    // Use query string so /workspace stays a real Next.js route across refreshes.
+    window.history.replaceState(null, "", `/workspace?session=${result.session_id}`);
     setStatus(`Loaded: ${file.name} — ready to segment.`);
   }
 
@@ -224,6 +272,41 @@ export default function Workspace() {
   }
 
 
+  // Bootstrap click → POST /from-points with the single image-space coord,
+  // then refresh seg state (mask + stats) so the new particle shows immediately.
+  async function handleBootstrapClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!sessionId || bootstrapBusy) return;
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+
+    setBootstrapBusy(true);
+    setStatus(`Adding particle at (${imgX.toFixed(0)}, ${imgY.toFixed(0)})...`);
+    try {
+      const res = await fromPoints(sessionId, [[imgX, imgY]]);
+      if (res.new_instances.length === 0) {
+        const reason = res.rejected[0]?.reason ?? "unknown";
+        setStatus(`Click rejected: ${reason}`);
+        return;
+      }
+      // Update seg state so the colored mask + stats refresh inline.
+      seg.setMaskUrl(`${BASE_URL}${res.mask_url}?t=${Date.now()}`);
+      seg.setStats(res.stats);
+      seg.setSegDone(true);
+      seg.setMasksVisible(true);
+      const added = res.new_instances[0];
+      setStatus(
+        `Added particle #${added.id} (area ${added.area}px, SAM score ${added.sam_score?.toFixed(2)}).`,
+      );
+    } catch (err) {
+      console.error("bootstrap click failed:", err);
+      setStatus(`Bootstrap failed: ${(err as Error).message}`);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
   async function enterRefineMode() {
     (document.activeElement as HTMLElement)?.blur();
     if (!sessionId) return;
@@ -261,7 +344,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -464,7 +547,18 @@ export default function Workspace() {
                 <button className={styles.actionBtn} onClick={refine.handleDiscard}>
                   Discard
                 </button>
-              )} 
+              )}
+
+              {/* bootstrap mode — click on the image to add particles via SAM
+                  point-prompt. Disabled while refining (refine has its own canvas). */}
+              <button
+                className={styles.actionBtn}
+                disabled={!sessionId || refineMode}
+                onClick={() => setBootstrapMode(b => !b)}
+              >
+                <MousePointerClick size={14} />
+                {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
+              </button>
           </section>
           <section>
               {sessionId && (
@@ -636,12 +730,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -725,6 +819,21 @@ export default function Workspace() {
                     opacity: 0.5, mixBlendMode: "screen",
                     pointerEvents: "none",
                   }} />
+                )}
+
+                {/* bootstrap click capture — sits on top, transparent, catches clicks */}
+                {bootstrapMode && !refineMode && imgSize.width > 0 && (
+                  <div
+                    onClick={handleBootstrapClick}
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      cursor: bootstrapBusy ? "wait" : "crosshair",
+                      // subtle tint so the user knows the mode is active
+                      background: "rgba(108, 99, 255, 0.06)",
+                      pointerEvents: "auto",
+                    }}
+                  />
                 )}
 
                 {/* GT overlay */}

@@ -135,6 +135,13 @@ async def segment(req: SegmentRequest, request: Request):
         return {"error": "Mask is empty"}
 
     if not np.any(mask):
+        # Cache embedding even on empty result so user can bootstrap manually
+        # via /masks/{id}/from-points and /masks/{id}/propose-similar.
+        if hasattr(result, "embedding") and result.embedding is not None:
+            cache[req.session_id] = result.embedding
+            logger.info(
+                f"[SEG] Cached SAM embedding despite empty mask | session={req.session_id}"
+            )
         return {
             "mask_url": None,
             "metadata": result.metadata,

@@ -162,17 +162,11 @@ class YoloSam(Model):
         yolo_time_elapsed = t3 - t0
         logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
 
-        if boxes is None or len(boxes) == 0:
-            return YoloSAMSegmentationResult(
-                segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                metadata={"detections": 0},
-                model=AvailableModels.yolosam,
-                detection_boxes=np.array([]).reshape(0, 4),
-            )
-
-        # --- SAM Segmentation ---
+        # Always prime SAM with the image so the embedding is available for
+        # downstream point-prompt endpoints (/split, /from-points, /propose-similar)
+        # even when YOLO found nothing. Without this, zero-detection images leave
+        # the user with no way to manually bootstrap segmentation.
         sam_start = time.perf_counter()
-
         if embedding_cache:
             predictor.features = embedding_cache.features
             predictor.original_size = embedding_cache.original_size
@@ -182,6 +176,24 @@ class YoloSam(Model):
         else:
             predictor.set_image(image)
             logger.info("[YoloSAM-SAM] Encoding image with SAM")
+
+        if boxes is None or len(boxes) == 0:
+            sam_encode_elapsed = time.perf_counter() - sam_start
+            logger.info(
+                f"[YoloSAM] YOLO found 0 boxes — returning empty mask with SAM "
+                f"embedding cached (encode={sam_encode_elapsed:.3f}s)"
+            )
+            return YoloSAMSegmentationResult(
+                segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
+                metadata={"detections": 0, "sam_embedding_cached": True},
+                model=AvailableModels.yolosam,
+                detection_boxes=np.array([]).reshape(0, 4),
+                embedding=SAMEmbedding(
+                    features=predictor.features,
+                    original_size=predictor.original_size,
+                    input_size=predictor.input_size,
+                ),
+            )
 
         # Batch boxes to avoid RAM spike on images with many detections.
         # predict_torch allocates (N, 1, H, W) masks; thousands of boxes

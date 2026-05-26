@@ -52,6 +52,17 @@ class InstancesResponse(BaseModel):
     instances: List[Instance]
 
 
+class FromPointsRequest(BaseModel):
+    # image-space points where each click should become a particle
+    points: list[list[float]]  # [[x, y], ...]
+    # reject SAM masks whose area > this fraction of the full image
+    # (kills "select everything" failures on background clicks)
+    max_image_fraction: float = 0.05
+    # absolute minimum area in pixels — below this, the click likely landed
+    # on a texture/noise patch rather than a particle
+    min_area: int = 100
+
+
 class ProposeSimilarRequest(BaseModel):
     # cosine-sim floor for seed candidates (0..1, higher = stricter)
     sim_threshold: float = 0.75
@@ -66,6 +77,17 @@ class ProposeSimilarRequest(BaseModel):
     # reject proposal whose area > this fraction of the full image
     # — kills SAM's "select everything" failure mode for ambiguous prompts
     max_image_fraction: float = 0.05
+
+
+@router.get("/{session_id}/stats")
+async def get_stats(session_id: str):
+    """Return cached stats.json for this session. 404 if not yet computed."""
+    session_dir = _session_dir(session_id)
+    stats_path = session_dir / "stats.json"
+    if not stats_path.exists():
+        raise HTTPException(status_code=404, detail="No stats — run /segment first")
+    with open(stats_path) as f:
+        return json.load(f)
 
 
 @router.post("/{session_id}/instances")
@@ -349,6 +371,225 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     return {
         "instances": new_instances,
         "mask_url": f"/images/{session_id}/mask",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /masks/{session_id}/from-points
+#
+# Bootstrap mode for "YOLO found nothing" — user clicks 1-N particles, each
+# click becomes an instance via SAM single-point predict. Mirrors /split's
+# predictor-restore pattern but creates *new* instances rather than splitting
+# an existing blob. Auto-saves to instances.json + regenerates mask.png so
+# the user immediately sees the result and can chain into /propose-similar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _pick_smallest_safe_mask(
+    masks: np.ndarray,
+    min_area: int,
+    max_area: float,
+) -> tuple[int, int, np.ndarray] | None:
+    """From SAM's 3 multimask outputs, return the smallest mask within
+    [min_area, max_area]. Returns (idx, area, mask) or None."""
+    candidates = []
+    for k in range(masks.shape[0]):
+        m = masks[k].astype(np.uint8)
+        a = int(m.sum())
+        if min_area <= a <= max_area:
+            candidates.append((a, k, m))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0])
+    a, k, m = candidates[0]
+    return k, a, m
+
+
+@router.post("/{session_id}/from-points")
+async def from_points(session_id: str, body: FromPointsRequest, request: Request):
+    t_start = time.time()
+    logger.info(
+        f"[FROM-POINTS] session={session_id} | {len(body.points)} click(s)"
+    )
+
+    if not body.points:
+        raise HTTPException(status_code=400, detail="No points provided")
+
+    session_dir = _session_dir(session_id)
+
+    # ── load existing instances (may be empty after a zero-YOLO segment) ──────
+    cached = load_instances(session_dir)
+    if cached is not None:
+        instances, labeled = cached
+    else:
+        # No instances on disk yet — infer shape from mask.png if present,
+        # otherwise from the original_preview.png.
+        shape = None
+        mask_path = session_dir / "mask.png"
+        if mask_path.exists():
+            m = cv.imread(str(mask_path))
+            if m is not None:
+                shape = m.shape[:2]
+        if shape is None:
+            preview = session_dir / "original_preview.png"
+            if preview.exists():
+                p = cv.imread(str(preview))
+                if p is not None:
+                    shape = p.shape[:2]
+        if shape is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot determine image shape — run /segment first",
+            )
+        instances = []
+        labeled = np.zeros(shape, dtype=np.uint16)
+
+    # ── restore SAM predictor state from cached embedding ────────────────────
+    embedding_cache = getattr(request.app.state, "embedding_cache", {})
+    embedding = embedding_cache.get(session_id)
+    if embedding is None:
+        raise HTTPException(
+            status_code=400,
+            detail="SAM embedding not cached — re-run /segment first to encode the image",
+        )
+
+    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
+    if yolosam is None:
+        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+
+    predictor = yolosam._predictor
+    predictor.features = embedding.features
+    predictor.original_size = embedding.original_size
+    predictor.input_size = embedding.input_size
+    predictor.is_image_set = True
+
+    h_img, w_img = embedding.original_size
+    image_area = float(h_img * w_img)
+    max_area = body.max_image_fraction * image_area
+    logger.info(
+        f"[FROM-POINTS] Image {h_img}x{w_img} | area window "
+        f"[{body.min_area}, {int(max_area)}]px"
+    )
+
+    # ── SAM predict per click ────────────────────────────────────────────────
+    existing_mask = (labeled > 0)
+    next_id = (max(i["id"] for i in instances) + 1) if instances else 1
+    new_instances: list[dict] = []
+    rejected: list[dict] = []
+
+    for i, point in enumerate(body.points):
+        if len(point) != 2:
+            rejected.append({"index": i, "reason": "malformed point"})
+            continue
+        px, py = float(point[0]), float(point[1])
+        if not (0 <= px < w_img and 0 <= py < h_img):
+            rejected.append({"index": i, "reason": "point out of bounds"})
+            continue
+
+        try:
+            masks, scores, _ = predictor.predict(
+                point_coords=np.array([[px, py]]),
+                point_labels=np.array([1]),
+                multimask_output=True,
+            )
+        except Exception as e:
+            logger.warning(f"[FROM-POINTS] SAM predict failed at click {i}: {e}")
+            rejected.append({"index": i, "reason": f"SAM error: {e}"})
+            continue
+
+        pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
+        if pick is None:
+            rejected.append(
+                {"index": i, "reason": "no SAM output within area window"}
+            )
+            continue
+        best_idx, area, raw = pick
+
+        # drop pixels already inside another instance (including ones just created)
+        constrained = (raw > 0) & (~existing_mask)
+        area = int(constrained.sum())
+        if area < body.min_area:
+            rejected.append(
+                {"index": i, "reason": f"after constraint area={area} < min"}
+            )
+            continue
+
+        constrained_u8 = constrained.astype(np.uint8)
+        contours, _ = cv.findContours(
+            constrained_u8, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            rejected.append({"index": i, "reason": "no contour"})
+            continue
+        largest = max(contours, key=cv.contourArea)
+        epsilon = 0.01 * cv.arcLength(largest, True)
+        approx = cv.approxPolyDP(largest, epsilon, True).squeeze()
+        if approx.ndim < 2 or len(approx) < 3:
+            rejected.append({"index": i, "reason": "degenerate contour"})
+            continue
+        x, y, w, h = cv.boundingRect(largest)
+
+        inst = {
+            "id": next_id,
+            "contour": approx.tolist(),
+            "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+            "area": area,
+            "sam_score": float(scores[best_idx]),
+            "source": "click",
+        }
+        new_instances.append(inst)
+        # paint into labeled + existing_mask so subsequent clicks don't overlap
+        cv.fillPoly(labeled, [approx.astype(np.int32)], color=next_id)
+        existing_mask = existing_mask | constrained
+        next_id += 1
+
+    if not new_instances:
+        raise HTTPException(
+            status_code=400,
+            detail=f"All {len(body.points)} clicks rejected: {rejected}",
+        )
+
+    # ── persist updated instances + regenerate mask.png ──────────────────────
+    updated = instances + new_instances
+    save_instances(session_dir, updated, labeled)
+
+    colored = colorize_labeled_mask(labeled)
+    cv.imwrite(str(session_dir / "mask.png"), colored)
+    logger.info(f"[FROM-POINTS] Regenerated mask.png with {len(updated)} instances")
+
+    # recompute stats (mirrors api_save_instances)
+    pixel_size = None
+    pixel_unit = None
+    meta_path = session_dir / "metadata.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = json.load(f)
+        pixel_size = meta.get("pixel_size")
+        pixel_unit = meta.get("pixel_unit")
+
+    binary = (labeled > 0).astype(np.uint8)
+    stats = compute_stats_from_instances(
+        updated,
+        binary,
+        pixel_size=pixel_size,
+        pixel_unit=pixel_unit,
+        labeled_mask=labeled,
+    )
+    with open(session_dir / "stats.json", "w") as f:
+        json.dump(stats, f)
+
+    t_total = time.time() - t_start
+    logger.info(
+        f"[FROM-POINTS] Created {len(new_instances)} / {len(body.points)} clicks "
+        f"| rejected={len(rejected)} | total={t_total:.2f}s"
+    )
+
+    return {
+        "new_instances": new_instances,
+        "rejected": rejected,
+        "mask_url": f"/images/{session_id}/mask",
+        "stats": stats,
+        "elapsed": round(t_total, 3),
     }
 
 

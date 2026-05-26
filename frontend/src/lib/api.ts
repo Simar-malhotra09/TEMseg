@@ -132,6 +132,11 @@ export interface Instance {
   contour: [number, number][];
   bbox: { x: number; y: number; w: number; h: number };
   area: number;
+  // Optional: present on instances created via /from-points or /propose-similar
+  sam_score?: number;
+  source?: string;
+  similarity?: number;
+  seed?: [number, number];
 }
 
 /* ------------------------------------------------------------------ */
@@ -172,6 +177,50 @@ export async function getModels(): Promise<string[]> {
   }
 
   return data.models ?? [];
+}
+
+export async function getSessionMetadata(
+  sessionId: string,
+): Promise<Record<string, any> | null> {
+  // Used to validate a session exists on refresh (?session=... restore).
+  // Returns metadata dict on 200, null on 404 (session evicted/deleted).
+  const res = await fetch(`${BASE_URL}/images/${sessionId}/metadata`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`getSessionMetadata: ${res.status}`);
+  return res.json();
+}
+
+export async function getStats(sessionId: string): Promise<StatsResult | null> {
+  // Returns cached stats.json for a session, or null if /segment hasn't run.
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/stats`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`getStats: ${res.status}`);
+  return res.json();
+}
+
+export interface FromPointsResponse {
+  new_instances: Instance[];
+  rejected: { index: number; reason: string }[];
+  mask_url: string;
+  stats: StatsResult;
+  elapsed: number;
+}
+
+export async function fromPoints(
+  sessionId: string,
+  points: [number, number][],
+): Promise<FromPointsResponse> {
+  // Each click becomes a particle via SAM single-point predict on the backend.
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/from-points`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ points }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`fromPoints failed (${res.status}): ${err}`);
+  }
+  return res.json();
 }
 
 export async function uploadImage(file: File) {
