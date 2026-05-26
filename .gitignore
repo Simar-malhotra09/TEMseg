@@ -16,3 +16,16 @@ backend/src/sessions/
 backend/uv.lock
 frontend/main.py
 workspace.sh
+        .claude/
+        .github/
+        3
+        CLAUDE.md
+        RELEASE.md
+        backend/routes.log
+        backend/weights
+        benchmarks/
+        data/
+        dist.zip
+        nanoDetect/
+        rthook_hyperspy.py
+        temseg_icon.ico
