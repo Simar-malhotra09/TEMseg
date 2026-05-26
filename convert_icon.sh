@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# convert_icon.sh — Convert a 1024x1024 PNG to .icns
+# convert_icon.sh — Convert a 1024x1024 PNG to .icns (macOS) and .ico (Windows)
 #
 # Usage: ./convert_icon.sh temseg_icon.png
 #
-# Requires: sips (built into macOS), iconutil (built into macOS)
+# Requires: sips, iconutil (built into macOS); Pillow (uv run python)
 
 set -euo pipefail
 
 INPUT="${1:-temseg_icon.png}"
-OUTPUT="${INPUT%.png}.icns"
+ICNS_OUT="${INPUT%.png}.icns"
+ICO_OUT="${INPUT%.png}.ico"
 ICONSET="${INPUT%.png}.iconset"
 
 if [ ! -f "$INPUT" ]; then
@@ -16,10 +17,12 @@ if [ ! -f "$INPUT" ]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# .icns (macOS)
+# ---------------------------------------------------------------------------
 echo "Creating iconset from $INPUT..."
 mkdir -p "$ICONSET"
 
-# Generate all required sizes
 sips -z 16 16     "$INPUT" --out "$ICONSET/icon_16x16.png"      >/dev/null
 sips -z 32 32     "$INPUT" --out "$ICONSET/icon_16x16@2x.png"   >/dev/null
 sips -z 32 32     "$INPUT" --out "$ICONSET/icon_32x32.png"      >/dev/null
@@ -32,9 +35,18 @@ sips -z 512 512   "$INPUT" --out "$ICONSET/icon_512x512.png"    >/dev/null
 sips -z 1024 1024 "$INPUT" --out "$ICONSET/icon_512x512@2x.png" >/dev/null
 
 echo "Building .icns..."
-iconutil -c icns "$ICONSET" -o "$OUTPUT"
+iconutil -c icns "$ICONSET" -o "$ICNS_OUT"
 
-# Cleanup
 rm -rf "$ICONSET"
+echo "Done: $ICNS_OUT"
 
-echo "Done: $OUTPUT"
+# ---------------------------------------------------------------------------
+# .ico (Windows) — multi-resolution
+# ---------------------------------------------------------------------------
+echo "Building .ico..."
+uv run python -c "
+from PIL import Image
+img = Image.open('$INPUT')
+img.save('$ICO_OUT', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+"
+echo "Done: $ICO_OUT"

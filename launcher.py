@@ -53,6 +53,116 @@ def _is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
+# ---------------------------------------------------------------------------
+# Windows: ensure Microsoft Edge WebView2 runtime is installed before pywebview
+# starts. PyWebView's EdgeChromium backend fails opaquely without it.
+# ---------------------------------------------------------------------------
+
+# Microsoft Evergreen Bootstrapper (small ~2MB downloader that pulls the full runtime)
+WEBVIEW2_BOOTSTRAPPER_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+
+# Registry GUID for the WebView2 Runtime client
+WEBVIEW2_CLIENT_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+
+
+def _webview2_installed() -> bool:
+    """Check HKLM (system) and HKCU (per-user) for a non-empty pv value."""
+    if platform.system() != "Windows":
+        return True
+
+    import winreg  # stdlib, Windows-only
+
+    subkeys = [
+        # 64-bit Windows: machine-wide install lives under WOW6432Node
+        (winreg.HKEY_LOCAL_MACHINE,
+         rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}"),
+        # 32-bit Windows fallback
+        (winreg.HKEY_LOCAL_MACHINE,
+         rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}"),
+        # Per-user install
+        (winreg.HKEY_CURRENT_USER,
+         rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}"),
+    ]
+
+    for root, path in subkeys:
+        try:
+            with winreg.OpenKey(root, path) as key:
+                pv, _ = winreg.QueryValueEx(key, "pv")
+                if pv and pv != "0.0.0.0":
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def _msgbox(text: str, title: str, style: int) -> int:
+    """Native Win32 MessageBox (no GUI deps)."""
+    import ctypes
+    return ctypes.windll.user32.MessageBoxW(0, text, title, style)
+
+
+def _ensure_webview2_runtime() -> bool:
+    """
+    Windows-only: download and silently install WebView2 if missing.
+    Returns True if the runtime is (now) available, False if user declined or install failed.
+    No-op (returns True) on non-Windows.
+    """
+    if platform.system() != "Windows":
+        return True
+    if _webview2_installed():
+        return True
+
+    log.info("WebView2 runtime not detected — prompting user to install.")
+
+    # MB_YESNO | MB_ICONINFORMATION
+    choice = _msgbox(
+        "TEMseg needs the Microsoft Edge WebView2 runtime (a small Windows "
+        "component) to display its interface.\n\n"
+        "Click Yes to download and install it now (~2 MB download, silent install).",
+        "TEMseg — One-time setup",
+        0x00000004 | 0x00000040,
+    )
+    if choice != 6:  # IDYES = 6
+        return False
+
+    import tempfile
+    import subprocess
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="temseg_wv2_"))
+    installer = tmp_dir / "MicrosoftEdgeWebview2Setup.exe"
+
+    try:
+        log.info(f"Downloading WebView2 bootstrapper to {installer}")
+        req = urllib.request.Request(
+            WEBVIEW2_BOOTSTRAPPER_URL,
+            headers={"User-Agent": "TEMseg/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            installer.write_bytes(resp.read())
+
+        log.info("Running WebView2 installer silently...")
+        # /silent /install — no UI; bootstrapper fetches and installs the full runtime
+        result = subprocess.run(
+            [str(installer), "/silent", "/install"],
+            timeout=600,
+        )
+        if result.returncode != 0:
+            log.error(f"WebView2 installer exited with code {result.returncode}")
+            return False
+
+    except Exception:
+        log.exception("WebView2 install failed")
+        return False
+    finally:
+        try:
+            installer.unlink(missing_ok=True)
+            tmp_dir.rmdir()
+        except Exception:
+            pass
+
+    return _webview2_installed()
+
+
 def _bundle_dir() -> Path:
     """PyInstaller sets sys._MEIPASS to the temp extract dir."""
     if _is_frozen():
@@ -75,7 +185,6 @@ def _weights_dir() -> Path:
     if _is_frozen():
         system = platform.system()
         if system == "Darwin":
-            print(Path.home() / "Library" / "Application Support" / "TEMseg" / "weights")
             return (
                 Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
             )
@@ -387,6 +496,18 @@ LOADING_HTML = """
 
 def main():
     log.info("Starting TEMseg...")
+
+    # --- Phase 0: Windows-only — ensure WebView2 runtime exists ---
+    # PyWebView's EdgeChromium backend silently fails without it on fresh Windows installs.
+    if not _ensure_webview2_runtime():
+        _msgbox(
+            "TEMseg cannot start without the Microsoft Edge WebView2 runtime.\n\n"
+            "Please install it manually from:\n"
+            "https://developer.microsoft.com/microsoft-edge/webview2/",
+            "TEMseg — Setup incomplete",
+            0x00000010,  # MB_ICONERROR
+        )
+        sys.exit(1)
 
     # --- Phase 1: Loading window + weight check ---
     loading_window = webview.create_window(

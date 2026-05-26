@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-TEMseg PyInstaller spec — macOS Apple Silicon (.app bundle)
+TEMseg PyInstaller spec — cross-platform (macOS .app bundle / Windows .exe one-dir)
 
 Usage:
     pyinstaller temseg.spec
@@ -25,6 +25,17 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 block_cipher = None
 
 ROOT = Path(SPECPATH)  # directory containing this .spec file
+
+IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform == "win32"
+
+# Platform-specific icon — .icns on mac, .ico on Windows
+if IS_MAC:
+    ICON_PATH = str(ROOT / "temseg_icon.icns")
+elif IS_WIN:
+    ICON_PATH = str(ROOT / "temseg_icon.ico")
+else:
+    ICON_PATH = None
 
 # ---------------------------------------------------------------------------
 # Data files to bundle
@@ -171,6 +182,18 @@ hiddenimports += collect_submodules("hyperspy")
 hiddenimports += collect_submodules("rosettasciio")
 hiddenimports += collect_submodules("rsciio")  # actual package providing IO plugins
 hiddenimports += extra_hiddenimports  # from collect_all("hyperspy")
+
+# Windows-only: pywebview uses MS Edge WebView2 backend, which pulls pywin32 COM bits
+if IS_WIN:
+    hiddenimports += [
+        "pythoncom",
+        "pywintypes",
+        "win32api",
+        "win32con",
+        "win32com",
+        "win32com.client",
+    ]
+
 # Deduplicate
 hiddenimports = list(set(hiddenimports))
 
@@ -222,16 +245,26 @@ a = Analysis(
 
 # ---------------------------------------------------------------------------
 # Remove CUDA libs if they snuck in (can save ~1GB)
+# Strip CPU-only build: we don't ship CUDA. Names differ per platform.
 # ---------------------------------------------------------------------------
 
-cuda_prefixes = ("libcuda", "libnvrtc", "libcublas", "libcudnn", "libcufft",
-                 "libcurand", "libcusparse", "libcusolver", "libnccl",
-                 "libnvToolsExt", "libcudart")
+# Linux / macOS naming (lib*.so / lib*.dylib)
+_cuda_unix = ("libcuda", "libnvrtc", "libcublas", "libcudnn", "libcufft",
+              "libcurand", "libcusparse", "libcusolver", "libnccl",
+              "libnvToolsExt", "libcudart")
 
-a.binaries = [
-    b for b in a.binaries
-    if not any(b[0].startswith(prefix) for prefix in cuda_prefixes)
-]
+# Windows naming (versioned .dll, e.g. cudart64_12.dll, cublas64_12.dll)
+_cuda_win = ("cudart64_", "cublas64_", "cublasLt64_", "cudnn", "cufft64_",
+             "curand64_", "cusparse64_", "cusolver64_", "nvrtc64_",
+             "nvrtc-builtins64_", "nccl64_", "nvToolsExt64_")
+
+cuda_prefixes = _cuda_unix + _cuda_win
+
+def _is_cuda_lib(name: str) -> bool:
+    base = Path(name).name.lower()
+    return any(base.startswith(p.lower()) for p in cuda_prefixes)
+
+a.binaries = [b for b in a.binaries if not _is_cuda_lib(b[0])]
 
 # ---------------------------------------------------------------------------
 # Post-analysis size pruning
@@ -303,7 +336,7 @@ exe = EXE(
     strip=False,
     upx=False,      # UPX can break signed binaries on Mac
     console=False,   # no terminal window
-    icon=str(ROOT / "temseg_icon.icns"),
+    icon=ICON_PATH,
 )
 
 coll = COLLECT(
@@ -316,15 +349,17 @@ coll = COLLECT(
     name="TEMseg",
 )
 
-app = BUNDLE(
-    coll,
-    name="TEMseg.app",
-    icon=str(ROOT / "temseg_icon.icns"),
-    bundle_identifier="com.temseg.app",
-    info_plist={
-        "CFBundleDisplayName": "TEMseg",
-        "CFBundleShortVersionString": "0.1.0",
-        "NSHighResolutionCapable": True,
-        "LSMinimumSystemVersion": "12.0",
-    },
-)
+# macOS .app bundle — Windows builds skip this and ship dist/TEMseg/ as one-dir
+if IS_MAC:
+    app = BUNDLE(
+        coll,
+        name="TEMseg.app",
+        icon=ICON_PATH,
+        bundle_identifier="com.temseg.app",
+        info_plist={
+            "CFBundleDisplayName": "TEMseg",
+            "CFBundleShortVersionString": "0.1.0",
+            "NSHighResolutionCapable": True,
+            "LSMinimumSystemVersion": "12.0",
+        },
+    )
