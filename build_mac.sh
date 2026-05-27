@@ -26,10 +26,35 @@ echo "  TEMseg macOS Build"
 echo "========================================"
 
 # -------------------------------------------
-# Step 1: Build frontend static export
+# Step 1: Check weight manifest exists
 # -------------------------------------------
 echo ""
-echo "[1/4] Building frontend..."
+echo "[1/4] Checking weight manifest..."
+
+if [ ! -f "weight_manifest.json" ]; then
+    echo "ERROR: weight_manifest.json not found in project root"
+    echo "  Copy it from the template and fill in URLs + checksums"
+    exit 1
+fi
+echo "  Manifest found"
+
+# -------------------------------------------
+# Step 2: Ensure PyInstaller is installed
+# -------------------------------------------
+echo ""
+echo "[2/4] Checking PyInstaller..."
+
+if ! python -c "import PyInstaller" 2>/dev/null; then
+    echo "  Installing PyInstaller..."
+    uv pip install pyinstaller
+fi
+echo "  PyInstaller OK"
+
+# -------------------------------------------
+# Step 3: Build frontend static export
+# -------------------------------------------
+echo ""
+echo "[3/4] Building frontend..."
 
 if [ ! -d "frontend/node_modules" ]; then
     echo "  Installing npm dependencies..."
@@ -44,30 +69,6 @@ if [ ! -f "frontend/out/index.html" ]; then
 fi
 echo "  Frontend build OK"
 
-# -------------------------------------------
-# Step 2: Check weight manifest exists
-# -------------------------------------------
-echo ""
-echo "[2/4] Checking weight manifest..."
-
-if [ ! -f "weight_manifest.json" ]; then
-    echo "ERROR: weight_manifest.json not found in project root"
-    echo "  Copy it from the template and fill in URLs + checksums"
-    exit 1
-fi
-echo "  Manifest found"
-
-# -------------------------------------------
-# Step 3: Ensure PyInstaller is installed
-# -------------------------------------------
-echo ""
-echo "[3/4] Checking PyInstaller..."
-
-if ! python -c "import PyInstaller" 2>/dev/null; then
-    echo "  Installing PyInstaller..."
-    uv pip install pyinstaller
-fi
-echo "  PyInstaller OK"
 
 # -------------------------------------------
 # Step 4: Run PyInstaller

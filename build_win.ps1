@@ -28,10 +28,39 @@ Write-Host "  TEMseg Windows Build"
 Write-Host "========================================"
 
 # -------------------------------------------
-# Step 1: Build frontend static export
+# Step 1: Check weight manifest exists
 # -------------------------------------------
 Write-Host ""
-Write-Host "[1/4] Building frontend..."
+Write-Host "[1/4] Checking weight manifest..."
+
+if (-not (Test-Path "weight_manifest.json")) {
+    throw "weight_manifest.json not found in project root"
+}
+Write-Host "  Manifest found"
+
+if (-not (Test-Path "temseg_icon.ico")) {
+    Write-Warning "  temseg_icon.ico not found - build will use default PyInstaller icon"
+}
+
+# -------------------------------------------
+# Step 2: Ensure PyInstaller is installed
+# -------------------------------------------
+Write-Host ""
+Write-Host "[2/4] Checking PyInstaller..."
+
+uv run python -c "import PyInstaller" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Installing PyInstaller..."
+    uv pip install pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller install failed" }
+}
+Write-Host "  PyInstaller OK"
+
+# -------------------------------------------
+# Step 3: Build frontend static export
+# -------------------------------------------
+Write-Host ""
+Write-Host "[3/4] Building frontend..."
 
 if (-not (Test-Path "frontend\node_modules")) {
     Write-Host "  Installing npm dependencies..."
@@ -51,34 +80,6 @@ if (-not (Test-Path "frontend\out\index.html")) {
 }
 Write-Host "  Frontend build OK"
 
-# -------------------------------------------
-# Step 2: Check weight manifest exists
-# -------------------------------------------
-Write-Host ""
-Write-Host "[2/4] Checking weight manifest..."
-
-if (-not (Test-Path "weight_manifest.json")) {
-    throw "weight_manifest.json not found in project root"
-}
-Write-Host "  Manifest found"
-
-if (-not (Test-Path "temseg_icon.ico")) {
-    Write-Warning "  temseg_icon.ico not found - build will use default PyInstaller icon"
-}
-
-# -------------------------------------------
-# Step 3: Ensure PyInstaller is installed
-# -------------------------------------------
-Write-Host ""
-Write-Host "[3/4] Checking PyInstaller..."
-
-uv run python -c "import PyInstaller" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Installing PyInstaller..."
-    uv pip install pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller install failed" }
-}
-Write-Host "  PyInstaller OK"
 
 # -------------------------------------------
 # Step 4: Run PyInstaller
