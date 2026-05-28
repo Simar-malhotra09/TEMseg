@@ -21,6 +21,8 @@ dependencies = [
   "numba>=0.64.0",
   "matplotlib>=3.10.8",
   "lap>=0.5.13",
+  # pywin32 only on Windows — pywebview's EdgeChromium backend uses COM
+  "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

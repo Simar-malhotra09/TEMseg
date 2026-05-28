@@ -9,15 +9,9 @@ import {
 } from "recharts";
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
-import type { StatsResult } from "@/lib/api";
+import type { StatsResult, Metadata } from "@/lib/api";
 
-interface Metadata {
-  image_shape?: number[];
-  original_format?: string;
-  pixel_size?: number | null;
-  pixel_unit?: string | null;
-  axes?: { scale: number; size: number; units: string }[];
-}
+
 
 interface GTScores {
   iou: number;
@@ -255,7 +249,7 @@ const histData = useMemo(() => {
 
       {/* header */}
       <header className={styles.header}>
-        <button className={styles.backBtn} onClick={onBack}>
+        <button type="button" className={styles.backBtn} onClick={onBack}>
           <ArrowLeft size={16} /> Back to workspace
         </button>
         <h1 className={styles.title}>Particle Analysis</h1>
@@ -273,11 +267,11 @@ const histData = useMemo(() => {
           <div className={styles.chartHeader}>
             <h2 className={styles.chartTitle}>Size Distribution</h2>
             <div className={styles.toggleGroup}>
-              <button
+              <button type="button"
                 className={`${styles.toggleBtn} ${sizeMode === "diameter" ? styles.toggleActive : ""}`}
                 onClick={() => setSizeMode("diameter")}
               >Equivalent Diameter</button>
-              <button
+              <button type="button" 
                 className={`${styles.toggleBtn} ${sizeMode === "area" ? styles.toggleActive : ""}`}
                 onClick={() => setSizeMode("area")}
               >Area</button>

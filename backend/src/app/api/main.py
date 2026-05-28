@@ -15,21 +15,38 @@ from app.models.impls.maskrcnn import MaskRCNN
 from typing import List
 import logging
 
+import os
+import platform
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+# resolve a writable, per-user log dir (never inside the app bundle)
+system = platform.system()
+if system == "Windows":
+    base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    log_dir = os.path.join(base, "TEMseg", "logs")
+elif system == "Darwin":
+    log_dir = os.path.expanduser("~/Library/Logs/TEMseg")
+else:  # Linux
+    log_dir = os.path.expanduser("~/.local/state/TEMseg/logs")
+
+os.makedirs(log_dir, exist_ok=True)
+log_path = os.path.join(log_dir, "routes.log")
+
 # parent logger for all routes
 routes_logger = logging.getLogger("routes")
 routes_logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 # file handler for routes
-file_handler = logging.FileHandler("routes.log")
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-file_handler.setFormatter(formatter)
-routes_logger.addHandler(file_handler)
-
+if not routes_logger.handlers:
+    file_handler = logging.FileHandler(log_path)
+    file_handler.setFormatter(formatter)
+    routes_logger.addHandler(file_handler)
 
 def get_device() -> str:
     """Pick the best available device at startup."""
