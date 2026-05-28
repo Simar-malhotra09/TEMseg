@@ -204,6 +204,34 @@ export interface FromPointsResponse {
   elapsed: number;
 }
 
+export interface ProposeSimilarResponse {
+  proposals: Instance[];
+  seed_count?: number;
+  median_area?: number;
+  sim_threshold?: number;
+  message?: string;
+  elapsed?: number;
+  debug_overlay_url?: string | null;
+}
+
+export async function proposeSimilar(
+  sessionId: string,
+): Promise<ProposeSimilarResponse> {
+  // Find in-context-similar particles across the image using the existing
+  // annotations as a prior. Returns proposals only — caller commits accepted
+  // ones via saveInstances (same flow as fromPoints).
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/propose-similar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`proposeSimilar failed (${res.status}): ${err}`);
+  }
+  return res.json();
+}
+
 export async function fromPoints(
   sessionId: string,
   points: [number, number][],

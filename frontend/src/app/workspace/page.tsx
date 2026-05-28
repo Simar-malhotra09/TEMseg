@@ -8,8 +8,8 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints } from "@/lib/api";
-import { MousePointerClick } from "lucide-react";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, proposeSimilar } from "@/lib/api";
+import { MousePointerClick, Sparkles } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
@@ -307,8 +307,11 @@ export default function Workspace() {
     }
   }
 
-  // Commit all pending proposals: fetch current on-disk instances, merge with
-  // pending, PUT the combined list. PUT already regenerates mask.png + stats.
+  // Commit all pending proposals: fetch current on-disk instances, renumber
+  // pending IDs to live above the on-disk max (proposals from /from-points
+  // and /propose-similar are both numbered server-side without knowing about
+  // each other, so naive append can collide), then PUT the combined list.
+  // PUT already regenerates mask.png + stats.
   async function handleAcceptProposals() {
     if (!sessionId || pendingProposals.length === 0) return;
     setBootstrapBusy(true);
@@ -317,7 +320,12 @@ export default function Workspace() {
       const existing: Instance[] = await getInstances(sessionId)
         .then(r => r.instances ?? [])
         .catch(() => []);
-      const combined = [...existing, ...pendingProposals];
+      const maxExistingId = existing.reduce((m, p) => Math.max(m, p.id), 0);
+      const renumbered = pendingProposals.map((p, i) => ({
+        ...p,
+        id: maxExistingId + 1 + i,
+      }));
+      const combined = [...existing, ...renumbered];
       const result = await saveInstances(sessionId, combined);
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       if (result.stats) seg.setStats(result.stats);
@@ -343,6 +351,31 @@ export default function Workspace() {
 
   function handleRejectProposal(id: number) {
     setPendingProposals(prev => prev.filter(p => p.id !== id));
+  }
+
+  // Call /propose-similar — uses existing on-disk instances as the prior,
+  // returns SAM box-sweep candidates. Appended to pendingProposals so the
+  // same yellow-overlay accept/reject UX handles them.
+  async function handleProposeSimilar() {
+    if (!sessionId) return;
+    setBootstrapBusy(true);
+    setStatus("Searching for similar particles...");
+    try {
+      const res = await proposeSimilar(sessionId);
+      if (!res.proposals || res.proposals.length === 0) {
+        setStatus(res.message ?? "No similar particles found.");
+        return;
+      }
+      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setStatus(
+        `Found ${res.proposals.length} candidate(s) from ${res.seed_count ?? "?"} seed(s) — review and Accept.`,
+      );
+    } catch (err) {
+      console.error("propose similar failed:", err);
+      setStatus(`Find Similar failed: ${(err as Error).message}`);
+    } finally {
+      setBootstrapBusy(false);
+    }
   }
 
   async function enterRefineMode() {
@@ -599,6 +632,29 @@ export default function Workspace() {
               >
                 <MousePointerClick size={14} />
                 {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
+              </button>
+
+              {/* propose-similar: build a SAM-embedding prior from existing
+                  annotations and find more candidates across the image. Needs
+                  at least one annotated particle to construct the prior. */}
+              <button
+                className={styles.actionBtn}
+                disabled={
+                  !sessionId ||
+                  refineMode ||
+                  !seg.segDone ||
+                  !(seg.stats?.particle_count ?? 0) ||
+                  bootstrapBusy
+                }
+                onClick={handleProposeSimilar}
+                title={
+                  !(seg.stats?.particle_count ?? 0)
+                    ? "Annotate at least one particle first to build the prior"
+                    : undefined
+                }
+              >
+                <Sparkles size={14} />
+                {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
               </button>
 
               {pendingProposals.length > 0 && (
