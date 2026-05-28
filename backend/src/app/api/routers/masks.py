@@ -52,6 +52,19 @@ class InstancesResponse(BaseModel):
     instances: List[Instance]
 
 
+class FromBoxesRequest(BaseModel):
+    # image-space boxes — each one is segmented by SAM with a box prompt and
+    # returned as a proposal. Boxes should tightly contain a single particle.
+    boxes: list[list[float]]  # [[x0, y0, x1, y1], ...]
+    # not-yet-committed proposals from prior box-drags in this session — same
+    # dedup-mask role as in FromPointsRequest
+    pending: list[dict] = []
+    # reject SAM masks whose area > this fraction of the full image
+    max_image_fraction: float = 0.05
+    # absolute minimum area in pixels
+    min_area: int = 100
+
+
 class FromPointsRequest(BaseModel):
     # image-space points where each click should become a particle
     points: list[list[float]]  # [[x, y], ...]
@@ -388,6 +401,179 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     return {
         "instances": new_instances,
         "mask_url": f"/images/{session_id}/mask",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /masks/{session_id}/from-boxes
+#
+# Box-prompt SAM. User drags a tight rectangle around a particle; the box
+# becomes a SAM prompt (multimask_output=False, since the box disambiguates
+# scale on its own). Returns proposals only — same pendingProposals flow as
+# /from-points and /propose-similar. SAM is dramatically more reliable with
+# box prompts than point prompts on small / clumped / OOD particles, so this
+# is the preferred bootstrap path when SAM-with-point fails.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/{session_id}/from-boxes")
+async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
+    t_start = time.time()
+    logger.info(f"[FROM-BOXES] session={session_id} | {len(body.boxes)} box(es)")
+
+    if not body.boxes:
+        raise HTTPException(status_code=400, detail="No boxes provided")
+
+    session_dir = _session_dir(session_id)
+
+    cached = load_instances(session_dir)
+    if cached is not None:
+        instances, labeled = cached
+        labeled = labeled.copy()
+    else:
+        # Same fallback chain as /from-points — required because the user may
+        # bootstrap with boxes before /segment has ever run.
+        shape = None
+        mask_path = session_dir / "mask.png"
+        if mask_path.exists():
+            m = cv.imread(str(mask_path))
+            if m is not None:
+                shape = m.shape[:2]
+        if shape is None:
+            preview = session_dir / "original_preview.png"
+            if preview.exists():
+                p = cv.imread(str(preview))
+                if p is not None:
+                    shape = p.shape[:2]
+        if shape is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot determine image shape — run /segment first",
+            )
+        instances = []
+        labeled = np.zeros(shape, dtype=np.uint16)
+
+    for p in body.pending:
+        contour = np.array(p.get("contour", []), dtype=np.int32)
+        pid = int(p.get("id", 0))
+        if contour.ndim == 2 and len(contour) >= 3 and pid > 0:
+            cv.fillPoly(labeled, [contour], color=pid)
+
+    embedding_cache = getattr(request.app.state, "embedding_cache", {})
+    embedding = embedding_cache.get(session_id)
+    if embedding is None:
+        raise HTTPException(
+            status_code=400,
+            detail="SAM embedding not cached — re-run /segment first to encode the image",
+        )
+
+    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
+    if yolosam is None:
+        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+
+    predictor = yolosam._predictor
+    predictor.features = embedding.features
+    predictor.original_size = embedding.original_size
+    predictor.input_size = embedding.input_size
+    predictor.is_image_set = True
+
+    h_img, w_img = embedding.original_size
+    image_area = float(h_img * w_img)
+    max_area = body.max_image_fraction * image_area
+
+    existing_mask = labeled > 0
+    all_ids = [i["id"] for i in instances] + [int(p.get("id", 0)) for p in body.pending]
+    next_id = (max(all_ids) + 1) if all_ids else 1
+    proposals: list[dict] = []
+    rejected: list[dict] = []
+
+    for i, box in enumerate(body.boxes):
+        if len(box) != 4:
+            rejected.append({"index": i, "reason": "malformed box"})
+            continue
+        x0, y0, x1, y1 = (float(c) for c in box)
+        # normalize order in case the user dragged right-to-left or up-to-down
+        x0, x1 = min(x0, x1), max(x0, x1)
+        y0, y1 = min(y0, y1), max(y0, y1)
+        # clamp to image bounds
+        x0 = max(0.0, x0)
+        y0 = max(0.0, y0)
+        x1 = min(float(w_img - 1), x1)
+        y1 = min(float(h_img - 1), y1)
+        if (x1 - x0) < 4 or (y1 - y0) < 4:
+            rejected.append({"index": i, "reason": "box too small"})
+            continue
+
+        # SAM's strongest prompt is box+positive-point. The box constrains
+        # scale, the point disambiguates "which particle" when the box
+        # incidentally clips a neighbor (typical in tight clumps).
+        cx = (x0 + x1) / 2.0
+        cy = (y0 + y1) / 2.0
+        try:
+            masks, scores, _ = predictor.predict(
+                point_coords=np.array([[cx, cy]]),
+                point_labels=np.array([1]),
+                box=np.array([x0, y0, x1, y1]),
+                multimask_output=False,
+            )
+        except Exception as e:
+            logger.warning(f"[FROM-BOXES] SAM predict failed at box {i}: {e}")
+            rejected.append({"index": i, "reason": f"SAM error: {e}"})
+            continue
+
+        constrained = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
+        area = int(constrained.sum())
+        if area < body.min_area:
+            rejected.append({"index": i, "reason": f"area={area} < min"})
+            continue
+        if area > max_area:
+            rejected.append({"index": i, "reason": f"area={area} > max"})
+            continue
+
+        constrained_u8 = constrained.astype(np.uint8)
+        contours, _ = cv.findContours(
+            constrained_u8, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            rejected.append({"index": i, "reason": "no contour"})
+            continue
+        largest = max(contours, key=cv.contourArea)
+        epsilon = 0.01 * cv.arcLength(largest, True)
+        approx = cv.approxPolyDP(largest, epsilon, True).squeeze()
+        if approx.ndim < 2 or len(approx) < 3:
+            rejected.append({"index": i, "reason": "degenerate contour"})
+            continue
+        x, y, w, h = cv.boundingRect(largest)
+
+        inst = {
+            "id": next_id,
+            "contour": approx.tolist(),
+            "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
+            "area": area,
+            "sam_score": float(scores[0]),
+            "source": "box",
+        }
+        proposals.append(inst)
+        cv.fillPoly(labeled, [approx.astype(np.int32)], color=next_id)
+        existing_mask = existing_mask | constrained
+        next_id += 1
+
+    if not proposals:
+        raise HTTPException(
+            status_code=400,
+            detail=f"All {len(body.boxes)} boxes rejected: {rejected}",
+        )
+
+    t_total = time.time() - t_start
+    logger.info(
+        f"[FROM-BOXES] Proposed {len(proposals)} / {len(body.boxes)} boxes "
+        f"| rejected={len(rejected)} | total={t_total:.2f}s"
+    )
+
+    return {
+        "proposals": proposals,
+        "rejected": rejected,
+        "elapsed": round(t_total, 3),
     }
 
 

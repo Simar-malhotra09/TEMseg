@@ -232,6 +232,31 @@ export async function proposeSimilar(
   return res.json();
 }
 
+export interface FromBoxesResponse {
+  proposals: Instance[];
+  rejected: { index: number; reason: string }[];
+  elapsed: number;
+}
+
+export async function fromBoxes(
+  sessionId: string,
+  boxes: [number, number, number, number][],
+  pending: Instance[],
+): Promise<FromBoxesResponse> {
+  // Drag-box-to-segment via SAM box prompt. Same proposal lifecycle as
+  // fromPoints — caller commits accepted proposals via saveInstances.
+  const res = await fetch(`${BASE_URL}/masks/${sessionId}/from-boxes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ boxes, pending }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`fromBoxes failed (${res.status}): ${err}`);
+  }
+  return res.json();
+}
+
 export async function fromPoints(
   sessionId: string,
   points: [number, number][],
