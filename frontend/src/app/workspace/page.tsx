@@ -8,13 +8,14 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, proposeSimilar } from "@/lib/api";
-import { MousePointerClick, Sparkles, PenTool } from "lucide-react";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar } from "@/lib/api";
+import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import AnnotateCanvas from "./components/AnnotateCanvas";
+import BoxAnnotateCanvas from "./components/BoxAnnotateCanvas";
 import ExportPanel from "./components/ExportPanel";
 import StatsPanel from "./components/StatsPanel";
 import StatsDetailView from "./components/StatsDetailView";
@@ -146,6 +147,23 @@ export default function Workspace() {
   // scratch; each closed polygon becomes a pendingProposal and follows the
   // same Accept/Discard commit flow.
   const [annotateMode, setAnnotateMode] = useState(false);
+
+  // box-prompt annotation mode — drag a tight rectangle around a particle,
+  // SAM segments inside via box prompt (far more reliable than point prompt
+  // for OOD particles, and much faster than polygon-from-scratch).
+  const [boxMode, setBoxMode] = useState(false);
+
+  // Refresh on-disk instances whenever the user enters a canvas mode so the
+  // already-committed context renders correctly. loadedInstances is otherwise
+  // only populated on session restore / after Accept, so right after a fresh
+  // /segment it would be empty even though the disk state is current.
+  useEffect(() => {
+    if (!sessionId) return;
+    if (!annotateMode && !boxMode) return;
+    getInstances(sessionId)
+      .then(r => setLoadedInstances(r.instances ?? []))
+      .catch(() => {});
+  }, [annotateMode, boxMode, sessionId]);
 
 
   // segmentation hook
@@ -401,6 +419,32 @@ export default function Workspace() {
     setStatus(`Annotated particle (area ${area}px) — ${pendingProposals.length + 1} pending. Accept to commit.`);
   }
 
+  // Drag-box-to-segment: POST /from-boxes with one box, append the returned
+  // proposal to pendingProposals. Same accept/reject flow as the other modes.
+  async function handleBoxDrawn(box: [number, number, number, number]) {
+    if (!sessionId || bootstrapBusy) return;
+    setBootstrapBusy(true);
+    setStatus(`Segmenting box (${Math.round(box[2] - box[0])}×${Math.round(box[3] - box[1])})...`);
+    try {
+      const res = await fromBoxes(sessionId, [box], pendingProposals);
+      if (res.proposals.length === 0) {
+        const reason = res.rejected[0]?.reason ?? "unknown";
+        setStatus(`Box rejected: ${reason}`);
+        return;
+      }
+      const added = res.proposals[0];
+      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setStatus(
+        `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
+      );
+    } catch (err) {
+      console.error("box drawn failed:", err);
+      setStatus(`Box segment failed: ${(err as Error).message}`);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
   // Call /propose-similar — uses existing on-disk instances as the prior,
   // returns SAM box-sweep candidates. Appended to pendingProposals so the
   // same yellow-overlay accept/reject UX handles them.
@@ -463,7 +507,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -674,7 +718,7 @@ export default function Workspace() {
                   otherwise, but the disabled state is the clean UX). */}
               <button
                 className={styles.actionBtn}
-                disabled={!sessionId || refineMode || annotateMode || !seg.segDone}
+                disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
                 onClick={() => setBootstrapMode(b => !b)}
                 title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
               >
@@ -682,12 +726,30 @@ export default function Workspace() {
                 {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
               </button>
 
+              {/* box-prompt annotation — drag a tight box, SAM segments inside.
+                  Preferred over click-to-add for OOD particles where point
+                  prompts bleed; preferred over polygon for speed. */}
+              <button
+                className={styles.actionBtn}
+                disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
+                onClick={() => setBoxMode(m => !m)}
+                title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+              >
+                <BoxSelect size={14} />
+                {boxMode ? "Stop Boxing" : "Box to Add Particles"}
+              </button>
+              {boxMode && (
+                <p className={styles.sidebarHint}>
+                  Drag a tight rectangle around a particle · Space+drag pans · wheel zooms · Esc cancels.
+                </p>
+              )}
+
               {/* manual annotation — fallback when both YOLO and SAM-with-point
                   fail (small / clumped / OOD particles). Doesn't require a
                   prior /segment run since it doesn't use any model output. */}
               <button
                 className={styles.actionBtn}
-                disabled={!sessionId || refineMode || bootstrapMode}
+                disabled={!sessionId || refineMode || bootstrapMode || boxMode}
                 onClick={() => setAnnotateMode(m => !m)}
               >
                 <PenTool size={14} />
@@ -708,6 +770,7 @@ export default function Workspace() {
                   !sessionId ||
                   refineMode ||
                   annotateMode ||
+                  boxMode ||
                   !seg.segDone ||
                   !(seg.stats?.particle_count ?? 0) ||
                   bootstrapBusy
@@ -915,12 +978,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -932,7 +995,7 @@ export default function Workspace() {
                   className={styles.temImage}
                   style={{
                     display: "block",
-                    visibility: seg.isBlackoutMode || refineMode || annotateMode ? "hidden" : "visible",
+                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode ? "hidden" : "visible",
                   }}
                   onLoad={e => setImgSize({
                     width: e.currentTarget.naturalWidth,
@@ -1014,7 +1077,24 @@ export default function Workspace() {
                     imgHeight={imgSize.height}
                     viewportWidth={viewportSize.width}
                     viewportHeight={viewportSize.height}
+                    existingInstances={loadedInstances}
+                    pendingProposals={pendingProposals}
                     onPolygonComplete={handlePolygonComplete}
+                  />
+                )}
+
+                {/* box-prompt annotation canvas — drag rectangles, SAM segments */}
+                {boxMode && !refineMode && image && imgSize.width > 0 && (
+                  <BoxAnnotateCanvas
+                    imageSrc={image}
+                    imgWidth={imgSize.width}
+                    imgHeight={imgSize.height}
+                    viewportWidth={viewportSize.width}
+                    viewportHeight={viewportSize.height}
+                    busy={bootstrapBusy}
+                    existingInstances={loadedInstances}
+                    pendingProposals={pendingProposals}
+                    onBoxDrawn={handleBoxDrawn}
                   />
                 )}
 
@@ -1035,8 +1115,11 @@ export default function Workspace() {
 
                 {/* pending proposals overlay — yellow outlines, click to reject.
                     Sits above the bootstrap click-capture so reject clicks
-                    aren't swallowed as new proposals. */}
-                {pendingProposals.length > 0 && !refineMode && !seg.isBlackoutMode && imgSize.width > 0 && (
+                    aren't swallowed as new proposals. Suppressed while a
+                    canvas mode is active — those canvases render their own
+                    in-image-space proposal overlay so the viewBox transforms
+                    them together with the image. */}
+                {pendingProposals.length > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && imgSize.width > 0 && (
                   <svg
                     viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
                     preserveAspectRatio="xMidYMid meet"

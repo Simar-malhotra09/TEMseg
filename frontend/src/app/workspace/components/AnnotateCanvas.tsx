@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { Instance } from "@/lib/api";
 
 interface Props {
   imageSrc: string;
@@ -8,6 +9,14 @@ interface Props {
   imgHeight: number;
   viewportWidth: number;
   viewportHeight: number;
+  // Already-committed instances on disk — rendered as semi-transparent green
+  // context so the user can see what's been annotated already and avoid
+  // re-annotating the same particle.
+  existingInstances: Instance[];
+  // Not-yet-committed proposals — rendered as yellow outlines for the same
+  // reason. Click-to-reject is intentionally not wired here since clicks in
+  // annotate mode are reserved for placing vertices.
+  pendingProposals: Instance[];
   // Called when the user closes a polygon with ≥3 vertices. The contour is
   // in image-space coordinates. Caller is responsible for turning it into a
   // pending proposal.
@@ -33,6 +42,8 @@ export default function AnnotateCanvas({
   imgHeight,
   viewportWidth,
   viewportHeight,
+  existingInstances,
+  pendingProposals,
   onPolygonComplete,
 }: Props) {
   const [vertices, setVertices] = useState<[number, number][]>([]);
@@ -246,6 +257,36 @@ export default function AnnotateCanvas({
         height={imgHeight}
         preserveAspectRatio="none"
       />
+      {/* committed instances — context only, no pointer events */}
+      {existingInstances.map(inst => {
+        if (!inst.contour || inst.contour.length < 3) return null;
+        const pts = inst.contour.map(([x, y]) => `${x},${y}`).join(" ");
+        return (
+          <polygon
+            key={`existing-${inst.id}`}
+            points={pts}
+            fill="rgba(126, 232, 162, 0.10)"
+            stroke="#7ee8a2"
+            strokeWidth={strokeW * 0.7}
+            pointerEvents="none"
+          />
+        );
+      })}
+      {/* pending proposals — context only; reject UI lives in the sidebar */}
+      {pendingProposals.map(p => {
+        if (!p.contour || p.contour.length < 3) return null;
+        const pts = p.contour.map(([x, y]) => `${x},${y}`).join(" ");
+        return (
+          <polygon
+            key={`pending-${p.id}`}
+            points={pts}
+            fill="rgba(255, 209, 102, 0.15)"
+            stroke="#ffd166"
+            strokeWidth={strokeW}
+            pointerEvents="none"
+          />
+        );
+      })}
       {vertices.length >= 2 && (
         <polyline
           points={verticesStr}
