@@ -81,7 +81,15 @@ class FromPointsRequest(BaseModel):
 
 
 class ProposeSimilarRequest(BaseModel):
-    # cosine-sim floor for seed candidates (0..1, higher = stricter)
+    # seed-finding method:
+    #   "cosine" — default. Cosine similarity vs a mean SAM-embedding prototype.
+    #   "ncc"   — template-match an averaged image patch. Was tried as a fix
+    #             for cosine's misplaced seeds but performed worse in practice
+    #             across both monomorphic and polymorphic samples. Retained
+    #             behind this knob for future revisit.
+    method: str = "cosine"
+    # peak floor for seed candidates (0..1, higher = stricter). Both methods
+    # produce normalized scores so the same default works for either.
     sim_threshold: float = 0.75
     # cap on number of returned proposals (cost control)
     max_proposals: int = 50
@@ -915,6 +923,90 @@ def _greedy_peak_nms(
     return picked
 
 
+def _build_avg_particle_template(
+    image_gray: np.ndarray,
+    instances: list[dict],
+    labeled: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Build an averaged particle patch + alignment mask from existing instances.
+
+    For each instance we take a square crop centered on its bbox, resize to a
+    common side length derived from median(sqrt(area)), and average. The mask
+    is the average of per-instance binary masks (instance pixels = 1, else 0),
+    used as the matchTemplate mask so off-particle pixels don't contribute to
+    the NCC score.
+
+    Returns (template_uint8, mask_float32, side_px).
+    """
+    areas = [float(i["area"]) for i in instances]
+    # Target side: rough diameter from median area, padded ~40% for context.
+    side = int(round(np.sqrt(max(np.median(areas), 1.0)) * 1.4))
+    side = max(side, 16)
+    if side % 2 == 0:
+        side += 1  # odd so the center maps cleanly
+
+    patches: list[np.ndarray] = []
+    masks: list[np.ndarray] = []
+    h_img, w_img = image_gray.shape[:2]
+    for inst in instances:
+        bbox = inst["bbox"]
+        w, h = int(bbox["w"]), int(bbox["h"])
+        if w < 4 or h < 4:
+            continue
+        cx = int(bbox["x"]) + w // 2
+        cy = int(bbox["y"]) + h // 2
+        half = max(w, h) // 2 + 2  # square crop, slight pad
+        x0 = max(0, cx - half)
+        y0 = max(0, cy - half)
+        x1 = min(w_img, cx + half)
+        y1 = min(h_img, cy + half)
+        patch = image_gray[y0:y1, x0:x1]
+        inst_mask = (labeled[y0:y1, x0:x1] == int(inst["id"])).astype(np.float32)
+        if patch.shape[0] < 4 or patch.shape[1] < 4 or not inst_mask.any():
+            continue
+        patch_r = cv.resize(patch, (side, side), interpolation=cv.INTER_AREA)
+        mask_r = cv.resize(inst_mask, (side, side), interpolation=cv.INTER_LINEAR)
+        patches.append(patch_r.astype(np.float32))
+        masks.append(mask_r)
+
+    if not patches:
+        raise ValueError(
+            "No usable patches for template — instances too small or empty"
+        )
+
+    template = np.stack(patches).mean(axis=0).astype(np.uint8)
+    template_mask = np.stack(masks).mean(axis=0).astype(np.float32)
+    # Binarize the mask a bit so partial-coverage pixels don't dilute matches.
+    template_mask = (template_mask > 0.4).astype(np.float32)
+    return template, template_mask, side
+
+
+def _ncc_score_map(
+    image_gray: np.ndarray,
+    template: np.ndarray,
+    template_mask: np.ndarray,
+) -> np.ndarray:
+    """Run cv.matchTemplate with mask and pad to image-space coordinates.
+
+    cv.matchTemplate output is (H - h_t + 1, W - w_t + 1) with each pixel
+    indexing the *top-left* of the matched window. We center the score at
+    the window center by padding with -1 (below any threshold) on all sides.
+    """
+    score = cv.matchTemplate(
+        image_gray, template, cv.TM_CCORR_NORMED, mask=template_mask
+    )
+    # NaNs can appear where mask covers all-zero regions; clamp them.
+    score = np.where(np.isfinite(score), score, -1.0)
+    h_t, w_t = template.shape
+    top = h_t // 2
+    bottom = h_t - 1 - top
+    left = w_t // 2
+    right = w_t - 1 - left
+    return cv.copyMakeBorder(
+        score, top, bottom, left, right, cv.BORDER_CONSTANT, value=-1.0
+    )
+
+
 def _mask_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
     inter = int(np.logical_and(mask_a, mask_b).sum())
     if inter == 0:
@@ -995,24 +1087,61 @@ async def propose_similar(
     h_img, w_img = embedding.original_size
     logger.info(f"[PROPOSE] Image size {h_img}x{w_img} | embedding restored")
 
-    # ── 3. prototype + similarity map ────────────────────────────────────────
-    feat_map = _embedding_feature_map(predictor)  # (H_e, W_e, C)
-    try:
-        proto = _instance_prototype(feat_map, labeled, existing_ids)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    sim_small = feat_map @ proto  # (H_e, W_e)
-    logger.info(
-        f"[PROPOSE] sim range [{sim_small.min():.3f}, {sim_small.max():.3f}] | "
-        f"mean={sim_small.mean():.3f}"
-    )
+    # ── 3. similarity map ────────────────────────────────────────────────────
+    method = body.method.lower()
+    if method not in ("ncc", "cosine"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown method '{body.method}' (expected 'ncc' or 'cosine')",
+        )
 
-    # upsample to image resolution
-    sim = cv.resize(sim_small, (w_img, h_img), interpolation=cv.INTER_LINEAR)
+    if method == "cosine":
+        feat_map = _embedding_feature_map(predictor)  # (H_e, W_e, C)
+        try:
+            proto = _instance_prototype(feat_map, labeled, existing_ids)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        sim_small = feat_map @ proto  # (H_e, W_e)
+        logger.info(
+            f"[PROPOSE/cosine] sim range [{sim_small.min():.3f}, {sim_small.max():.3f}] | "
+            f"mean={sim_small.mean():.3f}"
+        )
+        sim = cv.resize(sim_small, (w_img, h_img), interpolation=cv.INTER_LINEAR)
+    else:
+        # NCC: template-match an averaged particle patch against the actual
+        # image. Avoids SAM's pretrained ViT embedding, which isn't TEM-aware.
+        preview_path = session_dir / "original_preview.png"
+        if not preview_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="original_preview.png missing — cannot run NCC",
+            )
+        image_bgr = cv.imread(str(preview_path))
+        if image_bgr is None:
+            raise HTTPException(
+                status_code=500, detail="Failed to read original_preview.png"
+            )
+        if image_bgr.shape[:2] != (h_img, w_img):
+            image_bgr = cv.resize(image_bgr, (w_img, h_img))
+        image_gray = cv.cvtColor(image_bgr, cv.COLOR_BGR2GRAY)
+        try:
+            template, template_mask, side_px = _build_avg_particle_template(
+                image_gray, instances, labeled
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        logger.info(
+            f"[PROPOSE/ncc] template side={side_px}px built from "
+            f"{len(instances)} examples"
+        )
+        sim = _ncc_score_map(image_gray, template, template_mask)
+        logger.info(
+            f"[PROPOSE/ncc] score range [{sim.min():.3f}, {sim.max():.3f}] | "
+            f"mean={sim.mean():.3f}"
+        )
 
-    # mask out regions inside any existing instance
+    # mask out regions inside any existing instance (both methods)
     existing_any = (labeled > 0).astype(np.uint8)
-    # dilate a bit so seeds don't land on instance borders
     dilated = cv.dilate(
         existing_any, cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
     )
@@ -1199,6 +1328,7 @@ async def propose_similar(
         "proposals": proposals,
         "median_area": median_area,
         "sim_threshold": body.sim_threshold,
+        "method": method,
         "seed_count": len(peaks),
         "debug_overlay_path": str(session_dir / "proposals_debug.png")
         if debug_url

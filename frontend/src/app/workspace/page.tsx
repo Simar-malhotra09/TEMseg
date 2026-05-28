@@ -453,7 +453,8 @@ export default function Workspace() {
     setBootstrapBusy(true);
     setStatus("Searching for similar particles...");
     try {
-      const res = await proposeSimilar(sessionId);
+      const res = await proposeSimilar(sessionId, undefined);
+      // const res = await proposeSimilar(sessionId, "cosine");
       if (!res.proposals || res.proposals.length === 0) {
         setStatus(res.message ?? "No similar particles found.");
         return;

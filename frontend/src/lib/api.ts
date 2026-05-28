@@ -209,6 +209,7 @@ export interface ProposeSimilarResponse {
   seed_count?: number;
   median_area?: number;
   sim_threshold?: number;
+  method?: "ncc" | "cosine";
   message?: string;
   elapsed?: number;
   debug_overlay_url?: string | null;
@@ -216,14 +217,18 @@ export interface ProposeSimilarResponse {
 
 export async function proposeSimilar(
   sessionId: string,
+  method: "ncc" | "cosine" | undefined,
 ): Promise<ProposeSimilarResponse> {
   // Find in-context-similar particles across the image using the existing
   // annotations as a prior. Returns proposals only — caller commits accepted
-  // ones via saveInstances (same flow as fromPoints).
+  // ones via saveInstances (same flow as fromPoints). `method` selects the
+  // seed-finding algorithm; omit to use the backend default (currently NCC).
+  const body: Record<string, unknown> = {};
+  if (method) body.method = method;
   const res = await fetch(`${BASE_URL}/masks/${sessionId}/propose-similar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.text();
