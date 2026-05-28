@@ -144,7 +144,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
 
   return (
     <div ref={panelRef} style={{ position: "relative", width: "100%" }}>
-      <button
+      <button type="button"
         className={`${styles.triggerBtn} ${!segDone ? styles.triggerBtnDisabled : ""}`}
         onClick={() => segDone && setOpen(o => !o)}
         disabled={!segDone}
@@ -156,7 +156,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
         <div className={styles.panel}>
           <div className={styles.panelHeader}>
             <span className={styles.panelTitle}>Export</span>
-            <button className={styles.closeBtn} onClick={() => setOpen(false)}>
+            <button type="button" className={styles.closeBtn} onClick={() => setOpen(false)}>
               <X size={12} />
             </button>
           </div>
@@ -182,10 +182,10 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
           </div>
 
           <div className={styles.panelFooter}>
-            <button className={styles.selectAllBtn} onClick={selectAll}>
+            <button type="button" className={styles.selectAllBtn} onClick={selectAll}>
               select all
             </button>
-            <button
+            <button type="button"
               className={styles.downloadBtn}
               disabled={selected.size === 0 || downloading}
               onClick={handleDownload}

@@ -101,11 +101,18 @@ export interface StatsResult {
   }[];
 }
 
+export interface Metadata {
+  image_shape?: number[];
+  original_format?: string;
+  pixel_size: number | string | null;
+  pixel_unit?: string | null;
+  axes?: { scale: number; size: number; units: string }[];
+}
 
 export interface SegmentResponse {
   model: string;
   mask_url: string;
-  metadata: Record<string, number>;
+  metadata: Metadata | null;
   stats: StatsResult;
   time_elapsed: number;
   debug_boxes_url?: string;

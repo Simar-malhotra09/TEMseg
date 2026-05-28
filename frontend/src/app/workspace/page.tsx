@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances,Metadata } from "@/lib/api";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
@@ -44,7 +44,7 @@ export default function Workspace() {
   const [status, setStatus] = useState("Upload an image to begin."); // def status in our status bar
 
   // metadata
-  const [metadata, setMetadata] = useState<Record<string, any> | null>(null);
+  const [metadata, setMetadata] = useState<Metadata | null>(null);
 
   // stats detail view
   const [showStatsDetail, setShowStatsDetail] = useState(false);
@@ -344,7 +344,7 @@ export default function Workspace() {
       )}
 
       {/* Main workspace */}
-      <div className={styles.workspaceRoot} style={{display: showStatsDetail? "none" : "flex" }}>
+      <div className={styles.workspaceRoot}style={{display: showStatsDetail? "none" : "flex" }}>
 
         {/* topbar */}
         <header className={styles.topbar}>
@@ -370,7 +370,7 @@ export default function Workspace() {
             {/*Display zoom size and reset to normal on click*/}
             <span className={styles.statusPill} key={status}>{status}</span>
             {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-              <button className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+              <button type="button" className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
                 {Math.round(zoom * 100)}% ✕
               </button>
             )}
@@ -396,7 +396,7 @@ export default function Workspace() {
             <section className={styles.sidebarSection}>
               <p className={styles.sidebarLabel}>Model</p>
               <div className={styles.dropdownWrap}>
-                <button className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
+                <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
                   {selectedModel} <ChevronDown size={14} />
                 </button>
                 {modelDropdownOpen && (
@@ -418,6 +418,7 @@ export default function Workspace() {
 
               {/*[ACTION]- run seg */}
               <button
+                type="button"
                 className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                 onClick={handleRunSegmentation}
                 disabled={!image || seg.isSegmenting}
@@ -427,14 +428,14 @@ export default function Workspace() {
             </section>
             <section>
               {/*[ACTION]- show/hide masks */}
-              <button className={styles.actionBtn} disabled={!seg.segDone}
+              <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
                 onClick={() => seg.setMasksVisible(v => !v)}>
                 {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
                 {seg.masksVisible ? "Hide Masks" : "Show Masks"}
               </button>
 
               {/*[ACTION]- refine masks */}
-              <button className={styles.actionBtn} disabled={!seg.segDone}
+              <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
                 onClick={
                   refineMode
                     ? () => {
@@ -461,7 +462,7 @@ export default function Workspace() {
 
               {/* discard all changes made while refining masks*/}
               {refineMode && (
-                <button className={styles.actionBtn} onClick={refine.handleDiscard}>
+                <button type="button" className={styles.actionBtn} onClick={refine.handleDiscard}>
                   Discard
                 </button>
               )} 
@@ -496,17 +497,17 @@ export default function Workspace() {
 
                 {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
                   <>
-                    <button className={styles.actionBtn} onClick={refine.handleEnterSplit}>
+                    <button type="button" className={styles.actionBtn} onClick={refine.handleEnterSplit}>
                       Split Instance
                     </button>
-                    <button className={styles.actionBtn} onClick={refine.handleCopy}>
+                    <button type="button" className={styles.actionBtn} onClick={refine.handleCopy}>
                       Copy (⌘C)
                     </button>
                   </>
                 )}
 
                 {refine.clipboard && !refine.pasteMode && !refine.splitMode && (
-                  <button className={styles.actionBtn} onClick={refine.handleEnterPaste}>
+                  <button type="button" className={styles.actionBtn} onClick={refine.handleEnterPaste}>
                     Paste (⌘V)
                   </button>
                 )}
@@ -516,7 +517,7 @@ export default function Workspace() {
                     <p className={styles.sidebarHint}>
                       Click on image to place copied polygon
                     </p>
-                    <button className={styles.actionBtn} onClick={refine.handleCancelPaste}>
+                    <button type="button" className={styles.actionBtn} onClick={refine.handleCancelPaste}>
                       Cancel (Esc)
                     </button>
                   </>
@@ -530,14 +531,14 @@ export default function Workspace() {
                     <p className={styles.sidebarHint}>
                       Click each particle to place a seed point
                     </p>
-                    <button
+                    <button type="button"
                       className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                       disabled={refine.splitPoints.length < 2}
                       onClick={refine.handleConfirmSplit}
                     >
                       Confirm Split
                     </button>
-                    <button className={styles.actionBtn} onClick={refine.handleCancelSplit}>
+                    <button type="button" className={styles.actionBtn} onClick={refine.handleCancelSplit}>
                       Cancel Split
                     </button>
                   </>
@@ -549,28 +550,28 @@ export default function Workspace() {
             <section className={styles.sidebarSection}>
               <p className={styles.sidebarLabel}>Blackout Regions</p>
               <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                <button
+                <button type="button"
                   className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
                   onClick={() => seg.setIsInvBlackoutMode(false)}
                   disabled={!image}
                 >Exclude</button>
-                <button
+                <button type="button"
                   className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
                   onClick={() => seg.setIsInvBlackoutMode(true)}
                   disabled={!image}
                 >Isolate</button>
               </div>
-              <button className={styles.actionBtn} disabled={!image}
+              <button type="button" className={styles.actionBtn} disabled={!image}
                 onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
                 <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
               </button>
               {seg.isBlackoutMode && (
-                <button className={styles.actionBtn} onClick={handleApplyBlackout}>
+                <button type="button" className={styles.actionBtn} onClick={handleApplyBlackout}>
                   Apply
                 </button>
               )}
               {hasRegions && !seg.isBlackoutMode && (
-                <button className={styles.actionBtn} onClick={() => {
+                <button type="button" className={styles.actionBtn} onClick={() => {
                   seg.clearRegions();
                   if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
                   else liveRegionsRef.current = [];
@@ -589,7 +590,7 @@ export default function Workspace() {
             {/* [ACTION] ground truth */}
             <section className={styles.sidebarSection}>
               <p className={styles.sidebarLabel}>Ground Truth</p>
-              <button className={styles.actionBtn}
+              <button type="button" className={styles.actionBtn}
                 onClick={() => gtFileRef.current?.click()}
                 disabled={!sessionId}>
                 <Upload size={14} /> Upload GT
@@ -600,7 +601,7 @@ export default function Workspace() {
                 {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
               </p>
               {seg.gtUrl && (
-                <button className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
                   {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
                   {seg.gtVisible ? "Hide GT" : "Show GT"}
                 </button>

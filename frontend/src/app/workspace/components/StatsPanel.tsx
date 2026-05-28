@@ -49,7 +49,7 @@ interface GTScores {
 interface Metadata {
   image_shape?: number[];
   original_format?: string;
-  pixel_size?: number | null;
+  pixel_size: number | string | null;
   pixel_unit?: string | null;
   axes?: { scale: number; size: number; units: string }[];
 }
@@ -138,7 +138,7 @@ export default function StatsPanel({
 
   const unit = stats?.unit ?? "px";
   const hasScale = stats?.has_scale ?? false;
-
+  const pixelSize = metadata?.pixel_size;
   return (
     <div className={styles.panel}>
 
@@ -173,9 +173,11 @@ export default function StatsPanel({
               <div className={styles.row}>
                 <span className={styles.label}>Pixel Size</span>
                 <span className={styles.val}>
-                  {metadata.pixel_size == null || metadata.pixel_size === "-"
+                  {pixelSize == null || pixelSize === "-"
                     ? "Not Found"
-                    : metadata.pixel_size.toFixed(4)}
+                    : typeof pixelSize === "number"
+                      ? pixelSize.toFixed(4)
+                      : "Not Found"}
 
                   {metadata.pixel_unit == null || metadata.pixel_unit === "-"
                     ? ""
@@ -260,7 +262,7 @@ export default function StatsPanel({
             )}
 
             {segDone && stats && stats.particles?.length > 0 && onViewDetails && (
-              <button className={styles.detailsBtn} onClick={onViewDetails}>
+              <button type="button" className={styles.detailsBtn} onClick={onViewDetails}>
                 View Details →
               </button>
             )}
@@ -273,7 +275,7 @@ export default function StatsPanel({
       {/* ── Size Distribution ──────────────────────── */}
       {segDone && stats && stats.particles.length > 0 && (
         <section className={styles.section}>
-          <button
+          <button type="button"
             className={styles.collapseBtn}
             onClick={() => setSizeOpen(o => !o)}
           >
@@ -318,7 +320,7 @@ export default function StatsPanel({
       {/* ── Shape Distribution ─────────────────────── */}
       {segDone && stats && Object.keys(stats.shape_distribution).length > 0 && (
         <section className={styles.section}>
-          <button
+          <button type="button"
             className={styles.collapseBtn}
             onClick={() => setShapeOpen(o => !o)}
           >
