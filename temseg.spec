@@ -335,7 +335,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,      # UPX can break signed binaries on Mac
-    console=False,   # no terminal window
+    console=True,   # no terminal window
     icon=ICON_PATH,
 )
 

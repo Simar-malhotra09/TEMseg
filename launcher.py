@@ -1,6 +1,8 @@
 """
 launcher.py — TEMseg desktop application launcher.
 """
+import os
+os.environ["YOLO_AUTOINSTALL"] = "False"
 
 import json
 import hashlib
