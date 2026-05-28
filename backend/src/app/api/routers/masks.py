@@ -684,9 +684,23 @@ async def propose_similar(
     existing_areas = [i["area"] for i in instances]
     median_area = float(np.median(existing_areas))
     min_area = max(50.0, body.min_area_ratio * median_area)
+
+    # Box-prompt sweep widths derived from existing particle size distribution.
+    # The seed point fixes location; varying box width lets SAM produce a mask
+    # at multiple scales without using multimask_output (which was picking
+    # arbitrary scales unrelated to our prior).
+    sqrt_areas = np.sqrt(np.array(existing_areas, dtype=float))
+    if len(sqrt_areas) >= 4:
+        box_base = np.percentile(sqrt_areas, [25, 50, 75])
+    else:
+        # not enough samples for stable percentiles — use multiplicative widths
+        med = float(np.median(sqrt_areas))
+        box_base = np.array([0.7 * med, 1.0 * med, 1.3 * med])
+    # mild padding so SAM has context at the box edge (tight boxes clip)
+    box_widths = box_base * 1.2
     logger.info(
         f"[PROPOSE] {len(instances)} examples | median area={median_area:.0f}px | "
-        f"floor={min_area:.0f}px"
+        f"floor={min_area:.0f}px | box widths={box_widths.round(1).tolist()}"
     )
 
     # ── 2. cached SAM embedding ──────────────────────────────────────────────
@@ -761,38 +775,45 @@ async def propose_similar(
     for i, (py, px) in enumerate(peaks):
         point_coords = np.array([[float(px), float(py)]])
         point_labels = np.array([1])
-        try:
-            masks, scores, _ = predictor.predict(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                multimask_output=True,
-            )
-        except Exception as e:
-            logger.warning(f"[PROPOSE] SAM predict failed at seed {i}: {e}")
-            continue
 
-        # SAM returns 3 masks (roughly small/medium/large) for one point.
-        # Pick the one whose constrained area is closest in log-scale to the
-        # user's median annotated area — picking by score biases toward "huge",
-        # which produces the "select-everything" failure mode.
-        best_idx = -1
+        # Sweep box widths around the seed; SAM with point+box, one mask each.
+        # The box constrains scale, so multimask_output=False is sufficient.
+        best_box_idx = -1
         best_area = 0
         best_constrained = None
         best_log_dist = float("inf")
-        for k in range(masks.shape[0]):
-            m = (masks[k].astype(np.uint8) > 0) & (~existing_mask)
+        best_sam_score = 0.0
+        for k, bw in enumerate(box_widths):
+            half = float(bw) / 2.0
+            x0 = max(0.0, px - half)
+            y0 = max(0.0, py - half)
+            x1 = min(float(w_img - 1), px + half)
+            y1 = min(float(h_img - 1), py + half)
+            box = np.array([x0, y0, x1, y1])
+            try:
+                masks, scores, _ = predictor.predict(
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    box=box,
+                    multimask_output=False,
+                )
+            except Exception as e:
+                logger.warning(f"[PROPOSE] SAM predict failed at seed {i} box {k}: {e}")
+                continue
+            m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
             a = int(m.sum())
             if a < min_area or a > max_area:
                 continue
             log_dist = abs(np.log(max(a, 1.0)) - log_median)
             if log_dist < best_log_dist:
                 best_log_dist = log_dist
-                best_idx = k
+                best_box_idx = k
                 best_area = a
                 best_constrained = m
-        if best_idx < 0 or best_constrained is None:
+                best_sam_score = float(scores[0])
+        if best_box_idx < 0 or best_constrained is None:
             logger.debug(
-                f"[PROPOSE] seed {i} rejected: no mask within area window "
+                f"[PROPOSE] seed {i} rejected: no box variant within area window "
                 f"[{min_area:.0f}, {max_area:.0f}]"
             )
             continue
@@ -838,9 +859,10 @@ async def propose_similar(
                 "contour": approx.tolist(),
                 "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
                 "area": area,
-                "sam_score": float(scores[best_idx]),
+                "sam_score": best_sam_score,
                 "similarity": seed_sim,
                 "seed": [int(px), int(py)],
+                "box_width": float(box_widths[best_box_idx]),
             }
         )
         # block this region from being re-proposed by later seeds
