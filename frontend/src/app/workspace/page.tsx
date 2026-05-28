@@ -132,9 +132,13 @@ export default function Workspace() {
   const [refineMode, setRefineMode] = useState(false);
   const [refineDone, setRefineDone] = useState(false);
 
-  // bootstrap mode — click points on the image to add particles via SAM
+  // bootstrap mode — click points on the image to propose particles via SAM.
+  // Each click adds to `pendingProposals` (rendered as a yellow overlay).
+  // Accept commits the whole batch via the existing PUT instances endpoint;
+  // Discard or per-proposal click-to-reject clears them without a server call.
   const [bootstrapMode, setBootstrapMode] = useState(false);
   const [bootstrapBusy, setBootstrapBusy] = useState(false);
+  const [pendingProposals, setPendingProposals] = useState<Instance[]>([]);
 
 
   // segmentation hook
@@ -272,8 +276,8 @@ export default function Workspace() {
   }
 
 
-  // Bootstrap click → POST /from-points with the single image-space coord,
-  // then refresh seg state (mask + stats) so the new particle shows immediately.
+  // Bootstrap click → POST /from-points, append returned proposal(s) to
+  // pendingProposals. Nothing is committed until the user hits Accept.
   async function handleBootstrapClick(e: React.MouseEvent<HTMLDivElement>) {
     if (!sessionId || bootstrapBusy) return;
     if (imgSize.width === 0 || imgSize.height === 0) return;
@@ -282,22 +286,18 @@ export default function Workspace() {
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
 
     setBootstrapBusy(true);
-    setStatus(`Adding particle at (${imgX.toFixed(0)}, ${imgY.toFixed(0)})...`);
+    setStatus(`Proposing particle at (${imgX.toFixed(0)}, ${imgY.toFixed(0)})...`);
     try {
-      const res = await fromPoints(sessionId, [[imgX, imgY]]);
-      if (res.new_instances.length === 0) {
+      const res = await fromPoints(sessionId, [[imgX, imgY]], pendingProposals);
+      if (res.proposals.length === 0) {
         const reason = res.rejected[0]?.reason ?? "unknown";
         setStatus(`Click rejected: ${reason}`);
         return;
       }
-      // Update seg state so the colored mask + stats refresh inline.
-      seg.setMaskUrl(`${BASE_URL}${res.mask_url}?t=${Date.now()}`);
-      seg.setStats(res.stats);
-      seg.setSegDone(true);
-      seg.setMasksVisible(true);
-      const added = res.new_instances[0];
+      const added = res.proposals[0];
+      setPendingProposals(prev => [...prev, ...res.proposals]);
       setStatus(
-        `Added particle #${added.id} (area ${added.area}px, SAM score ${added.sam_score?.toFixed(2)}).`,
+        `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
       );
     } catch (err) {
       console.error("bootstrap click failed:", err);
@@ -305,6 +305,44 @@ export default function Workspace() {
     } finally {
       setBootstrapBusy(false);
     }
+  }
+
+  // Commit all pending proposals: fetch current on-disk instances, merge with
+  // pending, PUT the combined list. PUT already regenerates mask.png + stats.
+  async function handleAcceptProposals() {
+    if (!sessionId || pendingProposals.length === 0) return;
+    setBootstrapBusy(true);
+    setStatus(`Committing ${pendingProposals.length} proposal(s)...`);
+    try {
+      const existing: Instance[] = await getInstances(sessionId)
+        .then(r => r.instances ?? [])
+        .catch(() => []);
+      const combined = [...existing, ...pendingProposals];
+      const result = await saveInstances(sessionId, combined);
+      seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+      if (result.stats) seg.setStats(result.stats);
+      seg.setSegDone(true);
+      seg.setMasksVisible(true);
+      setLoadedInstances(combined);
+      const n = pendingProposals.length;
+      setPendingProposals([]);
+      setStatus(`Added ${n} particle(s).`);
+    } catch (err) {
+      console.error("accept proposals failed:", err);
+      setStatus(`Accept failed: ${(err as Error).message}`);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
+  function handleDiscardProposals() {
+    if (pendingProposals.length === 0) return;
+    setPendingProposals([]);
+    setStatus("Discarded pending proposals.");
+  }
+
+  function handleRejectProposal(id: number) {
+    setPendingProposals(prev => prev.filter(p => p.id !== id));
   }
 
   async function enterRefineMode() {
@@ -549,16 +587,41 @@ export default function Workspace() {
                 </button>
               )}
 
-              {/* bootstrap mode — click on the image to add particles via SAM
-                  point-prompt. Disabled while refining (refine has its own canvas). */}
+              {/* bootstrap mode — click on the image to *propose* particles via
+                  SAM point-prompt. Requires a prior /segment run so the SAM
+                  image embedding is cached server-side (the backend 400s
+                  otherwise, but the disabled state is the clean UX). */}
               <button
                 className={styles.actionBtn}
-                disabled={!sessionId || refineMode}
+                disabled={!sessionId || refineMode || !seg.segDone}
                 onClick={() => setBootstrapMode(b => !b)}
+                title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
               >
                 <MousePointerClick size={14} />
                 {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
               </button>
+
+              {pendingProposals.length > 0 && (
+                <>
+                  <button
+                    className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                    onClick={handleAcceptProposals}
+                    disabled={bootstrapBusy}
+                  >
+                    Accept {pendingProposals.length} Proposal{pendingProposals.length === 1 ? "" : "s"}
+                  </button>
+                  <button
+                    className={styles.actionBtn}
+                    onClick={handleDiscardProposals}
+                    disabled={bootstrapBusy}
+                  >
+                    Discard
+                  </button>
+                  <p className={styles.sidebarHint}>
+                    Click a proposal on the canvas to reject it individually.
+                  </p>
+                </>
+              )}
           </section>
           <section>
               {sessionId && (
@@ -834,6 +897,45 @@ export default function Workspace() {
                       pointerEvents: "auto",
                     }}
                   />
+                )}
+
+                {/* pending proposals overlay — yellow outlines, click to reject.
+                    Sits above the bootstrap click-capture so reject clicks
+                    aren't swallowed as new proposals. */}
+                {pendingProposals.length > 0 && !refineMode && !seg.isBlackoutMode && imgSize.width > 0 && (
+                  <svg
+                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      pointerEvents: "none",
+                      zIndex: 11,
+                    }}
+                  >
+                    {pendingProposals.map(p => {
+                      if (!p.contour || p.contour.length < 3) return null;
+                      const pts = p.contour.map(([x, y]) => `${x},${y}`).join(" ");
+                      return (
+                        <g key={p.id}>
+                          <polygon
+                            points={pts}
+                            fill="#ffd166"
+                            fillOpacity={0.18}
+                            stroke="#ffd166"
+                            strokeWidth={2}
+                            style={{ pointerEvents: "auto", cursor: "pointer" }}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              handleRejectProposal(p.id);
+                            }}
+                          >
+                            <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
+                          </polygon>
+                        </g>
+                      );
+                    })}
+                  </svg>
                 )}
 
                 {/* GT overlay */}
