@@ -688,6 +688,33 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     proposals: list[dict] = []
     rejected: list[dict] = []
 
+    # Build a size prior from disk + pending if any. With ≥1 example, swap each
+    # click's SAM call from multimask=True to a box-sweep whose widths come from
+    # sqrt(area) percentiles of the prior, mirroring /propose-similar's per-seed
+    # logic. This makes click-produced masks track the user's annotated scale
+    # rather than depending on SAM's arbitrary multimask scale lottery.
+    prior_areas = [float(i["area"]) for i in instances] + [
+        float(p["area"]) for p in body.pending if p.get("area")
+    ]
+    has_prior = len(prior_areas) > 0
+    if has_prior:
+        sqrt_areas = np.sqrt(np.array(prior_areas, dtype=float))
+        if len(sqrt_areas) >= 4:
+            box_base = np.percentile(sqrt_areas, [25, 50, 75])
+        else:
+            med = float(np.median(sqrt_areas))
+            box_base = np.array([0.7 * med, 1.0 * med, 1.3 * med])
+        box_widths = box_base * 1.2
+        log_median = float(np.log(max(float(np.median(prior_areas)), 1.0)))
+        logger.info(
+            f"[FROM-POINTS] Size prior from {len(prior_areas)} examples | "
+            f"box widths={box_widths.round(1).tolist()}"
+        )
+    else:
+        box_widths = None
+        log_median = None
+        logger.info("[FROM-POINTS] No prior — falling back to multimask scale picker")
+
     for i, point in enumerate(body.points):
         if len(point) != 2:
             rejected.append({"index": i, "reason": "malformed point"})
@@ -697,31 +724,74 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             rejected.append({"index": i, "reason": "point out of bounds"})
             continue
 
-        try:
-            masks, scores, _ = predictor.predict(
-                point_coords=np.array([[px, py]]),
-                point_labels=np.array([1]),
-                multimask_output=True,
-            )
-        except Exception as e:
-            logger.warning(f"[FROM-POINTS] SAM predict failed at click {i}: {e}")
-            rejected.append({"index": i, "reason": f"SAM error: {e}"})
-            continue
+        constrained: np.ndarray | None = None
+        area = 0
+        chosen_sam_score = 0.0
 
-        pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
-        if pick is None:
-            rejected.append({"index": i, "reason": "no SAM output within area window"})
-            continue
-        best_idx, area, raw = pick
-
-        # drop pixels already inside another instance (including ones just created)
-        constrained = (raw > 0) & (~existing_mask)
-        area = int(constrained.sum())
-        if area < body.min_area:
-            rejected.append(
-                {"index": i, "reason": f"after constraint area={area} < min"}
-            )
-            continue
+        if has_prior:
+            # Box-sweep around the click, widths from sqrt(area) percentiles.
+            # multimask=False since box already disambiguates scale.
+            best_log_dist = float("inf")
+            for k, bw in enumerate(box_widths):
+                half = float(bw) / 2.0
+                x0 = max(0.0, px - half)
+                y0 = max(0.0, py - half)
+                x1 = min(float(w_img - 1), px + half)
+                y1 = min(float(h_img - 1), py + half)
+                try:
+                    masks, scores, _ = predictor.predict(
+                        point_coords=np.array([[px, py]]),
+                        point_labels=np.array([1]),
+                        box=np.array([x0, y0, x1, y1]),
+                        multimask_output=False,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[FROM-POINTS] SAM predict failed at click {i} box {k}: {e}"
+                    )
+                    continue
+                m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
+                a = int(m.sum())
+                if a < body.min_area or a > max_area:
+                    continue
+                log_dist = abs(np.log(max(a, 1.0)) - log_median)
+                if log_dist < best_log_dist:
+                    best_log_dist = log_dist
+                    constrained = m
+                    area = a
+                    chosen_sam_score = float(scores[0])
+            if constrained is None:
+                rejected.append(
+                    {"index": i, "reason": "no box variant within area window"}
+                )
+                continue
+        else:
+            # No prior — fall back to the original multimask + smallest-in-window pick.
+            try:
+                masks, scores, _ = predictor.predict(
+                    point_coords=np.array([[px, py]]),
+                    point_labels=np.array([1]),
+                    multimask_output=True,
+                )
+            except Exception as e:
+                logger.warning(f"[FROM-POINTS] SAM predict failed at click {i}: {e}")
+                rejected.append({"index": i, "reason": f"SAM error: {e}"})
+                continue
+            pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
+            if pick is None:
+                rejected.append(
+                    {"index": i, "reason": "no SAM output within area window"}
+                )
+                continue
+            best_idx, _, raw = pick
+            constrained = (raw > 0) & (~existing_mask)
+            area = int(constrained.sum())
+            if area < body.min_area:
+                rejected.append(
+                    {"index": i, "reason": f"after constraint area={area} < min"}
+                )
+                continue
+            chosen_sam_score = float(scores[best_idx])
 
         constrained_u8 = constrained.astype(np.uint8)
         contours, _ = cv.findContours(
@@ -743,7 +813,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             "contour": approx.tolist(),
             "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)},
             "area": area,
-            "sam_score": float(scores[best_idx]),
+            "sam_score": chosen_sam_score,
             "source": "click",
         }
         proposals.append(inst)
