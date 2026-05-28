@@ -369,3 +369,11 @@ async def get_yolo_boxes_debug(session_id: str):
     if not path.exists():
         return {"error": "No YOLO boxes debug image — run segmentation with YoloSAM first"}
     return FileResponse(path)
+
+
+@router.get("/{session_id}/proposals-debug")
+async def get_proposals_debug(session_id: str):
+    path = SESSIONS_DIR / session_id / "proposals_debug.png"
+    if not path.exists():
+        return {"error": "No proposals debug image — call /masks/{session_id}/propose-similar first"}
+    return FileResponse(path)

@@ -9,11 +9,12 @@ import {
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, proposeSimilar } from "@/lib/api";
-import { MousePointerClick, Sparkles } from "lucide-react";
+import { MousePointerClick, Sparkles, PenTool } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
 import RefineCanvas from "./components/RefineCanvas";
+import AnnotateCanvas from "./components/AnnotateCanvas";
 import ExportPanel from "./components/ExportPanel";
 import StatsPanel from "./components/StatsPanel";
 import StatsDetailView from "./components/StatsDetailView";
@@ -139,6 +140,12 @@ export default function Workspace() {
   const [bootstrapMode, setBootstrapMode] = useState(false);
   const [bootstrapBusy, setBootstrapBusy] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<Instance[]>([]);
+
+  // manual annotation mode — for the zero-detection case where SAM-with-point
+  // also can't help (small/clumped/OOD particles). User draws polygons from
+  // scratch; each closed polygon becomes a pendingProposal and follows the
+  // same Accept/Discard commit flow.
+  const [annotateMode, setAnnotateMode] = useState(false);
 
 
   // segmentation hook
@@ -353,6 +360,47 @@ export default function Workspace() {
     setPendingProposals(prev => prev.filter(p => p.id !== id));
   }
 
+  // Turn a manually-drawn polygon into a pending proposal. IDs are placeholder
+  // (renumbered on Accept against the on-disk max), so any unique-within-batch
+  // value works — using a large negative number to make manual entries obvious
+  // in logs/debug overlays alongside server-issued positive IDs.
+  function handlePolygonComplete(contour: [number, number][]) {
+    if (contour.length < 3) return;
+    const xs = contour.map(p => p[0]);
+    const ys = contour.map(p => p[1]);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+    // shoelace formula — true polygon area
+    let s = 0;
+    for (let i = 0; i < contour.length; i++) {
+      const [x1, y1] = contour[i];
+      const [x2, y2] = contour[(i + 1) % contour.length];
+      s += x1 * y2 - x2 * y1;
+    }
+    const area = Math.round(Math.abs(s) / 2);
+    // Placeholder ID — keep stepping down so rejecting a middle polygon
+    // can't cause a collision when a later annotation reuses the freed slot.
+    // Renumbered against the on-disk max on Accept.
+    const minId = pendingProposals.reduce((m, p) => Math.min(m, p.id), 0);
+    const placeholderId = minId - 1;
+    const proposal: Instance = {
+      id: placeholderId,
+      contour,
+      bbox: {
+        x: Math.round(minX),
+        y: Math.round(minY),
+        w: Math.round(maxX - minX),
+        h: Math.round(maxY - minY),
+      },
+      area,
+      source: "manual",
+    };
+    setPendingProposals(prev => [...prev, proposal]);
+    setStatus(`Annotated particle (area ${area}px) — ${pendingProposals.length + 1} pending. Accept to commit.`);
+  }
+
   // Call /propose-similar — uses existing on-disk instances as the prior,
   // returns SAM box-sweep candidates. Appended to pendingProposals so the
   // same yellow-overlay accept/reject UX handles them.
@@ -415,7 +463,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -626,13 +674,30 @@ export default function Workspace() {
                   otherwise, but the disabled state is the clean UX). */}
               <button
                 className={styles.actionBtn}
-                disabled={!sessionId || refineMode || !seg.segDone}
+                disabled={!sessionId || refineMode || annotateMode || !seg.segDone}
                 onClick={() => setBootstrapMode(b => !b)}
                 title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
               >
                 <MousePointerClick size={14} />
                 {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
               </button>
+
+              {/* manual annotation — fallback when both YOLO and SAM-with-point
+                  fail (small / clumped / OOD particles). Doesn't require a
+                  prior /segment run since it doesn't use any model output. */}
+              <button
+                className={styles.actionBtn}
+                disabled={!sessionId || refineMode || bootstrapMode}
+                onClick={() => setAnnotateMode(m => !m)}
+              >
+                <PenTool size={14} />
+                {annotateMode ? "Stop Annotating" : "Annotate Manually"}
+              </button>
+              {annotateMode && (
+                <p className={styles.sidebarHint}>
+                  Click to place vertices · Enter or double-click to close · Backspace undoes · Esc cancels.
+                </p>
+              )}
 
               {/* propose-similar: build a SAM-embedding prior from existing
                   annotations and find more candidates across the image. Needs
@@ -642,6 +707,7 @@ export default function Workspace() {
                 disabled={
                   !sessionId ||
                   refineMode ||
+                  annotateMode ||
                   !seg.segDone ||
                   !(seg.stats?.particle_count ?? 0) ||
                   bootstrapBusy
@@ -849,12 +915,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -866,7 +932,7 @@ export default function Workspace() {
                   className={styles.temImage}
                   style={{
                     display: "block",
-                    visibility: seg.isBlackoutMode || refineMode ? "hidden" : "visible",
+                    visibility: seg.isBlackoutMode || refineMode || annotateMode ? "hidden" : "visible",
                   }}
                   onLoad={e => setImgSize({
                     width: e.currentTarget.naturalWidth,
@@ -938,6 +1004,18 @@ export default function Workspace() {
                     opacity: 0.5, mixBlendMode: "screen",
                     pointerEvents: "none",
                   }} />
+                )}
+
+                {/* manual annotation canvas — SVG overlay, in image-space */}
+                {annotateMode && !refineMode && image && imgSize.width > 0 && (
+                  <AnnotateCanvas
+                    imageSrc={image}
+                    imgWidth={imgSize.width}
+                    imgHeight={imgSize.height}
+                    viewportWidth={viewportSize.width}
+                    viewportHeight={viewportSize.height}
+                    onPolygonComplete={handlePolygonComplete}
+                  />
                 )}
 
                 {/* bootstrap click capture — sits on top, transparent, catches clicks */}

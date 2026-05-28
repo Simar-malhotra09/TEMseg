@@ -138,13 +138,26 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
         _, labeled_old = cached
         shape = labeled_old.shape
     else:
+        # No prior instances — happens when user is annotating from scratch
+        # (zero-detection case). Prefer mask.png if /segment was run, else fall
+        # back to original_preview.png which is always present post-upload.
+        shape = None
         mask_path = session_dir / "mask.png"
-        if not mask_path.exists():
+        if mask_path.exists():
+            mask_bgr = cv.imread(str(mask_path))
+            if mask_bgr is not None:
+                shape = mask_bgr.shape[:2]
+        if shape is None:
+            preview_path = session_dir / "original_preview.png"
+            if preview_path.exists():
+                preview = cv.imread(str(preview_path))
+                if preview is not None:
+                    shape = preview.shape[:2]
+        if shape is None:
             raise HTTPException(
-                status_code=404, detail="No mask found to infer image shape"
+                status_code=404,
+                detail="No mask or preview found to infer image shape",
             )
-        mask_bgr = cv.imread(str(mask_path))
-        shape = mask_bgr.shape[:2]
 
     logger.info(f"[MASKS] Rasterizing into shape {shape}")
     labeled = rasterize_instances(req.instances, shape)
