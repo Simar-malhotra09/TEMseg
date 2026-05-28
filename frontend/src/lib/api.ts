@@ -188,7 +188,7 @@ export async function getModels(): Promise<string[]> {
 
 export async function getSessionMetadata(
   sessionId: string,
-): Promise<Record<string, any> | null> {
+): Promise<Metadata | null> {
   // Used to validate a session exists on refresh (?session=... restore).
   // Returns metadata dict on 200, null on 404 (session evicted/deleted).
   const res = await fetch(`${BASE_URL}/images/${sessionId}/metadata`);

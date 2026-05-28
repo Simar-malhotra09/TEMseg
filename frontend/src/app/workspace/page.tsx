@@ -8,11 +8,8 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-<<<<<<< HEAD
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, Metadata } from "@/lib/api";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances,Metadata } from "@/lib/api";
->>>>>>> feat/windows-build
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
@@ -721,7 +718,7 @@ export default function Workspace() {
                   SAM point-prompt. Requires a prior /segment run so the SAM
                   image embedding is cached server-side (the backend 400s
                   otherwise, but the disabled state is the clean UX). */}
-              <button
+              <button type="button" 
                 className={styles.actionBtn}
                 disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
                 onClick={() => setBootstrapMode(b => !b)}
@@ -734,7 +731,7 @@ export default function Workspace() {
               {/* box-prompt annotation — drag a tight box, SAM segments inside.
                   Preferred over click-to-add for OOD particles where point
                   prompts bleed; preferred over polygon for speed. */}
-              <button
+              <button type="button" 
                 className={styles.actionBtn}
                 disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
                 onClick={() => setBoxMode(m => !m)}
@@ -752,7 +749,7 @@ export default function Workspace() {
               {/* manual annotation — fallback when both YOLO and SAM-with-point
                   fail (small / clumped / OOD particles). Doesn't require a
                   prior /segment run since it doesn't use any model output. */}
-              <button
+              <button type="button" 
                 className={styles.actionBtn}
                 disabled={!sessionId || refineMode || bootstrapMode || boxMode}
                 onClick={() => setAnnotateMode(m => !m)}
@@ -769,7 +766,7 @@ export default function Workspace() {
               {/* propose-similar: build a SAM-embedding prior from existing
                   annotations and find more candidates across the image. Needs
                   at least one annotated particle to construct the prior. */}
-              <button
+              <button type="button" 
                 className={styles.actionBtn}
                 disabled={
                   !sessionId ||
@@ -793,14 +790,14 @@ export default function Workspace() {
 
               {pendingProposals.length > 0 && (
                 <>
-                  <button
+                  <button type="button" 
                     className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                     onClick={handleAcceptProposals}
                     disabled={bootstrapBusy}
                   >
                     Accept {pendingProposals.length} Proposal{pendingProposals.length === 1 ? "" : "s"}
                   </button>
-                  <button
+                  <button type="button" 
                     className={styles.actionBtn}
                     onClick={handleDiscardProposals}
                     disabled={bootstrapBusy}
