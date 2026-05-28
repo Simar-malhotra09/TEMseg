@@ -2,6 +2,7 @@ node_modules/
 __pycache__/
 .env
 *.pyc
+*.zip
 .next/
 .DS_Store
 backend/uv_venv/
@@ -30,3 +31,5 @@ nanoDetect/
 rthook_hyperspy.py
 temseg_icon.ico
 FEATURES.md
+data.zip 
+test_build_mac.sh
