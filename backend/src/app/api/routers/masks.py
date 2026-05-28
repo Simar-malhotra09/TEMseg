@@ -55,6 +55,10 @@ class InstancesResponse(BaseModel):
 class FromPointsRequest(BaseModel):
     # image-space points where each click should become a particle
     points: list[list[float]]  # [[x, y], ...]
+    # not-yet-committed proposals from prior clicks in this bootstrap session.
+    # Painted into the dedup mask so a new click in/near a pending proposal
+    # is rejected instead of producing an overlapping mask.
+    pending: list[dict] = []
     # reject SAM masks whose area > this fraction of the full image
     # (kills "select everything" failures on background clicks)
     max_image_fraction: float = 0.05
@@ -378,10 +382,10 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
 # /masks/{session_id}/from-points
 #
 # Bootstrap mode for "YOLO found nothing" — user clicks 1-N particles, each
-# click becomes an instance via SAM single-point predict. Mirrors /split's
-# predictor-restore pattern but creates *new* instances rather than splitting
-# an existing blob. Auto-saves to instances.json + regenerates mask.png so
-# the user immediately sees the result and can chain into /propose-similar.
+# click is turned into a *proposal* via SAM single-point predict. The proposal
+# is returned only (no disk write). The frontend overlays it; the user can
+# reject individual proposals or accept the batch, at which point the existing
+# PUT /masks/.../instances commits them (save + mask.png + stats in one pass).
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -408,9 +412,7 @@ def _pick_smallest_safe_mask(
 @router.post("/{session_id}/from-points")
 async def from_points(session_id: str, body: FromPointsRequest, request: Request):
     t_start = time.time()
-    logger.info(
-        f"[FROM-POINTS] session={session_id} | {len(body.points)} click(s)"
-    )
+    logger.info(f"[FROM-POINTS] session={session_id} | {len(body.points)} click(s)")
 
     if not body.points:
         raise HTTPException(status_code=400, detail="No points provided")
@@ -421,6 +423,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     cached = load_instances(session_dir)
     if cached is not None:
         instances, labeled = cached
+        labeled = labeled.copy()  # avoid mutating the cached array with pending paint
     else:
         # No instances on disk yet — infer shape from mask.png if present,
         # otherwise from the original_preview.png.
@@ -443,6 +446,14 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             )
         instances = []
         labeled = np.zeros(shape, dtype=np.uint16)
+
+    # paint pending (uncommitted) proposals into the dedup mask so a new click
+    # that lands on/near one is rejected rather than producing an overlap.
+    for p in body.pending:
+        contour = np.array(p.get("contour", []), dtype=np.int32)
+        pid = int(p.get("id", 0))
+        if contour.ndim == 2 and len(contour) >= 3 and pid > 0:
+            cv.fillPoly(labeled, [contour], color=pid)
 
     # ── restore SAM predictor state from cached embedding ────────────────────
     embedding_cache = getattr(request.app.state, "embedding_cache", {})
@@ -472,9 +483,10 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     )
 
     # ── SAM predict per click ────────────────────────────────────────────────
-    existing_mask = (labeled > 0)
-    next_id = (max(i["id"] for i in instances) + 1) if instances else 1
-    new_instances: list[dict] = []
+    existing_mask = labeled > 0
+    all_ids = [i["id"] for i in instances] + [int(p.get("id", 0)) for p in body.pending]
+    next_id = (max(all_ids) + 1) if all_ids else 1
+    proposals: list[dict] = []
     rejected: list[dict] = []
 
     for i, point in enumerate(body.points):
@@ -499,9 +511,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
 
         pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
         if pick is None:
-            rejected.append(
-                {"index": i, "reason": "no SAM output within area window"}
-            )
+            rejected.append({"index": i, "reason": "no SAM output within area window"})
             continue
         best_idx, area, raw = pick
 
@@ -537,58 +547,28 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             "sam_score": float(scores[best_idx]),
             "source": "click",
         }
-        new_instances.append(inst)
-        # paint into labeled + existing_mask so subsequent clicks don't overlap
+        proposals.append(inst)
+        # paint into labeled + existing_mask so subsequent clicks (within this
+        # same request) don't overlap. Not persisted to disk — caller commits.
         cv.fillPoly(labeled, [approx.astype(np.int32)], color=next_id)
         existing_mask = existing_mask | constrained
         next_id += 1
 
-    if not new_instances:
+    if not proposals:
         raise HTTPException(
             status_code=400,
             detail=f"All {len(body.points)} clicks rejected: {rejected}",
         )
 
-    # ── persist updated instances + regenerate mask.png ──────────────────────
-    updated = instances + new_instances
-    save_instances(session_dir, updated, labeled)
-
-    colored = colorize_labeled_mask(labeled)
-    cv.imwrite(str(session_dir / "mask.png"), colored)
-    logger.info(f"[FROM-POINTS] Regenerated mask.png with {len(updated)} instances")
-
-    # recompute stats (mirrors api_save_instances)
-    pixel_size = None
-    pixel_unit = None
-    meta_path = session_dir / "metadata.json"
-    if meta_path.exists():
-        with open(meta_path) as f:
-            meta = json.load(f)
-        pixel_size = meta.get("pixel_size")
-        pixel_unit = meta.get("pixel_unit")
-
-    binary = (labeled > 0).astype(np.uint8)
-    stats = compute_stats_from_instances(
-        updated,
-        binary,
-        pixel_size=pixel_size,
-        pixel_unit=pixel_unit,
-        labeled_mask=labeled,
-    )
-    with open(session_dir / "stats.json", "w") as f:
-        json.dump(stats, f)
-
     t_total = time.time() - t_start
     logger.info(
-        f"[FROM-POINTS] Created {len(new_instances)} / {len(body.points)} clicks "
+        f"[FROM-POINTS] Proposed {len(proposals)} / {len(body.points)} clicks "
         f"| rejected={len(rejected)} | total={t_total:.2f}s"
     )
 
     return {
-        "new_instances": new_instances,
+        "proposals": proposals,
         "rejected": rejected,
-        "mask_url": f"/images/{session_id}/mask",
-        "stats": stats,
         "elapsed": round(t_total, 3),
     }
 
@@ -634,7 +614,9 @@ def _instance_prototype(
     )
     inside = np.isin(labeled_small, instance_ids)
     if not inside.any():
-        raise ValueError("No example pixels mapped onto embedding grid — instances too small")
+        raise ValueError(
+            "No example pixels mapped onto embedding grid — instances too small"
+        )
     vecs = feat_map[inside]
     proto = vecs.mean(axis=0)
     n = np.linalg.norm(proto)

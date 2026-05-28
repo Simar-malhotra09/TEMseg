@@ -199,22 +199,25 @@ export async function getStats(sessionId: string): Promise<StatsResult | null> {
 }
 
 export interface FromPointsResponse {
-  new_instances: Instance[];
+  proposals: Instance[];
   rejected: { index: number; reason: string }[];
-  mask_url: string;
-  stats: StatsResult;
   elapsed: number;
 }
 
 export async function fromPoints(
   sessionId: string,
   points: [number, number][],
+  pending: Instance[],
 ): Promise<FromPointsResponse> {
-  // Each click becomes a particle via SAM single-point predict on the backend.
+  // Each click becomes a *proposal* via SAM single-point predict on the backend.
+  // Nothing is persisted — caller commits accepted proposals via saveInstances.
+  // `pending` is the list of not-yet-committed proposals from prior clicks in
+  // this bootstrap session; the backend paints them into its dedup mask so a
+  // new click on/near one is rejected instead of producing an overlap.
   const res = await fetch(`${BASE_URL}/masks/${sessionId}/from-points`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ points }),
+    body: JSON.stringify({ points, pending }),
   });
   if (!res.ok) {
     const err = await res.text();
