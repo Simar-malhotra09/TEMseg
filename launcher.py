@@ -443,37 +443,136 @@ LOADING_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #1a1a2e;
-    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f0f12;
+    color: #c8c6c1;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100vh;
+    overflow: hidden;
   }
-  .container { text-align: center; max-width: 420px; padding: 2rem; }
-  h1 { font-size: 1.6rem; margin-bottom: 0.5rem; color: #ffffff; }
-  .status { font-size: 0.95rem; color: #a0a0b8; margin-top: 1rem; min-height: 1.4em; }
+  .bg-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(126,232,162,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(126,232,162,0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+  }
+  .container {
+    position: relative;
+    text-align: center;
+    max-width: 440px;
+    padding: 2rem;
+    z-index: 1;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1.2rem;
+  }
+  .logo-mark {
+    width: 28px; height: 28px;
+    border: 2px solid #7ee8a2;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #7ee8a2;
+    font-weight: 700;
+    font-size: 13px;
+  }
+  h1 { font-size: 1.5rem; font-weight: 600; color: #e8e6e1; letter-spacing: -0.02em; }
+  .spinner-wrap {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin: 1.2rem 0 0.6rem;
+  }
+  .dot {
+    width: 7px; height: 7px;
+    background: #7ee8a2;
+    border-radius: 50%;
+    animation: bounce 1.2s infinite ease-in-out;
+  }
+  .dot:nth-child(2) { animation-delay: 0.15s; opacity: 0.7; }
+  .dot:nth-child(3) { animation-delay: 0.3s; opacity: 0.5; }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-10px); }
+  }
+  .status {
+    font-size: 0.9rem;
+    color: #888;
+    margin-top: 0.4rem;
+    min-height: 1.5em;
+  }
   .progress-outer {
-    width: 100%; height: 6px; background: #2a2a4a;
-    border-radius: 3px; margin-top: 0.8rem; overflow: hidden;
+    width: 100%; height: 5px;
+    background: #1a1a1e;
+    border-radius: 3px;
+    margin-top: 0.9rem;
+    overflow: hidden;
+    border: 1px solid #1f1f23;
   }
   .progress-inner {
-    height: 100%; width: 0%; background: #6c63ff;
-    border-radius: 3px; transition: width 0.3s ease;
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #7ee8a2, #5bc48a);
+    border-radius: 3px;
+    transition: width 0.35s ease;
   }
-  .error { color: #ff6b6b; font-size: 0.9rem; margin-top: 1rem; white-space: pre-wrap; }
+  .steps {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.6rem;
+    font-size: 0.7rem;
+    color: #444;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .steps .active { color: #7ee8a2; }
+  .error {
+    color: #e87e7e;
+    font-size: 0.85rem;
+    margin-top: 1rem;
+    white-space: pre-wrap;
+    line-height: 1.4;
+    background: rgba(232,126,126,0.06);
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(232,126,126,0.15);
+  }
+  .footer {
+    margin-top: 1.2rem;
+    font-size: 0.7rem;
+    color: #333;
+  }
 </style>
 </head>
 <body>
+<div class="bg-grid"></div>
 <div class="container">
-  <h1>TEMseg</h1>
+  <div class="brand">
+    <div class="logo-mark">T</div>
+    <h1>TEMseg</h1>
+  </div>
+  <div class="spinner-wrap">
+    <div class="dot"></div>
+    <div class="dot"></div>
+    <div class="dot"></div>
+  </div>
   <div class="status" id="status">Checking model weights…</div>
   <div class="progress-outer"><div class="progress-inner" id="bar"></div></div>
+  <div class="steps" id="steps">
+    <span id="step-weights">Weights</span>
+    <span id="step-backend">Backend</span>
+    <span id="step-models">Models</span>
+    <span id="step-ready">Ready</span>
+  </div>
   <div class="error" id="error"></div>
+  <div class="footer">First launch may take a few minutes</div>
 </div>
 <script>
   function setStatus(msg) {
@@ -481,9 +580,19 @@ LOADING_HTML = """
   }
   function setProgress(pct) {
     document.getElementById("bar").style.width = pct + "%";
+    if (pct < 30) { setStep("weights"); }
+    else if (pct < 60) { setStep("backend"); }
+    else if (pct < 90) { setStep("models"); }
+    else { setStep("ready"); }
+  }
+  function setStep(id) {
+    ["weights","backend","models","ready"].forEach(s => {
+      document.getElementById("step-"+s).classList.toggle("active", s === id);
+    });
   }
   function setError(msg) {
     document.getElementById("error").textContent = msg;
+    document.querySelector(".spinner-wrap").style.display = "none";
   }
 </script>
 </body>
