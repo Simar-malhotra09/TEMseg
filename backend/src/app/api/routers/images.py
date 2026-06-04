@@ -13,10 +13,16 @@ import sys
 import os
 from rsciio.emd import file_reader
 from app.api.live_models import AvailableModels
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/images")
 logger = logging.getLogger("routes.images")
 SESSIONS_DIR = Path("sessions")
+
+
+class UpdateMetadataRequest(BaseModel):
+    pixel_size: float | None = None
+    pixel_unit: str | None = None
 
 
 def _ensure_rsciio_plugins():
@@ -205,6 +211,55 @@ async def get_metadata(session_id: str):
         return {"pixel_size": None, "pixel_unit": None}
     with open(path) as f:
         return json.load(f)
+
+
+@router.put("/{session_id}/metadata")
+async def update_metadata(session_id: str, req: UpdateMetadataRequest):
+    """Update pixel size / unit in session metadata and recompute stats if available."""
+    session_dir = SESSIONS_DIR / session_id
+    meta_path = session_dir / "metadata.json"
+    if not meta_path.exists():
+        return {"error": "Session metadata not found"}
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    if req.pixel_size is not None:
+        meta["pixel_size"] = req.pixel_size
+    if req.pixel_unit is not None:
+        meta["pixel_unit"] = req.pixel_unit
+
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+
+    # Recompute stats if we have instances + mask so the UI stays consistent
+    stats_path = session_dir / "stats.json"
+    if stats_path.exists():
+        try:
+            from app.api.instances import load_instances
+            from app.models.helpers.compute_stats import compute_stats_from_instances
+
+            cached = load_instances(session_dir)
+            if cached is not None:
+                instances, labeled = cached
+                binary = (labeled > 0).astype(np.uint8)
+                stats = compute_stats_from_instances(
+                    instances,
+                    binary,
+                    pixel_size=meta.get("pixel_size"),
+                    pixel_unit=meta.get("pixel_unit"),
+                    labeled_mask=labeled,
+                )
+                with open(stats_path, "w") as f:
+                    json.dump(stats, f)
+                logger.info(
+                    f"[META] Recomputed stats after pixel_size update | session={session_id}"
+                )
+                return {"metadata": meta, "stats": stats}
+        except Exception as e:
+            logger.warning(f"[META] Stats recompute failed after pixel_size update: {e}")
+
+    return {"metadata": meta}
 
 
 @router.post("/upload")
