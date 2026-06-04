@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X, Ruler } from "lucide-react";
 import styles from "./StatsPanel.module.css";
 import type { StatsResult } from "@/lib/api";
 import { updatePixelSize } from "@/lib/api";
@@ -62,8 +62,12 @@ interface Props {
   stats: StatsResult | null;
   segDone: boolean;
   groundTruthScore: GTScores | null;
+  scaleBarMode: boolean;
+  scaleBarPixels: number | null;
   onViewDetails?: () => void;
   onMetadataUpdate?: (metadata: Metadata, stats?: StatsResult) => void;
+  onToggleScaleBar?: () => void;
+  onScaleBarCancel?: () => void;
 }
 
 function fmt(val: number, decimals = 3): string {
@@ -132,8 +136,12 @@ export default function StatsPanel({
   stats,
   segDone,
   groundTruthScore,
+  scaleBarMode,
+  scaleBarPixels,
   onViewDetails,
   onMetadataUpdate,
+  onToggleScaleBar,
+  onScaleBarCancel,
 }: Props) {
   const [sizeOpen, setSizeOpen] = useState(true);
   const [shapeOpen, setShapeOpen] = useState(true);
@@ -141,6 +149,15 @@ export default function StatsPanel({
   const [editSize, setEditSize] = useState("");
   const [editUnit, setEditUnit] = useState("nm");
   const [pixelBusy, setPixelBusy] = useState(false);
+  const [sbLength, setSbLength] = useState("");
+  const [sbUnit, setSbUnit] = useState("nm");
+
+  useEffect(() => {
+    if (scaleBarPixels != null) {
+      setSbLength("");
+      setSbUnit(metadata?.pixel_unit ?? "nm");
+    }
+  }, [scaleBarPixels, metadata?.pixel_unit]);
 
   const unit = stats?.unit ?? "px";
   const hasScale = stats?.has_scale ?? false;
@@ -175,6 +192,25 @@ export default function StatsPanel({
       setEditingPixel(false);
     } catch (e) {
       console.error("Failed to update pixel size:", e);
+    } finally {
+      setPixelBusy(false);
+    }
+  }
+
+  async function confirmScaleBar() {
+    if (!sessionId || scaleBarPixels == null) return;
+    const length = parseFloat(sbLength);
+    if (Number.isNaN(length) || length <= 0) return;
+    const pixelSize = length / scaleBarPixels;
+    setPixelBusy(true);
+    try {
+      const result = await updatePixelSize(sessionId, pixelSize, sbUnit.trim() || "nm");
+      if (result.metadata) {
+        onMetadataUpdate?.(result.metadata as Metadata, result.stats as StatsResult | undefined);
+      }
+      onScaleBarCancel?.();
+    } catch (e) {
+      console.error("Failed to set pixel size from scale bar:", e);
     } finally {
       setPixelBusy(false);
     }
@@ -269,6 +305,60 @@ export default function StatsPanel({
                 <span className={styles.label}>FOV</span>
                 <span className={styles.val}>
                   {(metadata.axes[0].scale * metadata.axes[0].size).toFixed(1)} {metadata.axes[0].units}
+                </span>
+              </div>
+            )}
+
+            {/* Scale bar calibration — only available after image load */}
+            {scaleBarPixels == null && (
+              <div className={styles.row}>
+                <span className={styles.label} style={{ color: scaleBarMode ? "#7ee8a2" : undefined }}>
+                  {scaleBarMode ? "Draw line →" : "Scale Bar"}
+                </span>
+                <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  {scaleBarMode ? (
+                    <button type="button" className={styles.iconBtn} onClick={onScaleBarCancel} title="Cancel">
+                      <X size={10} />
+                    </button>
+                  ) : (
+                    <button type="button" className={styles.iconBtn} onClick={onToggleScaleBar} title="Measure pixel size from scale bar">
+                      <Ruler size={10} />
+                    </button>
+                  )}
+                </span>
+              </div>
+            )}
+            {scaleBarPixels != null && (
+              <div className={styles.row} style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                <span className={styles.label} style={{ color: "#7ee8a2" }}>
+                  {scaleBarPixels.toFixed(1)} px — enter length:
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={sbLength}
+                    onChange={e => setSbLength(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") confirmScaleBar(); if (e.key === "Escape") onScaleBarCancel?.(); }}
+                    className={styles.pixelInput}
+                    placeholder="0.00"
+                    autoFocus
+                  />
+                  <input
+                    type="text"
+                    value={sbUnit}
+                    onChange={e => setSbUnit(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") confirmScaleBar(); if (e.key === "Escape") onScaleBarCancel?.(); }}
+                    className={styles.pixelUnitInput}
+                    placeholder="nm"
+                  />
+                  <button type="button" className={styles.iconBtn} onClick={confirmScaleBar} disabled={pixelBusy} title="Confirm">
+                    <Check size={10} />
+                  </button>
+                  <button type="button" className={styles.iconBtn} onClick={onScaleBarCancel} disabled={pixelBusy} title="Cancel">
+                    <X size={10} />
+                  </button>
                 </span>
               </div>
             )}

@@ -117,13 +117,19 @@ export default function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // zoom/pan 
+  // zoom/pan
   // only active in `normal` mode. (outside blackout/refine.. modes)
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
+
+  // scale bar calibration
+  const [scaleBarMode, setScaleBarMode] = useState(false);
+  const [scaleBarPixels, setScaleBarPixels] = useState<number | null>(null);
+  const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
 
   // blackout region refs — written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
@@ -578,6 +584,55 @@ export default function Workspace() {
     setStatus(`Pixel size updated${meta.pixel_size != null && meta.pixel_size !== "-" ? `: ${meta.pixel_size} ${meta.pixel_unit ?? ""}` : ""}`);
   }
 
+  function handleToggleScaleBar() {
+    if (scaleBarMode) {
+      handleScaleBarCancel();
+    } else {
+      setScaleBarMode(true);
+      setScaleBarPixels(null);
+      setScaleBarLineSvg(null);
+    }
+  }
+
+  function handleScaleBarCancel() {
+    setScaleBarMode(false);
+    setScaleBarPixels(null);
+    setScaleBarLineSvg(null);
+    scaleBarStart.current = null;
+  }
+
+  function handleScaleBarMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    scaleBarStart.current = { x: imgX, y: imgY };
+    setScaleBarLineSvg({ x1: imgX, y1: imgY, x2: imgX, y2: imgY });
+  }
+
+  function handleScaleBarMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (!scaleBarStart.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    setScaleBarLineSvg({ x1: scaleBarStart.current.x, y1: scaleBarStart.current.y, x2: imgX, y2: imgY });
+  }
+
+  function handleScaleBarMouseUp(e: React.MouseEvent<HTMLDivElement>) {
+    if (!scaleBarStart.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    const line = { x1: scaleBarStart.current.x, y1: scaleBarStart.current.y, x2: imgX, y2: imgY };
+    const pixels = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+    scaleBarStart.current = null;
+    if (pixels < 5) {
+      setScaleBarLineSvg(null);
+      return;
+    }
+    setScaleBarLineSvg(line);
+    setScaleBarPixels(pixels);
+  }
+
   // track which regions are to be used
   const activeRegions = seg.isInvBlackoutMode
     ? seg.invBlackoutRegions
@@ -988,12 +1043,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -1123,6 +1178,47 @@ export default function Workspace() {
                   />
                 )}
 
+                {/* scale bar line — rendered under the mouse capture overlay */}
+                {scaleBarMode && scaleBarLineSvg && imgSize.width > 0 && (
+                  <svg
+                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      pointerEvents: "none",
+                      zIndex: 14,
+                    }}
+                  >
+                    <line
+                      x1={scaleBarLineSvg.x1} y1={scaleBarLineSvg.y1}
+                      x2={scaleBarLineSvg.x2} y2={scaleBarLineSvg.y2}
+                      stroke="#7ee8a2"
+                      strokeWidth={2}
+                      strokeDasharray={scaleBarPixels ? undefined : "8 4"}
+                    />
+                    <circle cx={scaleBarLineSvg.x1} cy={scaleBarLineSvg.y1} r={5} fill="#7ee8a2" />
+                    <circle cx={scaleBarLineSvg.x2} cy={scaleBarLineSvg.y2} r={5} fill="#7ee8a2" />
+                  </svg>
+                )}
+
+                {/* scale bar mouse capture — draws the measurement line */}
+                {scaleBarMode && !scaleBarPixels && imgSize.width > 0 && (
+                  <div
+                    onMouseDown={handleScaleBarMouseDown}
+                    onMouseMove={handleScaleBarMouseMove}
+                    onMouseUp={handleScaleBarMouseUp}
+                    onMouseLeave={e => { if (scaleBarStart.current) handleScaleBarMouseUp(e); }}
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      cursor: "crosshair",
+                      background: "rgba(126, 232, 162, 0.04)",
+                      zIndex: 15,
+                    }}
+                  />
+                )}
+
                 {/* pending proposals overlay — yellow outlines, click to reject.
                     Sits above the bootstrap click-capture so reject clicks
                     aren't swallowed as new proposals. Suppressed while a
@@ -1222,8 +1318,12 @@ export default function Workspace() {
             stats={seg.stats}
             segDone={seg.segDone}
             groundTruthScore={seg.groundTruthScore as any}
+            scaleBarMode={scaleBarMode}
+            scaleBarPixels={scaleBarPixels}
             onViewDetails={() => setShowStatsDetail(true)}
             onMetadataUpdate={handleMetadataUpdate}
+            onToggleScaleBar={handleToggleScaleBar}
+            onScaleBarCancel={handleScaleBarCancel}
           />
 
         </div>
