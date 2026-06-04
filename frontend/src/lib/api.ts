@@ -197,6 +197,20 @@ export async function getSessionMetadata(
   return res.json();
 }
 
+export async function updatePixelSize(
+  sessionId: string,
+  pixelSize: number,
+  pixelUnit: string,
+): Promise<{ metadata: Metadata; stats?: StatsResult }> {
+  const res = await fetch(`${BASE_URL}/images/${sessionId}/metadata`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pixel_size: pixelSize, pixel_unit: pixelUnit }),
+  });
+  if (!res.ok) throw new Error(`updatePixelSize failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getStats(sessionId: string): Promise<StatsResult | null> {
   // Returns cached stats.json for a session, or null if /segment hasn't run.
   const res = await fetch(`${BASE_URL}/masks/${sessionId}/stats`);

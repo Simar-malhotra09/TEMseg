@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, Metadata } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, Metadata, StatsResult } from "@/lib/api";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -568,6 +568,14 @@ export default function Workspace() {
     setShowStatsDetail(false); // pan back to workspace
     seg.setMasksVisible(true);
     setStatus(`Highlighting all particles of shape: ${shape}`);
+  }
+
+  function handleMetadataUpdate(meta: Metadata, newStats?: StatsResult) {
+    setMetadata(meta);
+    if (newStats) {
+      seg.setStats(newStats);
+    }
+    setStatus(`Pixel size updated${meta.pixel_size != null && meta.pixel_size !== "-" ? `: ${meta.pixel_size} ${meta.pixel_unit ?? ""}` : ""}`);
   }
 
   // track which regions are to be used
@@ -1215,6 +1223,7 @@ export default function Workspace() {
             segDone={seg.segDone}
             groundTruthScore={seg.groundTruthScore as any}
             onViewDetails={() => setShowStatsDetail(true)}
+            onMetadataUpdate={handleMetadataUpdate}
           />
 
         </div>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X } from "lucide-react";
 import styles from "./StatsPanel.module.css";
 import type { StatsResult } from "@/lib/api";
+import { updatePixelSize } from "@/lib/api";
 interface Particle {
   area_px: number;
   area_real?: number;
@@ -62,7 +63,7 @@ interface Props {
   segDone: boolean;
   groundTruthScore: GTScores | null;
   onViewDetails?: () => void;
-
+  onMetadataUpdate?: (metadata: Metadata, stats?: StatsResult) => void;
 }
 
 function fmt(val: number, decimals = 3): string {
@@ -132,13 +133,52 @@ export default function StatsPanel({
   segDone,
   groundTruthScore,
   onViewDetails,
+  onMetadataUpdate,
 }: Props) {
   const [sizeOpen, setSizeOpen] = useState(true);
   const [shapeOpen, setShapeOpen] = useState(true);
+  const [editingPixel, setEditingPixel] = useState(false);
+  const [editSize, setEditSize] = useState("");
+  const [editUnit, setEditUnit] = useState("nm");
+  const [pixelBusy, setPixelBusy] = useState(false);
 
   const unit = stats?.unit ?? "px";
   const hasScale = stats?.has_scale ?? false;
   const pixelSize = metadata?.pixel_size;
+
+  const canEditPixel = sessionId != null && metadata != null;
+  const pixelSizeMissing = pixelSize == null || pixelSize === "-";
+
+  function startEdit() {
+    if (!canEditPixel) return;
+    setEditSize(pixelSizeMissing ? "" : String(pixelSize));
+    setEditUnit(metadata?.pixel_unit ?? "nm");
+    setEditingPixel(true);
+  }
+
+  function cancelEdit() {
+    setEditingPixel(false);
+    setEditSize("");
+    setEditUnit("nm");
+  }
+
+  async function saveEdit() {
+    if (!sessionId) return;
+    const val = parseFloat(editSize);
+    if (Number.isNaN(val) || val <= 0) return;
+    setPixelBusy(true);
+    try {
+      const result = await updatePixelSize(sessionId, val, editUnit.trim() || "nm");
+      if (result.metadata) {
+        onMetadataUpdate?.(result.metadata as Metadata, result.stats as StatsResult | undefined);
+      }
+      setEditingPixel(false);
+    } catch (e) {
+      console.error("Failed to update pixel size:", e);
+    } finally {
+      setPixelBusy(false);
+    }
+  }
   return (
     <div className={styles.panel}>
 
@@ -172,17 +212,56 @@ export default function StatsPanel({
             {metadata?.pixel_size != null && (
               <div className={styles.row}>
                 <span className={styles.label}>Pixel Size</span>
-                <span className={styles.val}>
-                  {pixelSize == null || pixelSize === "-"
-                    ? "Not Found"
-                    : typeof pixelSize === "number"
-                      ? pixelSize.toFixed(4)
-                      : "Not Found"}
-
-                  {metadata.pixel_unit == null || metadata.pixel_unit === "-"
-                    ? ""
-                    : " " + metadata.pixel_unit}
-                </span>
+                {!editingPixel ? (
+                  <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {pixelSize == null || pixelSize === "-"
+                      ? "Not Found"
+                      : typeof pixelSize === "number"
+                        ? pixelSize.toFixed(4)
+                        : "Not Found"}
+                    {metadata.pixel_unit == null || metadata.pixel_unit === "-"
+                      ? ""
+                      : " " + metadata.pixel_unit}
+                    {canEditPixel && (
+                      <button
+                        type="button"
+                        className={styles.iconBtn}
+                        onClick={startEdit}
+                        title="Edit pixel size"
+                      >
+                        <Pencil size={10} />
+                      </button>
+                    )}
+                  </span>
+                ) : (
+                  <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={editSize}
+                      onChange={e => setEditSize(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+                      className={styles.pixelInput}
+                      placeholder="0.00"
+                      autoFocus
+                    />
+                    <input
+                      type="text"
+                      value={editUnit}
+                      onChange={e => setEditUnit(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+                      className={styles.pixelUnitInput}
+                      placeholder="nm"
+                    />
+                    <button type="button" className={styles.iconBtn} onClick={saveEdit} disabled={pixelBusy} title="Save">
+                      <Check size={10} />
+                    </button>
+                    <button type="button" className={styles.iconBtn} onClick={cancelEdit} disabled={pixelBusy} title="Cancel">
+                      <X size={10} />
+                    </button>
+                  </span>
+                )}
               </div>
             )}
             {metadata?.axes && metadata.axes.length > 0 && metadata.axes[0]?.units && (
