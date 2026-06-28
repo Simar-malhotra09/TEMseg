@@ -134,28 +134,6 @@ async def segment(req: SegmentRequest, request: Request):
     if mask is None or mask.size == 0:
         return {"error": "Mask is empty"}
 
-    # ── RF recovery pass ─────────────────────────────────────────────
-    if req.model == AvailableModels.yolosam and np.any(mask):
-        try:
-            from app.models.helpers import rf_cache
-
-            binary = (mask > 0).astype(np.uint8)
-            rf = rf_cache.get_or_train(req.session_id, img, binary)
-            prompts = rf.get_prompts(img, binary, top_n=5)
-            if prompts:
-                logger.info(f"[SEG-RF] {len(prompts)} recovery prompt(s) for session={req.session_id}")
-                extra = model_inst.predict_from_prompts(prompts)
-                if np.any(extra):
-                    mask = np.maximum(mask, extra * 255)
-                    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
-                    mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
-                    rf_cache.update(req.session_id, img, (mask > 0).astype(np.uint8))
-                    logger.info(f"[SEG-RF] Merged {int(extra.sum())} extra pixels from RF recovery")
-            else:
-                logger.info(f"[SEG-RF] No recovery prompts found for session={req.session_id}")
-        except Exception as e:
-            logger.warning(f"[SEG-RF] RF recovery failed (non-fatal): {e}")
-
     if not np.any(mask):
         # Cache embedding even on empty result so user can bootstrap manually
         # via /masks/{id}/from-points and /masks/{id}/propose-similar.
@@ -214,6 +192,10 @@ async def segment(req: SegmentRequest, request: Request):
     if hasattr(result, "embedding") and result.embedding is not None:
         cache[req.session_id] = result.embedding
         logger.info(f"[SEG] Cached SAM embedding for session {req.session_id}")
+
+    # evict stale RF so /rf/propose trains fresh on the new mask
+    from app.models.helpers import rf_cache
+    rf_cache.evict(req.session_id)
 
     elapsed = time.perf_counter() - t_req_start
 
