@@ -1,5 +1,6 @@
 import logging
 import pickle
+import time
 from pathlib import Path
 
 import cv2 as cv
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 MAX_TRAIN_PIXELS = 500_000
 _DEFAULT_MIN_AREA = 50
+# Predict at this fraction of the original resolution to keep predict_proba fast.
+# 0.25 → 512×512 on a 2048×2048 image (64× fewer pixels than full res).
+_PREDICT_SCALE = 0.25
 
 
 def _extract_features(image: np.ndarray) -> np.ndarray:
@@ -26,7 +30,6 @@ def _extract_features(image: np.ndarray) -> np.ndarray:
 
     lap = cv.Laplacian(gray, cv.CV_32F)
 
-    # local std via variance formula: E[X²] - E[X]²
     blur5 = cv.GaussianBlur(gray, (5, 5), 0)
     blur_sq = cv.GaussianBlur(gray**2, (5, 5), 0)
     local_std = np.sqrt(np.maximum(blur_sq - blur5**2, 0))
@@ -87,31 +90,64 @@ class RFRecovery:
         if self._rf is None:
             raise RuntimeError("RFRecovery must be trained before calling get_prompts")
 
-        feats = _extract_features(image)
-        proba = self._rf.predict_proba(feats.reshape(-1, feats.shape[-1]))[:, 1]
-        pred_map = (proba > 0.5).astype(np.uint8).reshape(image.shape[:2])
+        t0 = time.perf_counter()
 
-        # only care about regions not already covered by the current mask
-        missed = pred_map & ~((mask > 0).astype(np.uint8))
+        # Downscale before feature extraction so predict_proba runs on ~64× fewer pixels.
+        h_orig, w_orig = image.shape[:2]
+        h_small = max(1, int(h_orig * _PREDICT_SCALE))
+        w_small = max(1, int(w_orig * _PREDICT_SCALE))
+        img_small = cv.resize(image, (w_small, h_small), interpolation=cv.INTER_AREA)
+        mask_small = cv.resize(
+            (mask > 0).astype(np.uint8), (w_small, h_small), interpolation=cv.INTER_NEAREST
+        )
+
+        feats = _extract_features(img_small)
+        t_feat = time.perf_counter()
+
+        proba = self._rf.predict_proba(feats.reshape(-1, feats.shape[-1]))[:, 1]
+        t_pred = time.perf_counter()
+
+        pred_map = (proba > 0.5).astype(np.uint8).reshape(h_small, w_small)
+        missed = pred_map & ~mask_small
 
         labeled, n = ndimage.label(missed)
+        t_label = time.perf_counter()
+
+        logger.info(
+            f"[RFRecovery] get_prompts: feat={t_feat-t0:.3f}s "
+            f"predict={t_pred-t_feat:.3f}s label={t_label-t_pred:.3f}s "
+            f"pixels={h_small*w_small} components={n}"
+        )
+
+        # Scale factor to map small-image coords back to original
+        sx = w_orig / w_small
+        sy = h_orig / h_small
+        # min_area is in original-image pixels; scale it to small-image pixels
+        min_area_small = max(1, int(self.min_area / (sx * sy)))
 
         prompts: list[dict] = []
         for comp_id in range(1, n + 1):
             comp = labeled == comp_id
-            area = int(comp.sum())
-            if area < self.min_area:
+            area_small = int(comp.sum())
+            if area_small < min_area_small:
                 continue
             ys, xs = np.where(comp)
+            # scale coordinates back to original image space
+            cx = int(np.mean(xs) * sx)
+            cy = int(np.mean(ys) * sy)
+            x1 = int(xs.min() * sx)
+            y1 = int(ys.min() * sy)
+            x2 = min(w_orig - 1, int(xs.max() * sx))
+            y2 = min(h_orig - 1, int(ys.max() * sy))
+            area_orig = int(area_small * sx * sy)
             prompts.append(
                 {
-                    "point": [int(np.mean(xs)), int(np.mean(ys))],
-                    "bbox": [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())],
-                    "area": area,
+                    "point": [cx, cy],
+                    "bbox": [x1, y1, x2, y2],
+                    "area": area_orig,
                 }
             )
 
-        # sort largest→smallest, drop bottom 20% (noise), return top_n
         prompts.sort(key=lambda p: p["area"], reverse=True)
         if len(prompts) > 5:
             prompts = prompts[: max(1, int(len(prompts) * 0.8))]

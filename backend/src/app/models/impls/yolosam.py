@@ -172,10 +172,11 @@ class YoloSam(Model):
             predictor.original_size = embedding_cache.original_size
             predictor.input_size = embedding_cache.input_size
             predictor.is_image_set = True
-            logger.info("[YoloSAM-SAM] Using cached SAM embedding")
+            logger.info("[YoloSAM-SAM] encode=SKIPPED (cached)")
         else:
             predictor.set_image(image)
-            logger.info("[YoloSAM-SAM] Encoding image with SAM")
+            t_encode = time.perf_counter() - sam_start
+            logger.info(f"[YoloSAM-SAM] encode={t_encode:.3f}s")
 
         if boxes is None or len(boxes) == 0:
             sam_encode_elapsed = time.perf_counter() - sam_start
