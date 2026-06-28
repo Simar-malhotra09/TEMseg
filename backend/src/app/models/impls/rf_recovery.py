@@ -138,6 +138,34 @@ class RFRecovery:
         self._y_accum.append(y)
         self._fit()
 
+    def predict_missed_mask(
+        self, image: np.ndarray, mask: np.ndarray, threshold: float = 0.6
+    ) -> np.ndarray:
+        """
+        Return a binary uint8 mask of pixels the RF thinks are foreground
+        but are not already in `mask`. No SAM involved.
+        """
+        if self._rf is None:
+            raise RuntimeError("RFRecovery: call train() first")
+
+        t0 = time.perf_counter()
+        h, w = image.shape[:2]
+
+        features = _extract_features(image)
+        t_feat = time.perf_counter()
+
+        probs = self._rf.predict_proba(features)[:, 1].reshape(h, w)
+        t_pred = time.perf_counter()
+
+        missed = (probs > threshold) & ~(mask > 0)
+        missed = remove_small_objects(missed, min_size=self.min_area)
+
+        logger.info(
+            f"[RFRecovery] feat={t_feat-t0:.2f}s predict={t_pred-t_feat:.2f}s "
+            f"missed_px={int(missed.sum())}"
+        )
+        return missed.astype(np.uint8)
+
     def get_prompts(
         self, image: np.ndarray, mask: np.ndarray, top_n: int = 5
     ) -> list[dict]:
