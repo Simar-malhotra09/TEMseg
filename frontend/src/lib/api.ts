@@ -425,6 +425,28 @@ export async function splitInstances(
   return res.json();
 }
 
+export interface RFProposeResponse {
+  proposals: Instance[];
+  message?: string;
+  elapsed?: number;
+}
+
+export async function rfPropose(
+  sessionId: string,
+  topN: number = 5,
+): Promise<RFProposeResponse> {
+  const res = await fetch(`${BASE_URL}/rf/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, top_n: topN }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`rfPropose failed (${res.status}): ${err}`);
+  }
+  return res.json();
+}
+
 export async function exportSession(
   sessionId: string,
   items: string[]

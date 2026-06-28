@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, Metadata, StatsResult } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult } from "@/lib/api";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -477,6 +477,28 @@ export default function Workspace() {
     }
   }
 
+  async function handleRFPropose() {
+    if (!sessionId) return;
+    setBootstrapBusy(true);
+    setStatus("Running RF recovery...");
+    try {
+      const res = await rfPropose(sessionId);
+      if (!res.proposals || res.proposals.length === 0) {
+        setStatus(res.message ?? "RF found no missed regions.");
+        return;
+      }
+      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setStatus(
+        `RF found ${res.proposals.length} missed region(s) — review and Accept.`,
+      );
+    } catch (err) {
+      console.error("RF propose failed:", err);
+      setStatus(`RF Recovery failed: ${(err as Error).message}`);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
   async function enterRefineMode() {
     (document.activeElement as HTMLElement)?.blur();
     if (!sessionId) return;
@@ -849,6 +871,24 @@ export default function Workspace() {
               >
                 <Sparkles size={14} />
                 {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
+              </button>
+
+              {/* RF recovery — requires prior /segment so SAM embedding is cached */}
+              <button type="button"
+                className={styles.actionBtn}
+                disabled={
+                  !sessionId ||
+                  refineMode ||
+                  annotateMode ||
+                  boxMode ||
+                  !seg.segDone ||
+                  bootstrapBusy
+                }
+                onClick={handleRFPropose}
+                title={!seg.segDone ? "Run segmentation first" : undefined}
+              >
+                <Sparkles size={14} />
+                {bootstrapBusy ? "Running..." : "RF Recover Missed"}
               </button>
 
               {pendingProposals.length > 0 && (
