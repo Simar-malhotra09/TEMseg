@@ -72,7 +72,7 @@ SEG=$(curl -s -w "\n[HTTP %{http_code}]" -X POST "$BASE/segment/" \
   --max-time 180 \
   -d "{
     \"session_id\": \"$SESSION\",
-    \"model\": \"yolosam\",
+    \"model\": \"YoloSAM\",
     \"regions\": [],
     \"blackout\": false,
     \"inverse_blackout\": false,
@@ -103,7 +103,7 @@ SEG2=$(curl -s -w "\n[HTTP %{http_code}]" -X POST "$BASE/segment/" \
   --max-time 180 \
   -d "{
     \"session_id\": \"$SESSION\",
-    \"model\": \"yolosam\",
+    \"model\": \"YoloSAM\",
     \"regions\": [],
     \"blackout\": false,
     \"inverse_blackout\": false,
