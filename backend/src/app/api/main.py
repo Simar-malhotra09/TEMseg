@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict
 import torch
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routers import images, segment, ground_truths, masks, export
+from app.api.routers import images, segment, ground_truths, masks, export, rf
 from app.api.live_models import AvailableModels
 from app.models.impls.yolosam import YoloSam
 from app.models.helpers.config import nano_config, house_config
@@ -86,6 +86,7 @@ app.include_router(segment.router)
 app.include_router(ground_truths.router)
 app.include_router(masks.router)
 app.include_router(export.router)
+app.include_router(rf.router)
 
 
 @app.get("/")
