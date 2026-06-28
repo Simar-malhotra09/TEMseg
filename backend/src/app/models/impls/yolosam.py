@@ -208,6 +208,7 @@ class YoloSam(Model):
                 boxes=transformed_boxes,
                 multimask_output=False,
             )
+            # mmasks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")asks_np = masks.cpu().numpy().astype("uint8")
             masks_np = masks.cpu().numpy().astype("uint8")
             combined_mask = np.max(masks_np, axis=0)
         else:
@@ -253,6 +254,45 @@ class YoloSam(Model):
             ),
             detection_boxes=boxes.cpu().numpy(),
         )
+
+    def predict_from_prompts(self, prompts: list[dict]) -> np.ndarray:
+        """
+        Run SAM on a list of {point: [x,y], bbox: [x1,y1,x2,y2]} prompts using
+        the predictor that was set during the most recent segment() call.
+        Returns a binary uint8 mask (0/1) merged across all prompts.
+        """
+        if not hasattr(self, "_predictor") or not self._predictor.is_image_set:
+            raise RuntimeError("SAM predictor has no image — call segment() first")
+
+        predictor = self._predictor
+        h, w = predictor.original_size
+        combined = np.zeros((h, w), dtype=np.uint8)
+
+        for prompt in prompts:
+            cx, cy = prompt["point"]
+            x1, y1, x2, y2 = prompt["bbox"]
+
+            point_coords = torch.tensor(
+                [[[cx, cy]]], dtype=torch.float32, device=predictor.device
+            )  # (1, 1, 2)
+            point_labels = torch.ones((1, 1), dtype=torch.int, device=predictor.device)
+            box_tensor = torch.tensor(
+                [[x1, y1, x2, y2]], dtype=torch.float32, device=predictor.device
+            )
+            transformed_box = predictor.transform.apply_boxes_torch(
+                box_tensor, predictor.original_size
+            )
+
+            masks, _, _ = predictor.predict_torch(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                boxes=transformed_box,
+                multimask_output=False,
+            )
+            mask_np = masks.cpu().numpy().astype(np.uint8).squeeze()
+            combined = np.maximum(combined, mask_np)
+
+        return combined
 
     def segment_batch(
         self, patches: List[np.ndarray], offsets: List[tuple], img_shape: tuple
