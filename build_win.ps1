@@ -38,11 +38,19 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
 $SpecFile = if ($Cuda) { "temseg_cuda.spec" } else { "temseg.spec" }
-$DistName  = if ($Cuda) { "TEMseg-cuda" }    else { "TEMseg" }
+$BaseDistName = if ($Cuda) { "TEMseg-cuda" } else { "TEMseg" }
+
+# Embed the current git branch in the output name so builds are traceable.
+$RawBranch = (git rev-parse --abbrev-ref HEAD 2>$null) -replace '[^a-zA-Z0-9]', '-'
+$Branch = $RawBranch.Trim('-')
+if (-not $Branch) { $Branch = "unknown" }
+$DistName = "$BaseDistName-$Branch"
 
 Write-Host "========================================"
 Write-Host "  TEMseg Windows Build"
 Write-Host "  Target: $(if ($Cuda) { 'CUDA (NVIDIA GPU)' } else { 'CPU-only' })"
+Write-Host "  Branch: $Branch"
+Write-Host "  Output: dist\$DistName"
 if ($Clean)        { Write-Host "  Mode: CLEAN" }
 if ($SkipFrontend) { Write-Host "  Skipping frontend rebuild" }
 Write-Host "========================================"
@@ -134,9 +142,10 @@ Write-Host ""
 Write-Host "[5/5] Running PyInstaller ($SpecFile)..."
 
 if ($Clean) {
-    Write-Host "  Clean build requested - wiping build\$DistName and dist\$DistName ..."
-    if (Test-Path "build\$DistName") { Remove-Item -Recurse -Force "build\$DistName" }
-    if (Test-Path "dist\$DistName")  { Remove-Item -Recurse -Force "dist\$DistName" }
+    Write-Host "  Clean build requested - wiping build\$BaseDistName and dist\$BaseDistName ..."
+    if (Test-Path "build\$BaseDistName") { Remove-Item -Recurse -Force "build\$BaseDistName" }
+    if (Test-Path "dist\$BaseDistName")  { Remove-Item -Recurse -Force "dist\$BaseDistName" }
+    if (Test-Path "dist\$DistName")      { Remove-Item -Recurse -Force "dist\$DistName" }
     Write-Host "  This will take ~10 minutes..."
 } else {
     Write-Host "  Incremental build - reusing build\ cache..."
@@ -145,6 +154,12 @@ if ($Clean) {
 
 uv run pyinstaller $SpecFile --noconfirm
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+
+# Rename the default output to include branch name.
+if (Test-Path "dist\$BaseDistName") {
+    if (Test-Path "dist\$DistName") { Remove-Item -Recurse -Force "dist\$DistName" }
+    Rename-Item "dist\$BaseDistName" $DistName
+}
 
 # -------------------------------------------
 # Step 5b: Fix rsciio - PyInstaller fails to bundle its subdirectories

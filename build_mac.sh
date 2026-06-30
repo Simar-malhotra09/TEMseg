@@ -45,8 +45,15 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Embed the current git branch in the output name so builds are traceable.
+# Sanitise: replace any non-alphanumeric char with '-', strip leading/trailing dashes.
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed 's/[^a-zA-Z0-9]/-/g; s/^-//; s/-$//' || echo "unknown")
+APP_NAME="TEMseg-${BRANCH}.app"
+
 echo "========================================"
 echo "  TEMseg macOS Build"
+echo "  Branch: $BRANCH"
+echo "  Output: dist/$APP_NAME"
 [ "$CLEAN" -eq 1 ]         && echo "  Mode: CLEAN"
 [ "$SKIP_FRONTEND" -eq 1 ] && echo "  Skipping frontend rebuild"
 echo "========================================"
@@ -116,7 +123,7 @@ echo "[4/4] Running PyInstaller..."
 
 if [ "$CLEAN" -eq 1 ]; then
     echo "  Clean build requested - wiping build/ and dist/ ..."
-    rm -rf build/TEMseg dist/TEMseg dist/TEMseg.app
+    rm -rf build/TEMseg dist/TEMseg dist/TEMseg.app "dist/${APP_NAME}"
     echo "  This will take ~10 minutes..."
 else
     echo "  Incremental build - reusing build/ cache..."
@@ -125,11 +132,16 @@ fi
 
 uv run pyinstaller temseg.spec --noconfirm
 
+# Rename the default output to include branch name.
+if [ -d "dist/TEMseg.app" ]; then
+    mv "dist/TEMseg.app" "dist/${APP_NAME}"
+fi
+
 # -------------------------------------------
 # Step 4b: Fix rsciio - PyInstaller fails to bundle its subdirectories
 # -------------------------------------------
 RSCIIO_SRC=$(uv run python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)")
-RSCIIO_DEST="dist/TEMseg.app/Contents/Frameworks/rsciio"
+RSCIIO_DEST="dist/${APP_NAME}/Contents/Frameworks/rsciio"
 
 if [ -d "$RSCIIO_SRC" ]; then
     echo "  Copying rsciio from $RSCIIO_SRC ..."
@@ -147,14 +159,14 @@ fi
 # -------------------------------------------
 # Done
 # -------------------------------------------
-if [ -d "dist/TEMseg.app" ]; then
+if [ -d "dist/${APP_NAME}" ]; then
     echo ""
     echo "========================================"
     echo "  BUILD SUCCESSFUL"
     echo "========================================"
     echo ""
-    echo "  Output: dist/TEMseg.app"
-    SIZE=$(du -sh "dist/TEMseg.app" | cut -f1)
+    echo "  Output: dist/${APP_NAME}"
+    SIZE=$(du -sh "dist/${APP_NAME}" | cut -f1)
     echo "  Size:   $SIZE"
     echo ""
     echo "  Note: Model weights will be downloaded on first launch"
@@ -162,7 +174,7 @@ if [ -d "dist/TEMseg.app" ]; then
     echo ""
 else
     echo ""
-    echo "ERROR: Build failed - dist/TEMseg.app not found"
+    echo "ERROR: Build failed - dist/${APP_NAME} not found"
     echo "Check the output above for errors."
     exit 1
 fi
