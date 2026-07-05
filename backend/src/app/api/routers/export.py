@@ -127,6 +127,27 @@ def _build_coco_json(session_dir: Path) -> bytes:
     return json.dumps(coco, indent=2).encode("utf-8")
 
 
+_CVAT_IMPORT_README: bytes = b"""\
+Importing into CVAT
+===================
+
+CVAT requires labels to be defined in the task BEFORE importing annotations.
+
+Steps:
+  1. Create a new task in CVAT.
+  2. In the "Labels" step, add a label named exactly:  particle
+  3. Upload original_image.png as the task data.
+  4. Open the task, go to Actions > Upload annotations.
+  5. Choose format "COCO 1.0" and select annotations.coco.json.
+
+Label Studio
+============
+  1. Create a project with an Image classification/segmentation template.
+  2. In Settings > Labeling Interface, add a PolygonLabels tag with value="particle".
+  3. Import > Upload files, select annotations.coco.json.
+"""
+
+
 @router.post("/{session_id}")
 async def export_session(session_id: str, body: ExportRequest):
     """
@@ -225,11 +246,11 @@ async def export_session(session_id: str, body: ExportRequest):
                     f"[EXPORT] coco_json skipped — instances.json missing | session={session_id}"
                 )
                 continue
-            # COCO task expects the image alongside the annotation file
             image_path = _find_original_image(session_dir)
             if image_path:
                 entries.append(("original_image.png", image_path))
             entries.append(("annotations.coco.json", coco_bytes))
+            entries.append(("IMPORT_INSTRUCTIONS.txt", _CVAT_IMPORT_README))
             logger.info(
                 f"[EXPORT] Adding coco_json | {len(json.loads(coco_bytes)['annotations'])} annotations"
             )
