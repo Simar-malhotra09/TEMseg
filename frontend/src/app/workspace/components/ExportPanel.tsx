@@ -12,7 +12,8 @@ export type ExportItem =
   | "refined_mask_png"
   | "refined_mask_npy"
   | "instances_json"
-  | "stats_csv";
+  | "stats_csv"
+  | "coco_json";
 
 interface ExportOption {
   id: ExportItem;
@@ -94,6 +95,13 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
       label: "Stats",
       hint: "CSV",
       available: hasStats,
+      unavailableReason: "run segmentation first",
+    },
+    {
+      id: "coco_json",
+      label: "COCO annotations",
+      hint: "JSON + image (CVAT / Label Studio)",
+      available: segDone,
       unavailableReason: "run segmentation first",
     },
   ];
