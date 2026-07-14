@@ -9,11 +9,19 @@ from pydantic import BaseModel
 
 from app.api.instances import extract_instances
 from app.api.live_models import AvailableModels
+from app.api.utils import Stroke, strokes_to_mask
 from app.models.helpers import rf_cache
 
 router = APIRouter(prefix="/rf")
 logger = logging.getLogger("routes.rf")
 SESSIONS_DIR = Path("sessions")
+
+# A user-marked bg scribble that's too small gives the RF almost no sense of
+# what background looks like, so anything even slightly different from the
+# handful of sampled pixels drifts to the foreground side — empirically this
+# produces a single runaway blob covering a large fraction of the image below
+# ~4% coverage. Below this floor we refuse to train rather than return junk.
+MIN_BG_FRACTION = 0.04
 
 
 class TrainRequest(BaseModel):
@@ -24,6 +32,7 @@ class TrainRequest(BaseModel):
 class ProposeRequest(BaseModel):
     session_id: str
     top_n: int = 5
+    bg_scribbles: list[Stroke] | None = None
 
 
 @router.post("/train")
@@ -87,11 +96,34 @@ async def rf_propose(req: ProposeRequest, request: Request):
         return {"error": "Could not read mask"}
     binary_mask = (mask_gray > 0).astype(np.uint8)
 
-    rf = rf_cache.get_or_train(req.session_id, image, binary_mask)
+    bg_mask = (
+        strokes_to_mask(req.bg_scribbles, mask_gray.shape) if req.bg_scribbles else None
+    )
+    if bg_mask is not None:
+        min_bg_px = int(MIN_BG_FRACTION * mask_gray.size)
+        marked_px = int(bg_mask.sum())
+        if marked_px < min_bg_px:
+            return {
+                "error": (
+                    f"Not enough background marked ({marked_px}px, need at least "
+                    f"{min_bg_px}px). Scribble over a few more empty areas, spread "
+                    f"across different parts of the image."
+                )
+            }
+
+    # Always retrain fresh — the cache is keyed only on session_id, so a stale
+    # entry from a previous call would silently ignore mask edits (refine)
+    # and any newly-drawn bg_scribbles.
+    rf_cache.evict(req.session_id)
+    rf = rf_cache.get_or_train(req.session_id, image, binary_mask, bg_mask=bg_mask)
     missed = rf.predict_missed_mask(image, binary_mask)
 
     if not np.any(missed):
-        return {"proposals": [], "message": "RF found no missed regions", "elapsed": time.perf_counter() - t0}
+        return {
+            "proposals": [],
+            "message": "RF found no missed regions",
+            "elapsed": time.perf_counter() - t0,
+        }
 
     instances, _ = extract_instances(missed, session_dir, save=False)
     for inst in instances:

@@ -2,16 +2,17 @@ import numpy as np
 from pydantic import BaseModel
 import cv2 as cv
 from typing import List
-from pathlib import Path 
-from typing import List 
+from pathlib import Path
+from typing import List
 import logging
 from fastapi import APIRouter
 
 from app.models.base_model import SegmentationResult
- 
+
 router = APIRouter(prefix="/utils")
 logger = logging.getLogger("routes.utils")
 SESSIONS_DIR = Path("sessions")
+
 
 class Box(BaseModel):
     id: str
@@ -19,6 +20,13 @@ class Box(BaseModel):
     y: float
     width: float
     height: float
+
+
+class Stroke(BaseModel):
+    id: str
+    points: list[float]  # flat [x1, y1, x2, y2, ...] in image coordinates
+    stroke_width: float = 24
+
 
 def normalize_mask(mask) -> np.ndarray:
     if mask.ndim == 3 and mask.shape[0] == 1:
@@ -30,7 +38,9 @@ def normalize_mask(mask) -> np.ndarray:
     return (mask > 0).astype("uint8") * 255
 
 
-def blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str) -> np.ndarray:
+def blackout_regions(
+    img: np.ndarray, regions: List[Box], save_path: Path | str
+) -> np.ndarray:
     """
     Black out rectangular regions in an image.
     Optionally saves the result for verification.
@@ -49,26 +59,52 @@ def blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str) 
     if save_path is not None:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        save_img = (img_out * 255).astype("uint8") if img_out.dtype == np.float32 else img_out
+        save_img = (
+            (img_out * 255).astype("uint8") if img_out.dtype == np.float32 else img_out
+        )
         cv.imwrite(str(save_path), save_img)
         print(f"Blacked-out image saved to {save_path}")
 
     return img_out
 
-def inverse_blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path | str)-> np.ndarray:
+
+def strokes_to_mask(strokes: List[Stroke], shape: tuple[int, int]) -> np.ndarray:
+    """Rasterize freehand scribble strokes into a boolean mask of the given (h, w) shape."""
+    h, w = shape
+    mask = np.zeros((h, w), dtype=np.uint8)
+
+    for stroke in strokes:
+        pts = np.array(stroke.points, dtype=np.int32).reshape(-1, 2)
+        if len(pts) == 1:
+            cv.circle(mask, tuple(pts[0]), max(1, int(stroke.stroke_width / 2)), 1, -1)
+        else:
+            cv.polylines(
+                mask,
+                [pts],
+                isClosed=False,
+                color=1,
+                thickness=max(1, int(stroke.stroke_width)),
+            )
+
+    return mask.astype(bool)
+
+
+def inverse_blackout_regions(
+    img: np.ndarray, regions: List[Box], save_path: Path | str
+) -> np.ndarray:
     """
-    Inverse of the blackout_regions function: 
+    Inverse of the blackout_regions function:
     So there's two ways you can go about this:
-    a. Black out everything else, 
-    b. Seperate each as patches, and batch run seg. 
+    a. Black out everything else,
+    b. Seperate each as patches, and batch run seg.
 
-    I assume b. will work much better across models. 
-    This same applied to blackout function as well. 
+    I assume b. will work much better across models.
+    This same applied to blackout function as well.
 
-    For now, we will just get the a. working. 
+    For now, we will just get the a. working.
     """
 
-    img_out= np.zeros_like(img)
+    img_out = np.zeros_like(img)
     h, w = img_out.shape[:2]
     for box in regions:
         x1 = max(0, min(int(box.x), w))
@@ -83,14 +119,20 @@ def inverse_blackout_regions(img: np.ndarray, regions: List[Box], save_path:Path
         save_img = img_out.copy()
         if save_img.dtype in (np.float32, np.float64):
             mn, mx = save_img.min(), save_img.max()
-            save_img = ((save_img - mn) / (mx - mn + 1e-8) * 255).astype("uint8") if mx > mn else np.zeros_like(save_img, dtype="uint8")
+            save_img = (
+                ((save_img - mn) / (mx - mn + 1e-8) * 255).astype("uint8")
+                if mx > mn
+                else np.zeros_like(save_img, dtype="uint8")
+            )
         cv.imwrite(str(save_path), save_img)
         print(f"Inverse blacked-out image saved to {save_path}")
 
     return img_out
 
+
 import numpy as np
 import cv2 as cv
+
 
 def colorize_components_inplace(mask: np.ndarray, seed: int = 42) -> np.ndarray:
     """
@@ -114,7 +156,6 @@ def colorize_components_inplace(mask: np.ndarray, seed: int = 42) -> np.ndarray:
     return colored
 
 
-
 def extract_instances(mask: np.ndarray) -> list:
     """
     Connected components → simplified polygon contours per instance.
@@ -123,7 +164,9 @@ def extract_instances(mask: np.ndarray) -> list:
     # ensure binary
     binary = (mask > 0).astype("uint8")
 
-    num_labels, labels, stats, _ = cv.connectedComponentsWithStats(binary, connectivity=8)
+    num_labels, labels, stats, _ = cv.connectedComponentsWithStats(
+        binary, connectivity=8
+    )
 
     instances = []
     for label_id in range(1, num_labels):  # skip 0 = background
@@ -136,7 +179,9 @@ def extract_instances(mask: np.ndarray) -> list:
         # if area < 50:
         #     continue
 
-        contours, _ = cv.findContours(component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv.findContours(
+            component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
         if not contours:
             continue
 
@@ -156,12 +201,14 @@ def extract_instances(mask: np.ndarray) -> list:
         w = int(stats[label_id, cv.CC_STAT_WIDTH])
         h = int(stats[label_id, cv.CC_STAT_HEIGHT])
 
-        instances.append({
-            "id": label_id,
-            "contour": contour_pts,
-            "bbox": {"x": x, "y": y, "w": w, "h": h},
-            "area": area,
-        })
+        instances.append(
+            {
+                "id": label_id,
+                "contour": contour_pts,
+                "bbox": {"x": x, "y": y, "w": w, "h": h},
+                "area": area,
+            }
+        )
 
     return instances
 
@@ -189,8 +236,12 @@ def save_debug_overlay(orig_path: Path, instances: list, save_path: Path):
         img = cv.cvtColor(arr, cv.COLOR_GRAY2BGR)
 
     colors = [
-        (255, 50, 50), (50, 255, 50), (50, 50, 255),
-        (255, 255, 50), (255, 50, 255), (50, 255, 255),
+        (255, 50, 50),
+        (50, 255, 50),
+        (50, 50, 255),
+        (255, 255, 50),
+        (255, 50, 255),
+        (50, 255, 255),
     ]
 
     for i, inst in enumerate(instances):
@@ -208,24 +259,31 @@ def save_debug_overlay(orig_path: Path, instances: list, save_path: Path):
         # draw instance ID at centroid
         cx = int(np.mean([p[0] for p in inst["contour"]]))
         cy = int(np.mean([p[1] for p in inst["contour"]]))
-        cv.putText(img, str(inst["id"]), (cx, cy),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        cv.putText(
+            img,
+            str(inst["id"]),
+            (cx, cy),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2,
+        )
 
     cv.imwrite(str(save_path), img)
 
 
 def batch_seg_patches(
     img: np.ndarray,
-    regions: List[Box],  
-    model,          # pre loaded model instance
-    ) -> SegmentationResult:
+    regions: List[Box],
+    model,  # pre loaded model instance
+) -> SegmentationResult:
     """
-    The function blackout_regions and inverse_blackout_regions take one image 
-    as input, and blackout regions in-place(in a copy of the image) and 
-    return back a single image. 
+    The function blackout_regions and inverse_blackout_regions take one image
+    as input, and blackout regions in-place(in a copy of the image) and
+    return back a single image.
 
-    A better way might be to send patches of images that we want to keep 
-    instead, batch seg and stitch it back again. 
+    A better way might be to send patches of images that we want to keep
+    instead, batch seg and stitch it back again.
 
     Key things to keep in mind are latency concerns and robustness of stitch.
     """
@@ -245,4 +303,4 @@ def batch_seg_patches(
         patches.append(img[y1:y2, x1:x2])
         offsets.append((x1, y1))
 
-    return model.segment_batch(patches, offsets, (h,w))
+    return model.segment_batch(patches, offsets, (h, w))
