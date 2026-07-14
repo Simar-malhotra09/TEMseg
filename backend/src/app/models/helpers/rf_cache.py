@@ -12,19 +12,25 @@ _cache: dict[str, RFRecovery] = {}
 
 
 def get_or_train(
-    session_key: str, image: np.ndarray, mask: np.ndarray, min_area: int = _DEFAULT_MIN_AREA
+    session_key: str,
+    image: np.ndarray,
+    mask: np.ndarray,
+    min_area: int = _DEFAULT_MIN_AREA,
+    bg_mask: np.ndarray | None = None,
 ) -> RFRecovery:
     if session_key not in _cache:
         logger.info(f"[RF-Cache] Training new RFRecovery for session={session_key}")
         rf = RFRecovery(min_area=min_area)
-        rf.train(image, mask)
+        rf.train(image, mask, bg_mask)
         _cache[session_key] = rf
     return _cache[session_key]
 
 
 def update(session_key: str, image: np.ndarray, mask: np.ndarray) -> None:
     if session_key not in _cache:
-        logger.warning(f"[RF-Cache] No entry for session={session_key}, skipping update")
+        logger.warning(
+            f"[RF-Cache] No entry for session={session_key}, skipping update"
+        )
         return
     _cache[session_key].update(image, mask)
 

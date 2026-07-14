@@ -20,27 +20,63 @@ from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
-from scipy.ndimage import gaussian_filter, gaussian_laplace
+from scipy.ndimage import (
+    gaussian_filter,
+    gaussian_laplace,
+    maximum_filter,
+    minimum_filter,
+    uniform_filter,
+)
 from skimage.color import rgb2gray
 from skimage.feature import structure_tensor, structure_tensor_eigenvalues
-from skimage.morphology import dilation, disk, erosion, remove_small_objects
+from skimage.morphology import (
+    dilation,
+    disk,
+    erosion,
+    remove_small_holes,
+    remove_small_objects,
+)
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils import shuffle
 
 logger = logging.getLogger(__name__)
 
 MAX_TRAIN_PIXELS = 500_000
-_DEFAULT_MIN_AREA = 200   # px² at full resolution; below this → noise
-_BG_DILATION = 10         # px — confident bg must be this far from any particle
-_FG_EROSION = 2           # px — confident fg excludes noisy SAM boundary
+_DEFAULT_MIN_AREA = 200  # px² at full resolution; below this → noise
+_BG_DILATION = 10  # px — confident bg must be this far from any particle
+_FG_EROSION = 2  # px — confident fg excludes noisy SAM boundary
 _SIGMAS = (1.0, 2.0, 4.0, 8.0)
+
+
+def _local_stats(
+    gray: np.ndarray, size: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Local neighborhood mean/variance/min/max over a `size`x`size` box window.
+    Mirrors Labkit's stats feature group (MeanFeature, VarianceFeature,
+    MinFeature, MaxFeature) — these stay informative in flat, low-contrast
+    interiors where derivative-based features (gradient/LoG/structure-tensor)
+    go to zero, which is what fills in solid blobs instead of hollow rings.
+    """
+    mean = uniform_filter(gray, size=size, mode="reflect")
+    mean_sq = uniform_filter(gray**2, size=size, mode="reflect")
+    variance = np.maximum(mean_sq - mean**2, 0.0)
+    mn = minimum_filter(gray, size=size, mode="reflect")
+    mx = maximum_filter(gray, size=size, mode="reflect")
+    return (
+        mean.astype(np.float32),
+        variance.astype(np.float32),
+        mn.astype(np.float32),
+        mx.astype(np.float32),
+    )
 
 
 def _extract_features(image: np.ndarray) -> np.ndarray:
     """
     Per-pixel feature matrix at full resolution.
-    21 features: raw intensity + (Gaussian, grad mag, LoG, ST-eig×2) × 4 sigmas.
-    Returns (H*W, 21) float32.
+    37 features: raw intensity + (Gaussian, grad mag, LoG, ST-eig×2,
+    local mean/variance/min/max) × 4 sigmas.
+    Returns (H*W, 37) float32.
     """
     gray = rgb2gray(image) if image.ndim == 3 else image.astype(np.float64)
     lo, hi = gray.min(), gray.max()
@@ -54,7 +90,7 @@ def _extract_features(image: np.ndarray) -> np.ndarray:
         channels.append(g)
 
         gy, gx = np.gradient(g)
-        channels.append(np.sqrt(gx ** 2 + gy ** 2).astype(np.float32))
+        channels.append(np.sqrt(gx**2 + gy**2).astype(np.float32))
 
         channels.append(gaussian_laplace(gray, sigma).astype(np.float32))
 
@@ -63,18 +99,35 @@ def _extract_features(image: np.ndarray) -> np.ndarray:
         channels.append(eigs[0].astype(np.float32))
         channels.append(eigs[1].astype(np.float32))
 
-    feat_stack = np.stack(channels, axis=-1)  # (H, W, 21)
+        window = 2 * int(round(sigma)) + 1
+        mean, variance, mn, mx = _local_stats(gray, window)
+        channels.append(mean)
+        channels.append(variance)
+        channels.append(mn)
+        channels.append(mx)
+
+    feat_stack = np.stack(channels, axis=-1)  # (H, W, 37)
     H, W, _ = feat_stack.shape
     return feat_stack.reshape(H * W, -1)
 
 
-def _labels_from_mask(mask: np.ndarray) -> np.ndarray:
+def _labels_from_mask(
+    mask: np.ndarray, bg_mask: np.ndarray | None = None
+) -> np.ndarray:
     """
     Build confident pixel labels, leaving the uncertain boundary zone unlabeled.
 
     Returns flat int8 array: 1 = certain fg, 0 = certain bg, -1 = unlabeled.
     The unlabeled ring (within _BG_DILATION px of any particle) prevents the RF
     from training on SAM's noisy segmentation boundaries.
+
+    If `bg_mask` is given (user-marked background regions), it is the *sole*
+    source of confident background — the distance heuristic below assumes the
+    mask has full recall, which is false by construction when this function
+    is being used to recover particles the model missed. Labeling "far from
+    any known particle" as background actively teaches the RF that a missed
+    particle's own texture is background. A user-marked region carries no
+    such assumption.
     """
     binary = mask > 0
     labels = np.full(binary.size, -1, dtype=np.int8)
@@ -82,8 +135,11 @@ def _labels_from_mask(mask: np.ndarray) -> np.ndarray:
     eroded_fg = erosion(binary, disk(_FG_EROSION))
     labels[eroded_fg.ravel()] = 1
 
-    dilated_fg = dilation(binary, disk(_BG_DILATION))
-    labels[(~dilated_fg).ravel()] = 0
+    if bg_mask is not None:
+        labels[bg_mask.ravel()] = 0
+    else:
+        dilated_fg = dilation(binary, disk(_BG_DILATION))
+        labels[(~dilated_fg).ravel()] = 0
 
     return labels
 
@@ -102,9 +158,11 @@ class RFRecovery:
         self._X_accum: list[np.ndarray] = []
         self._y_accum: list[np.ndarray] = []
 
-    def _build_xy(self, image: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _build_xy(
+        self, image: np.ndarray, mask: np.ndarray, bg_mask: np.ndarray | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
         features = _extract_features(image)
-        labels = _labels_from_mask(mask)
+        labels = _labels_from_mask(mask, bg_mask)
         labeled = labels != -1
         return _subsample(features[labeled], labels[labeled], MAX_TRAIN_PIXELS)
 
@@ -126,14 +184,18 @@ class RFRecovery:
             f"({int(y_all.sum())} fg / {int((y_all == 0).sum())} bg)"
         )
 
-    def train(self, image: np.ndarray, mask: np.ndarray) -> None:
-        X, y = self._build_xy(image, mask)
+    def train(
+        self, image: np.ndarray, mask: np.ndarray, bg_mask: np.ndarray | None = None
+    ) -> None:
+        X, y = self._build_xy(image, mask, bg_mask)
         self._X_accum = [X]
         self._y_accum = [y]
         self._fit()
 
-    def update(self, image: np.ndarray, mask: np.ndarray) -> None:
-        X, y = self._build_xy(image, mask)
+    def update(
+        self, image: np.ndarray, mask: np.ndarray, bg_mask: np.ndarray | None = None
+    ) -> None:
+        X, y = self._build_xy(image, mask, bg_mask)
         self._X_accum.append(X)
         self._y_accum.append(y)
         self._fit()
@@ -159,9 +221,10 @@ class RFRecovery:
 
         missed = (probs > threshold) & ~(mask > 0)
         missed = remove_small_objects(missed, min_size=self.min_area)
+        missed = remove_small_holes(missed, area_threshold=self.min_area)
 
         logger.info(
-            f"[RFRecovery] feat={t_feat-t0:.2f}s predict={t_pred-t_feat:.2f}s "
+            f"[RFRecovery] feat={t_feat - t0:.2f}s predict={t_pred - t_feat:.2f}s "
             f"missed_px={int(missed.sum())}"
         )
         return missed.astype(np.uint8)
@@ -188,26 +251,41 @@ class RFRecovery:
         t_label = time.perf_counter()
 
         logger.info(
-            f"[RFRecovery] feat={t_feat-t0:.2f}s predict={t_pred-t_feat:.2f}s "
-            f"label={t_label-t_pred:.2f}s components={n}"
+            f"[RFRecovery] feat={t_feat - t0:.2f}s predict={t_pred - t_feat:.2f}s "
+            f"label={t_label - t_pred:.2f}s components={n}"
         )
 
         prompts: list[dict] = []
         for comp_id in range(1, n + 1):
             comp = labeled == comp_id
             ys, xs = np.where(comp)
-            prompts.append({
-                "point": [int(np.mean(xs)), int(np.mean(ys))],
-                "bbox": [int(xs.min()), int(ys.min()), min(w - 1, int(xs.max())), min(h - 1, int(ys.max()))],
-                "area": int(comp.sum()),
-            })
+            prompts.append(
+                {
+                    "point": [int(np.mean(xs)), int(np.mean(ys))],
+                    "bbox": [
+                        int(xs.min()),
+                        int(ys.min()),
+                        min(w - 1, int(xs.max())),
+                        min(h - 1, int(ys.max())),
+                    ],
+                    "area": int(comp.sum()),
+                }
+            )
 
         prompts.sort(key=lambda p: p["area"], reverse=True)
         return prompts[:top_n]
 
     def save(self, path: Path) -> None:
         with open(path, "wb") as f:
-            pickle.dump({"rf": self._rf, "X": self._X_accum, "y": self._y_accum, "min_area": self.min_area}, f)
+            pickle.dump(
+                {
+                    "rf": self._rf,
+                    "X": self._X_accum,
+                    "y": self._y_accum,
+                    "min_area": self.min_area,
+                },
+                f,
+            )
 
     def load(self, path: Path) -> None:
         with open(path, "rb") as f:

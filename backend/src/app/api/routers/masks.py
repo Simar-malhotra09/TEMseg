@@ -189,6 +189,11 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     cv.imwrite(str(mask_path), colored)
     logger.info(f"[MASKS] Regenerated mask.png | path={mask_path}")
 
+    # evict stale RF so a later /rf/propose trains fresh on the edited mask
+    from app.models.helpers import rf_cache
+
+    rf_cache.evict(session_id)
+
     # recompute stats from updated instances
     pixel_size = None
     pixel_unit = None
