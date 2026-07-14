@@ -18,6 +18,13 @@ interface BlackoutRect {
   height: number;
 }
 
+// mirrors the server's Stroke pydantic model — a freehand scribble
+export interface Stroke {
+  id: string;
+  points: number[]; // flat [x1, y1, x2, y2, ...] in image coordinates
+  strokeWidth: number;
+}
+
 export interface StatsResult {
   // scale info
   pixel_size: number | null;
@@ -428,17 +435,19 @@ export async function splitInstances(
 export interface RFProposeResponse {
   proposals: Instance[];
   message?: string;
+  error?: string;
   elapsed?: number;
 }
 
 export async function rfPropose(
   sessionId: string,
   topN: number = 5,
+  bgScribbles: Stroke[] = [],
 ): Promise<RFProposeResponse> {
   const res = await fetch(`${BASE_URL}/rf/propose`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, top_n: topN }),
+    body: JSON.stringify({ session_id: sessionId, top_n: topN, bg_scribbles: bgScribbles }),
   });
   if (!res.ok) {
     const err = await res.text();

@@ -13,6 +13,7 @@ import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
+import ScribbleCanvas, { Scribble } from "./components/ScribbleCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import AnnotateCanvas from "./components/AnnotateCanvas";
 import BoxAnnotateCanvas from "./components/BoxAnnotateCanvas";
@@ -134,7 +135,14 @@ export default function Workspace() {
   // blackout region refs — written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
   const liveRegionsRef = useRef<BlackoutRect[]>([]); // tracks region to be excluded
-  const liveInverseRegionsRef = useRef<BlackoutRect[]>([]); // tracks regions to be included 
+  const liveInverseRegionsRef = useRef<BlackoutRect[]>([]); // tracks regions to be included
+
+  // RF background scribble mode — user-marked "this is definitely background"
+  // strokes, sent with /rf/propose so the RF trains on real ground truth
+  // instead of assuming everything far from a known particle is background.
+  const [rfBgMode, setRfBgMode] = useState(false);
+  const [rfBgScribbles, setRfBgScribbles] = useState<Scribble[]>([]);
+  const rfBgScribblesRef = useRef<Scribble[]>([]);
 
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
@@ -242,6 +250,9 @@ export default function Workspace() {
     setMetadata(null);
     setZoom(1); // def zoom is the same size as img
     setPan({ x: 0, y: 0 });
+    setRfBgMode(false);
+    setRfBgScribbles([]);
+    rfBgScribblesRef.current = [];
     const result = await uploadImage(file);
     setSessionId(result.session_id);
     setImage(`${BASE_URL}${result.preview_url}`);
@@ -482,7 +493,11 @@ export default function Workspace() {
     setBootstrapBusy(true);
     setStatus("Running RF recovery...");
     try {
-      const res = await rfPropose(sessionId);
+      const res = await rfPropose(sessionId, 5, rfBgScribblesRef.current);
+      if (res.error) {
+        setStatus(res.error);
+        return;
+      }
       if (!res.proposals || res.proposals.length === 0) {
         setStatus(res.message ?? "RF found no missed regions.");
         return;
@@ -536,7 +551,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -851,13 +866,14 @@ export default function Workspace() {
               {/* propose-similar: build a SAM-embedding prior from existing
                   annotations and find more candidates across the image. Needs
                   at least one annotated particle to construct the prior. */}
-              <button type="button" 
+              <button type="button"
                 className={styles.actionBtn}
                 disabled={
                   !sessionId ||
                   refineMode ||
                   annotateMode ||
                   boxMode ||
+                  rfBgMode ||
                   !seg.segDone ||
                   !(seg.stats?.particle_count ?? 0) ||
                   bootstrapBusy
@@ -881,6 +897,7 @@ export default function Workspace() {
                   refineMode ||
                   annotateMode ||
                   boxMode ||
+                  rfBgMode ||
                   !seg.segDone ||
                   bootstrapBusy
                 }
@@ -890,6 +907,40 @@ export default function Workspace() {
                 <Sparkles size={14} />
                 {bootstrapBusy ? "Running..." : "RF Recover Missed"}
               </button>
+
+              {/* RF background scribble — mark patches that are definitely
+                  background so the RF trains on real ground truth instead of
+                  assuming everything far from a known particle is background
+                  (which mislabels particles the model missed). */}
+              <button type="button"
+                className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
+                disabled={
+                  !sessionId ||
+                  refineMode ||
+                  annotateMode ||
+                  boxMode ||
+                  !seg.segDone ||
+                  bootstrapBusy
+                }
+                onClick={() => setRfBgMode(v => !v)}
+              >
+                <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
+              </button>
+              {rfBgScribbles.length > 0 && !rfBgMode && (
+                <button type="button" className={styles.actionBtn} onClick={() => {
+                  rfBgScribblesRef.current = [];
+                  setRfBgScribbles([]);
+                  setStatus("RF background scribbles cleared.");
+                }}>
+                  Clear Background Marks
+                </button>
+              )}
+              {rfBgMode && (
+                <p className={styles.sidebarHint}>
+                  Scribble over patches that are definitely background (no particle in them).
+                  Cover a few different areas — a single tiny mark isn&apos;t enough for the RF to generalize.
+                </p>
+              )}
 
               {pendingProposals.length > 0 && (
                 <>
@@ -1083,12 +1134,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -1100,7 +1151,7 @@ export default function Workspace() {
                   className={styles.temImage}
                   style={{
                     display: "block",
-                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode ? "hidden" : "visible",
+                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode ? "hidden" : "visible",
                   }}
                   onLoad={e => setImgSize({
                     width: e.currentTarget.naturalWidth,
@@ -1127,6 +1178,24 @@ export default function Workspace() {
                           liveRegionsRef.current = regions;
                           seg.setBlackoutRegions(regions);
                         }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* RF background scribble canvas — freehand brush strokes */}
+                {rfBgMode && imgSize.width > 0 && (
+                  <div style={{ position: "absolute", top: 0, left: 0 }}>
+                    <ScribbleCanvas
+                      imageSrc={image}
+                      width={viewportSize.width}
+                      height={viewportSize.height}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      initialStrokes={rfBgScribbles}
+                      onChange={scribbles => {
+                        rfBgScribblesRef.current = scribbles;
+                        setRfBgScribbles(scribbles);
                       }}
                     />
                   </div>
