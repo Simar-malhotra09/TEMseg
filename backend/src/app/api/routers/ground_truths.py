@@ -1,14 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, Body 
+from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
 import numpy as np
-import cv2 as cv 
-from app.api.utils import blackout_regions
+import cv2 as cv
+from app.api.utils import Box, blackout_regions, inverse_blackout_regions
 from app.scripts.compare_gt import normalize_mask, compute_metrics
 import logging
-from app.api.utils import Box,blackout_regions, inverse_blackout_regions
 
 router = APIRouter(prefix="/gt")
 
