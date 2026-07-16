@@ -1,5 +1,6 @@
 import logging
 import json
+import math
 import numpy as np
 import cv2 as cv
 from pathlib import Path
@@ -7,7 +8,27 @@ from scipy import ndimage
 
 logger = logging.getLogger(__name__)
 
-MIN_INSTANCE_AREA=50
+MIN_INSTANCE_AREA = 50
+
+# Contour simplification (cv.approxPolyDP) epsilon, as a fraction of contour
+# perimeter. Scaled by how much of the image the instance covers, so tiny
+# particles get aggressively simplified (fewer vertices to clutter the UI)
+# while large, significant ones keep more shape detail.
+MIN_EPSILON_FRAC = 0.015  # applied to instances at/above SIZE_REF_AREA_FRAC
+MAX_EPSILON_FRAC = 0.035  # applied to vanishingly small instances
+SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
+
+
+def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> float:
+    """approxPolyDP epsilon for a contour, relative to how large the instance is vs the image."""
+    area_frac = area / image_area
+    significance = min(1.0, math.sqrt(area_frac / SIZE_REF_AREA_FRAC))
+    epsilon_frac = (
+        MAX_EPSILON_FRAC - (MAX_EPSILON_FRAC - MIN_EPSILON_FRAC) * significance
+    )
+    return epsilon_frac * perimeter
+
+
 def extract_instances(
     mask: np.ndarray,
     session_dir: Path,
@@ -28,6 +49,7 @@ def extract_instances(
 
     labeled, n_components = ndimage.label(binary)
     logger.info(f"[INSTANCES] Found {n_components} connected components")
+    image_area = binary.shape[0] * binary.shape[1]
 
     instances = []
     for inst_id in range(1, n_components + 1):
@@ -37,7 +59,9 @@ def extract_instances(
             logger.debug(f"[INSTANCES] Component {inst_id} had no contours, skipping")
             continue
 
-        epsilon = 0.01 * cv.arcLength(contours[0], True)
+        area = int(np.sum(component))
+        perimeter = cv.arcLength(contours[0], True)
+        epsilon = _simplification_epsilon(perimeter, area, image_area)
         approx = cv.approxPolyDP(contours[0], epsilon, True)
 
         # squeeze to [[x,y], ...] and convert to float
@@ -47,7 +71,6 @@ def extract_instances(
             continue
 
         x, y, w, h = cv.boundingRect(contours[0])
-        area = int(np.sum(component))
         if area < MIN_INSTANCE_AREA:
             logger.debug(f"[INSTANCES] Component {inst_id} too small ({area}px), skipping")
             continue
