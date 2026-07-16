@@ -1,0 +1,67 @@
+# Shape classification rules for TEM particle stats.
+#
+# Rules are evaluated top-to-bottom; the first rule whose conditions all
+# match wins. If no rule matches, `default_shape` is used.
+#
+# Each condition is { metric = "...", op = "...", value = ... }
+#   metric: "circularity" | "aspect_ratio" | "solidity" | "n_vertices"
+#   op:     "<" | "<=" | ">" | ">=" | "==" | "!="
+#
+# Conditions within a rule are AND'ed together. To express OR, add another
+# [[rules]] entry with the same label.
+#
+# For "==" / "!=" on float metrics (circularity, aspect_ratio, solidity),
+# both sides are rounded to 2 decimal places before comparing.
+
+default_shape = "quasi-spherical"
+
+[[rules]]
+label = "rod"
+conditions = [
+    { metric = "aspect_ratio", op = ">", value = 2.5 },
+]
+
+[[rules]]
+label = "spherical"
+conditions = [
+    { metric = "circularity", op = ">", value = 0.90 },
+    { metric = "solidity", op = ">", value = 0.95 },
+    { metric = "aspect_ratio", op = "<", value = 1.2 },
+]
+
+# n_vertices-based faceted/triangular split disabled for now.
+# [[rules]]
+# label = "triangular"
+# conditions = [
+#     { metric = "solidity", op = ">", value = 0.92 },
+#     { metric = "circularity", op = ">", value = 0.70 },
+#     { metric = "n_vertices", op = "<=", value = 4 },
+# ]
+#
+# [[rules]]
+# label = "faceted"
+# conditions = [
+#     { metric = "solidity", op = ">", value = 0.92 },
+#     { metric = "circularity", op = ">", value = 0.70 },
+#     { metric = "n_vertices", op = ">=", value = 5 },
+#     { metric = "n_vertices", op = "<=", value = 7 },
+# ]
+
+[[rules]]
+label = "quasi-spherical"
+conditions = [
+    { metric = "solidity", op = ">", value = 0.92 },
+    { metric = "circularity", op = ">", value = 0.70 },
+]
+
+[[rules]]
+label = "elongated"
+conditions = [
+    { metric = "aspect_ratio", op = ">", value = 1.5 },
+]
+
+[[rules]]
+label = "irregular"
+conditions = [
+    { metric = "solidity", op = "<", value = 0.85 },
+]
