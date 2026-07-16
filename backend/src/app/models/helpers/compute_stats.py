@@ -52,19 +52,20 @@ def _fit_ellipse_safe(cnt):
     minor = min(axes)
     return (major, minor)
 
+# single conditon 
 @dataclass(frozen=True)
 class ShapeCondition:
     metric: ShapeMetric
     op: ShapeOperator
     value: float
 
-
+# multiple conditions; Rule true => all conditions also true
 @dataclass(frozen=True)
 class ShapeRule:
     label: str
     conditions: list[ShapeCondition]
 
-
+# full config of conditions and rules
 @dataclass(frozen=True)
 class ShapeClassificationConfig:
     default_shape: str
