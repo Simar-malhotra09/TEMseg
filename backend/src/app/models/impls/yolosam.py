@@ -96,6 +96,19 @@ class YoloSam(Model):
 
         return components
 
+    def _empty_device_cache(self) -> None:
+        """Release cached allocator memory back to the OS after a forward pass.
+
+        SAM's ViT-B encoder + per-box mask decoding hits a high memory
+        watermark; PyTorch's caching allocator holds onto that peak until
+        told to release it. Without this, RSS/footprint stays elevated
+        indefinitely after the first segment() call.
+        """
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device == "mps":
+            torch.mps.empty_cache()
+
     def load_image(self, image_path: Path) -> np.ndarray:
         if image_path.suffix == ".npy":
             img = np.load(image_path)
@@ -184,6 +197,7 @@ class YoloSam(Model):
                 f"[YoloSAM] YOLO found 0 boxes — returning empty mask with SAM "
                 f"embedding cached (encode={sam_encode_elapsed:.3f}s)"
             )
+            self._empty_device_cache()
             return YoloSAMSegmentationResult(
                 segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
                 metadata={"detections": 0, "sam_embedding_cached": True},
@@ -229,9 +243,9 @@ class YoloSam(Model):
                 batch_max = np.max(batch_np, axis=0)
                 combined_mask = np.maximum(combined_mask, batch_max)
                 del masks, batch_np, batch_max
-                if self.device == "cuda":
-                    torch.cuda.empty_cache()
+                self._empty_device_cache()
 
+        self._empty_device_cache()
         sam_time_elapsed = time.perf_counter() - sam_start
 
         logger.info(
@@ -374,6 +388,7 @@ class YoloSam(Model):
             all_boxes.append(boxes_np)
 
             total_detections += len(boxes)
+            self._empty_device_cache()
 
         t_total = time.perf_counter() - t0
         logger.info(
