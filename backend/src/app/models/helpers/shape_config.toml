@@ -13,7 +13,10 @@
 # For "==" / "!=" on float metrics (circularity, aspect_ratio, solidity),
 # both sides are rounded to 2 decimal places before comparing.
 
-default_shape = "quasi-spherical"
+# Used only when a particle matches none of the rules below — kept distinct
+# from real category labels so rule gaps show up in shape_distribution
+# instead of silently blending into a real category.
+default_shape = "unclassified"
 
 [[rules]]
 label = "rod"
