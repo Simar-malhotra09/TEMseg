@@ -1,7 +1,30 @@
+import operator
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Literal
+
 import numpy as np
 import cv2 as cv
 import math
 from scipy import stats as sp_stats
+
+from app.models.helpers.settings import settings
+
+ShapeMetric = Literal["circularity", "aspect_ratio", "solidity", "n_vertices"]
+ShapeOperator = Literal["<", "<=", ">", ">=", "==", "!="]
+
+_SHAPE_OPERATORS: dict[ShapeOperator, Callable[[float, float], bool]] = {
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "==": operator.eq,
+    "!=": operator.ne,
+}
+
+# metrics compared with rounding tolerance when op is "==" / "!="
+_FLOAT_SHAPE_METRICS = {"circularity", "aspect_ratio", "solidity"}
 
 
 def _prepare_mask(mask: np.ndarray) -> np.ndarray:
@@ -29,35 +52,104 @@ def _fit_ellipse_safe(cnt):
     minor = min(axes)
     return (major, minor)
 
+@dataclass(frozen=True)
+class ShapeCondition:
+    metric: ShapeMetric
+    op: ShapeOperator
+    value: float
+
+
+@dataclass(frozen=True)
+class ShapeRule:
+    label: str
+    conditions: list[ShapeCondition]
+
+
+@dataclass(frozen=True)
+class ShapeClassificationConfig:
+    default_shape: str
+    rules: list[ShapeRule]
+
+
+def _parse_shape_condition(raw: dict) -> ShapeCondition:
+    metric = raw["metric"]
+    if metric not in ("circularity", "aspect_ratio", "solidity", "n_vertices"):
+        raise ValueError(f"Unknown shape metric in shape_config.toml: {metric!r}")
+    op = raw["op"]
+    if op not in _SHAPE_OPERATORS:
+        raise ValueError(f"Unknown operator in shape_config.toml: {op!r}")
+    return ShapeCondition(metric=metric, op=op, value=float(raw["value"]))
+
+
+def _parse_shape_rule(raw: dict) -> ShapeRule:
+    return ShapeRule(
+        label=raw["label"],
+        conditions=[_parse_shape_condition(c) for c in raw["conditions"]],
+    )
+
+
+def load_shape_classification_config(path: Path) -> ShapeClassificationConfig:
+    """Load shape classification rules from a TOML file (see shape_config.toml)."""
+    with open(path, "rb") as f:
+        raw = tomllib.load(f)
+    return ShapeClassificationConfig(
+        default_shape=raw["default_shape"],
+        rules=[_parse_shape_rule(r) for r in raw.get("rules", [])],
+    )
+
+
+def _shape_metric_value(
+    metric: ShapeMetric,
+    circularity: float,
+    aspect_ratio: float,
+    solidity: float,
+    n_vertices: int,
+) -> float:
+    if metric == "circularity":
+        return circularity
+    if metric == "aspect_ratio":
+        return aspect_ratio
+    if metric == "solidity":
+        return solidity
+    return float(n_vertices)
+
+
+def _shape_rule_matches(
+    rule: ShapeRule,
+    circularity: float,
+    aspect_ratio: float,
+    solidity: float,
+    n_vertices: int,
+) -> bool:
+    for cond in rule.conditions:
+        actual = _shape_metric_value(
+            cond.metric, circularity, aspect_ratio, solidity, n_vertices
+        )
+        compare = _SHAPE_OPERATORS[cond.op]
+        if cond.op in ("==", "!=") and cond.metric in _FLOAT_SHAPE_METRICS:
+            if not compare(round(actual, 2), round(cond.value, 2)):
+                return False
+        elif not compare(actual, cond.value):
+            return False
+    return True
+
 
 # shape distribution
-# this needs to be a lot more robust
 def _classify_shape(
     circularity: float,
     aspect_ratio: float,
     solidity: float,
     n_vertices: int,
+    config: ShapeClassificationConfig,
 ) -> str:
     """
-    Shape classification using multiple descriptors.
+    Shape classification driven by user-editable rules (shape_config.toml).
     Categories chosen for TEM nanoparticle relevance.
     """
-    if aspect_ratio > 2.5:
-        return "rod"
-    if circularity > 0.90 and solidity > 0.95 and aspect_ratio < 1.2:
-        return "spherical"
-    if solidity > 0.92 and circularity > 0.70:
-        if n_vertices <= 4:
-            return "triangular"
-        elif n_vertices <= 7:
-            return "faceted"
-        else:
-            return "quasi-spherical"
-    if aspect_ratio > 1.5:
-        return "elongated"
-    if solidity < 0.85:
-        return "irregular"
-    return "quasi-spherical"
+    for rule in config.rules:
+        if _shape_rule_matches(rule, circularity, aspect_ratio, solidity, n_vertices):
+            return rule.label
+    return config.default_shape
 
 
 # pdf distribution
@@ -154,6 +246,10 @@ def compute_stats_from_instances(
     coverage = foreground_pixels / total_pixels if total_pixels > 0 else 0.0
 
     particles = []
+
+    # load shape classification rules once, outside the per-instance loop
+    shape_config = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
+
     for inst in instances:
         inst_id = inst["id"]
 
@@ -228,7 +324,9 @@ def compute_stats_from_instances(
         approx = cv.approxPolyDP(cnt, epsilon, True)
         n_vertices = len(approx)
 
-        shape = _classify_shape(circularity, aspect_ratio, solidity, n_vertices)
+        shape = _classify_shape(
+            circularity, aspect_ratio, solidity, n_vertices, shape_config
+        )
 
         p = {
             "id": inst_id,
