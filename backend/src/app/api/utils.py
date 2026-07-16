@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import cv2 as cv
 from typing import List
 from pathlib import Path
-from typing import List
 import logging
 from fastapi import APIRouter
 
@@ -128,10 +127,6 @@ def inverse_blackout_regions(
         print(f"Inverse blacked-out image saved to {save_path}")
 
     return img_out
-
-
-import numpy as np
-import cv2 as cv
 
 
 def colorize_components_inplace(mask: np.ndarray, seed: int = 42) -> np.ndarray:
