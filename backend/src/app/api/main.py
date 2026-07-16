@@ -4,13 +4,10 @@ import time
 import shutil
 from pathlib import Path
 from typing import Dict
-import torch
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers import images, segment, ground_truths, masks, export, rf
 from app.api.live_models import AvailableModels
-from app.models.impls.yolosam import YoloSam
-from app.models.helpers.config import nano_config, house_config
-from app.models.impls.maskrcnn import MaskRCNN
+from app.api.model_registry import get_or_load_model
 
 from typing import List
 import logging
@@ -48,27 +45,15 @@ if not routes_logger.handlers:
     file_handler.setFormatter(formatter)
     routes_logger.addHandler(file_handler)
 
-def get_device() -> str:
-    """Pick the best available device at startup."""
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available():
-        device = "mps"
-    else:
-        device = "cpu"
-    routes_logger.info(f"[STARTUP] Using device: {device}")
-    return device
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # cleanup_old_sessions(force=True)
 
-    # initalize on startup,
-    app.state.models = {
-        AvailableModels.yolosam: YoloSam(nano_config, device=get_device()),
-        AvailableModels.maskrcnn: MaskRCNN(house_config, device=get_device()),
-    }
+    # initalize on startup: only YoloSAM, the default/better model, is loaded
+    # eagerly. MaskRCNN is lazily loaded on first use (see model_registry.py)
+    # to avoid holding both models in RAM at once.
+    app.state.models = {}
+    get_or_load_model(app.state.models, AvailableModels.yolosam)
     app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.warmed_up = False
     yield
