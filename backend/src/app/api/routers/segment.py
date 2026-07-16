@@ -8,6 +8,7 @@ import numpy as np
 
 # from app.models.base_model import  StatType, StatsConfig
 from app.api.live_models import AvailableModels
+from app.api.model_registry import get_or_load_model
 from app.api.utils import (
     Box,
     normalize_mask,
@@ -50,12 +51,9 @@ SESSIONS_DIR = Path("sessions")
 async def segment(req: SegmentRequest, request: Request):
     t_req_start = time.perf_counter()
 
-    model_inst = request.app.state.models.get(req.model.value)
+    model_inst = get_or_load_model(request.app.state.models, req.model)
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)
-
-    if not model_inst:
-        return {"error": f"Model {req.model} not found"}
 
     if req.blackout and req.inverse_blackout:
         raise ValueError(
