@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import sys
 import os
-from rsciio.emd import file_reader
 from app.api.live_models import AvailableModels
 from pydantic import BaseModel
 
