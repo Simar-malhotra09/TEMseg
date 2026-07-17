@@ -37,7 +37,8 @@ interface Props {
 }
 
 const COLORS = [
-  "#ff4444", "#44ff44", "#4488ff", "#ffff44",
+  "#ff4444", 
+  "#44ff44", "#4488ff", "#ffff44",
   "#ff44ff", "#44ffff", "#ff8844", "#8844ff",
   "#44ff88", "#ff4488",
 ];
@@ -211,8 +212,8 @@ export default function RefineCanvas({
         style={{ imageRendering: "crisp-edges" }}
       />
 
-      {instances.map((inst, i) => {
-        const color = COLORS[i % COLORS.length];
+      {instances.map((inst) => {
+        const color = COLORS[inst.id % COLORS.length];
         const isSelected = inst.id === selectedId;
         const pts = getLivePointsStr(inst);
 
