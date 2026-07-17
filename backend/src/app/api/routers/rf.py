@@ -26,7 +26,7 @@ MIN_BG_FRACTION = 0.04
 
 class TrainRequest(BaseModel):
     session_id: str
-    min_area: int = 50
+    min_area: int | None = None  # None → derive from segmented instances
 
 
 class ProposeRequest(BaseModel):
