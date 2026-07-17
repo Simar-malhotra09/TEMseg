@@ -7,9 +7,9 @@ import numpy as np
 from fastapi import APIRouter, Request  # noqa: F401 — Request needed for app.state
 from pydantic import BaseModel
 
-from app.api.instances import extract_instances
+from app.api.instances import extract_instances, load_instances
 from app.api.live_models import AvailableModels
-from app.api.utils import Stroke, strokes_to_mask
+from app.api.utils import Stroke, mask_iou, strokes_to_mask
 from app.models.helpers import rf_cache
 
 router = APIRouter(prefix="/rf")
@@ -33,6 +33,9 @@ class ProposeRequest(BaseModel):
     session_id: str
     top_n: int = 5
     bg_scribbles: list[Stroke] | None = None
+    # reject a proposal if IoU with any already-committed instance exceeds this
+    # (matches /masks/{id}/propose-similar's iou_dedupe default)
+    iou_dedupe: float = 0.2
 
 
 @router.post("/train")
@@ -107,11 +110,11 @@ async def rf_propose(req: ProposeRequest, request: Request):
                 "error": (
                     f"Not enough background marked ({marked_px}px, need at least "
                     f"{min_bg_px}px). Scribble over a few more empty areas, spread "
-                    f"across different parts of the image."
+                    f"across different parts of the image("
                 )
             }
 
-    # Always retrain fresh — the cache is keyed only on session_id, so a stale
+    # Always retrain fresh: the cache is keyed only on session_id, so a stale
     # entry from a previous call would silently ignore mask edits (refine)
     # and any newly-drawn bg_scribbles.
     rf_cache.evict(req.session_id)
@@ -126,6 +129,48 @@ async def rf_propose(req: ProposeRequest, request: Request):
         }
 
     instances, _ = extract_instances(missed, session_dir, save=False)
+
+    # Dedupe against the *rasterized final contour*, not the raw missed-pixel
+    # mask. extract_instances traces contours with RETR_EXTERNAL, which only
+    # follows a component's outer boundary and ignores holes. A ring/halo of
+    # RF false positives around an already-segmented particle is a donut: the
+    # raw missed mask correctly has a hole where that particle sits (excluded
+    # via ~(mask>0) above), but its external-only contour collapses into a
+    # solid filled disc — which is what actually gets rendered/committed, and
+    # it swallows the particle whole even though the raw mask never touched
+    # it. Rasterizing the committed contour (same way rasterize_instances
+    # does) before the IoU check catches that.
+    cached_existing = load_instances(session_dir)
+    if cached_existing is not None:
+        existing_instances, existing_labeled = cached_existing
+        existing_ids = [inst["id"] for inst in existing_instances]
+        deduped = []
+        for inst in instances:
+            contour = np.array(inst["contour"], dtype=np.int32)
+            proposal_mask = np.zeros(existing_labeled.shape, dtype=np.uint8)
+            cv.fillPoly(proposal_mask, [contour], color=1)
+            proposal_mask = proposal_mask.astype(bool)
+            worst_iou = max(
+                (
+                    mask_iou(proposal_mask, existing_labeled == eid)
+                    for eid in existing_ids
+                ),
+                default=0.0,
+            )
+            if worst_iou > req.iou_dedupe:
+                logger.debug(
+                    f"[RF-Propose] instance {inst['id']} rejected: "
+                    f"IoU {worst_iou:.2f} with existing instance"
+                )
+                continue
+            deduped.append(inst)
+        n_rejected = len(instances) - len(deduped)
+        if n_rejected:
+            logger.info(
+                f"[RF-Propose] {n_rejected} proposal(s) deduped against existing instances"
+            )
+        instances = deduped
+
     for inst in instances:
         inst["source"] = "rf"
 
