@@ -94,7 +94,7 @@ export default function Workspace() {
       setImage(`${BASE_URL}/images/${restored}/preview`);
       setMetadata(meta);
 
-      // Rehydrate seg state from disk in parallel — both calls return null on 404
+      // Rehydrate seg state from disk in parallel. both calls return null on 404
       // (i.e. no segmentation run yet for this session).
       const [stats, instRes] = await Promise.all([
         getStats(restored).catch(() => null),
@@ -132,23 +132,24 @@ export default function Workspace() {
   const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
 
-  // blackout region refs — written by BlackoutCanvas.onChange, read on seg/gt
+  // blackout region refs. written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
   const liveRegionsRef = useRef<BlackoutRect[]>([]); // tracks region to be excluded
   const liveInverseRegionsRef = useRef<BlackoutRect[]>([]); // tracks regions to be included
 
-  // RF background scribble mode — user-marked "this is definitely background"
+  // RF background scribble mode. user-marked "this is definitely background"
   // strokes, sent with /rf/propose so the RF trains on real ground truth
   // instead of assuming everything far from a known particle is background.
   const [rfBgMode, setRfBgMode] = useState(false);
   const [rfBgScribbles, setRfBgScribbles] = useState<Scribble[]>([]);
   const rfBgScribblesRef = useRef<Scribble[]>([]);
+  const [rfBgBrushSize, setRfBgBrushSize] = useState(60); // scroll-to-resize on the scribble canvas
 
   // refine mode
   const [refineMode, setRefineMode] = useState(false);
   const [refineDone, setRefineDone] = useState(false);
 
-  // bootstrap mode — click points on the image to propose particles via SAM.
+  // bootstrap mode. click points on the image to propose particles via SAM.
   // Each click adds to `pendingProposals` (rendered as a yellow overlay).
   // Accept commits the whole batch via the existing PUT instances endpoint;
   // Discard or per-proposal click-to-reject clears them without a server call.
@@ -156,13 +157,13 @@ export default function Workspace() {
   const [bootstrapBusy, setBootstrapBusy] = useState(false);
   const [pendingProposals, setPendingProposals] = useState<Instance[]>([]);
 
-  // manual annotation mode — for the zero-detection case where SAM-with-point
+  // manual annotation mode. for the zero-detection case where SAM-with-point
   // also can't help (small/clumped/OOD particles). User draws polygons from
   // scratch; each closed polygon becomes a pendingProposal and follows the
   // same Accept/Discard commit flow.
   const [annotateMode, setAnnotateMode] = useState(false);
 
-  // box-prompt annotation mode — drag a tight rectangle around a particle,
+  // box-prompt annotation mode. drag a tight rectangle around a particle,
   // SAM segments inside via box prompt (far more reliable than point prompt
   // for OOD particles, and much faster than polygon-from-scratch).
   const [boxMode, setBoxMode] = useState(false);
@@ -397,7 +398,7 @@ export default function Workspace() {
 
   // Turn a manually-drawn polygon into a pending proposal. IDs are placeholder
   // (renumbered on Accept against the on-disk max), so any unique-within-batch
-  // value works — using a large negative number to make manual entries obvious
+  // value works. sign a large negative number to make manual entries obvious
   // in logs/debug overlays alongside server-issued positive IDs.
   function handlePolygonComplete(contour: [number, number][]) {
     if (contour.length < 3) return;
@@ -407,7 +408,7 @@ export default function Workspace() {
     const minY = Math.min(...ys);
     const maxX = Math.max(...xs);
     const maxY = Math.max(...ys);
-    // shoelace formula — true polygon area
+    // shoelace formula for true polygon area
     let s = 0;
     for (let i = 0; i < contour.length; i++) {
       const [x1, y1] = contour[i];
@@ -415,7 +416,7 @@ export default function Workspace() {
       s += x1 * y2 - x2 * y1;
     }
     const area = Math.round(Math.abs(s) / 2);
-    // Placeholder ID — keep stepping down so rejecting a middle polygon
+    // Placeholder ID. keep stepping down so rejecting a middle polygon
     // can't cause a collision when a later annotation reuses the freed slot.
     // Renumbered against the on-disk max on Accept.
     const minId = pendingProposals.reduce((m, p) => Math.min(m, p.id), 0);
@@ -462,7 +463,7 @@ export default function Workspace() {
     }
   }
 
-  // Call /propose-similar — uses existing on-disk instances as the prior,
+  // Call /propose-similar. uses existing on-disk instances as the prior,
   // returns SAM box-sweep candidates. Appended to pendingProposals so the
   // same yellow-overlay accept/reject UX handles them.
   async function handleProposeSimilar() {
@@ -538,7 +539,7 @@ export default function Workspace() {
   }
 
 
-  // css zoom/pan handlers — disabled when blackout or refine active
+  // css zoom/pan handlers. disabled when blackout or refine active
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -814,7 +815,7 @@ export default function Workspace() {
                 </button>
               )}
 
-              {/* bootstrap mode — click on the image to *propose* particles via
+              {/* bootstrap mode. click on the image to *propose* particles via
                   SAM point-prompt. Requires a prior /segment run so the SAM
                   image embedding is cached server-side (the backend 400s
                   otherwise, but the disabled state is the clean UX). */}
@@ -828,7 +829,7 @@ export default function Workspace() {
                 {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
               </button>
 
-              {/* box-prompt annotation — drag a tight box, SAM segments inside.
+              {/* box-prompt annotation. drag a tight box, SAM segments inside.
                   Preferred over click-to-add for OOD particles where point
                   prompts bleed; preferred over polygon for speed. */}
               <button type="button" 
@@ -846,7 +847,7 @@ export default function Workspace() {
                 </p>
               )}
 
-              {/* manual annotation — fallback when both YOLO and SAM-with-point
+              {/* manual annotation. fallback when both YOLO and SAM-with-point
                   fail (small / clumped / OOD particles). Doesn't require a
                   prior /segment run since it doesn't use any model output. */}
               <button type="button" 
@@ -889,7 +890,7 @@ export default function Workspace() {
                 {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
               </button>
 
-              {/* RF recovery — requires prior /segment so SAM embedding is cached */}
+              {/* RF recovery. requires prior /segment so SAM embedding is cached */}
               <button type="button"
                 className={styles.actionBtn}
                 disabled={
@@ -908,7 +909,7 @@ export default function Workspace() {
                 {bootstrapBusy ? "Running..." : "RF Recover Missed"}
               </button>
 
-              {/* RF background scribble — mark patches that are definitely
+              {/* RF background scribble. mark patches that are definitely
                   background so the RF trains on real ground truth instead of
                   assuming everything far from a known particle is background
                   (which mislabels particles the model missed). */}
@@ -938,7 +939,8 @@ export default function Workspace() {
               {rfBgMode && (
                 <p className={styles.sidebarHint}>
                   Scribble over patches that are definitely background (no particle in them).
-                  Cover a few different areas — a single tiny mark isn&apos;t enough for the RF to generalize.
+                  Cover a few different areas. A single tiny mark isn&apos;t enough for the RF to generalize.
+                  Scroll over the canvas to resize the brush (currently {rfBgBrushSize}px).
                 </p>
               )}
 
@@ -1144,7 +1146,7 @@ export default function Workspace() {
                     : panning ? "grabbing" : "grab",
                 }}
               >
-                {/* base image — hidden when blackout/refine canvas is active (they render their own) */}
+                {/* base image. hidden when blackout/refine canvas is active (they render their own) */}
                 <img
                   src={image}
                   alt="TEM input"
@@ -1183,7 +1185,7 @@ export default function Workspace() {
                   </div>
                 )}
 
-                {/* RF background scribble canvas — freehand brush strokes */}
+                {/* RF background scribble canvas. Freehand brush strokes */}
                 {rfBgMode && imgSize.width > 0 && (
                   <div style={{ position: "absolute", top: 0, left: 0 }}>
                     <ScribbleCanvas
@@ -1193,6 +1195,8 @@ export default function Workspace() {
                       imgWidth={imgSize.width}
                       imgHeight={imgSize.height}
                       initialStrokes={rfBgScribbles}
+                      brushSize={rfBgBrushSize}
+                      onBrushSizeChange={setRfBgBrushSize}
                       onChange={scribbles => {
                         rfBgScribblesRef.current = scribbles;
                         setRfBgScribbles(scribbles);

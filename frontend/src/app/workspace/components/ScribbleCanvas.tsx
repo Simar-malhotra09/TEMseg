@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Stage, Layer, Line, Image as KonvaImage } from "react-konva";
+import { Stage, Layer, Line, Circle, Text, Image as KonvaImage } from "react-konva";
 import Konva from "konva";
 
 import useImage from "use-image";
@@ -12,6 +12,11 @@ export interface Scribble {
   strokeWidth: number;
 }
 
+// brush diameter bounds, in image-space px. wide range so a small brush
+// works on congested images and a large one works on big isolated ones
+const MIN_BRUSH_SIZE = 6;
+const MAX_BRUSH_SIZE = 400;
+
 interface Props {
   imageSrc: string;
   imgWidth: number;   // original image width
@@ -20,16 +25,19 @@ interface Props {
   height: number;     // viewport height
   initialStrokes?: Scribble[];
   brushSize?: number;  // brush diameter, in image-space px
+  onBrushSizeChange?: (size: number) => void; // scroll-to-resize callback
   onChange: (strokes: Scribble[]) => void;
 }
 
 export default function ScribbleCanvas({
-  imageSrc, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onChange,
+  imageSrc, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onBrushSizeChange, onChange,
 }: Props) {
   const [image] = useImage(imageSrc);
   const [strokes, setStrokes] = useState<Scribble[]>(initialStrokes ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<Scribble | null>(null);
+  // viewport-space cursor position which drives the live brush-size preview circle
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
 
   // delete selected stroke on backspace
   useEffect(() => {
@@ -63,6 +71,8 @@ export default function ScribbleCanvas({
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stagePos = e.target.getStage()?.getPointerPosition();
+    if (stagePos) setCursorPos(stagePos);
     if (!drawing) return;
     const pos = getPointerPos(e);
     setDrawing(d => d ? { ...d, points: [...d.points, pos.x, pos.y] } : null);
@@ -79,6 +89,18 @@ export default function ScribbleCanvas({
     setDrawing(null);
   };
 
+  // scroll to resize brush. keeps the resize control on-canvas instead of
+  // spending sidebar space on a slider; stopPropagation so it doesn't also
+  // trigger the page-level pan/zoom wheel handler
+  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault();
+    e.evt.stopPropagation();
+    if (!onBrushSizeChange) return;
+    const factor = e.evt.deltaY > 0 ? 0.9 : 1.1;
+    const next = Math.round(Math.min(MAX_BRUSH_SIZE, Math.max(MIN_BRUSH_SIZE, brushSize * factor)));
+    onBrushSizeChange(next);
+  };
+
   const toViewportPoints = (points: number[]) =>
     points.map((v, i) => i % 2 === 0 ? v * (width / imgWidth) : v * (height / imgHeight));
 
@@ -89,6 +111,8 @@ export default function ScribbleCanvas({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onMouseLeave={() => setCursorPos(null)}
+      onWheel={handleWheel}
     >
       <Layer>
         <KonvaImage image={image} width={width} height={height} />
@@ -116,6 +140,33 @@ export default function ScribbleCanvas({
             lineJoin="round"
           />
         )}
+
+        {/* live brush-size preview, derived from the cursor, resizes on scroll */}
+        {cursorPos && (() => {
+          const radius = (brushSize / 2) * (width / imgWidth);
+          return (
+            <>
+              <Circle
+                x={cursorPos.x}
+                y={cursorPos.y}
+                radius={radius}
+                stroke="#fff"
+                strokeWidth={1}
+                dash={[4, 3]}
+                opacity={0.8}
+                listening={false}
+              />
+              <Text
+                x={cursorPos.x + radius + 6}
+                y={cursorPos.y - 6}
+                text={`${brushSize}px`}
+                fontSize={11}
+                fill="#fff"
+                listening={false}
+              />
+            </>
+          );
+        })()}
       </Layer>
     </Stage>
   );
