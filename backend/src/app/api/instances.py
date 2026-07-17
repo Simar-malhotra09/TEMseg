@@ -14,7 +14,7 @@ MIN_INSTANCE_AREA = 50
 # perimeter. Scaled by how much of the image the instance covers, so tiny
 # particles get aggressively simplified (fewer vertices to clutter the UI)
 # while large, significant ones keep more shape detail.
-MIN_EPSILON_FRAC = 0.015  # applied to instances at/above SIZE_REF_AREA_FRAC
+MIN_EPSILON_FRAC = 0.005  # applied to instances at/above SIZE_REF_AREA_FRAC
 MAX_EPSILON_FRAC = 0.035  # applied to vanishingly small instances
 SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
 
@@ -22,7 +22,7 @@ SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
 def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> float:
     """approxPolyDP epsilon for a contour, relative to how large the instance is vs the image."""
     area_frac = area / image_area
-    significance = 3.5 * min(1.0, math.sqrt(area_frac / SIZE_REF_AREA_FRAC))
+    significance = min(1.0, math.sqrt(area_frac / SIZE_REF_AREA_FRAC))
     epsilon_frac = (
         MAX_EPSILON_FRAC - (MAX_EPSILON_FRAC - MIN_EPSILON_FRAC) * significance
     )
