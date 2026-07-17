@@ -22,7 +22,7 @@ SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
 def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> float:
     """approxPolyDP epsilon for a contour, relative to how large the instance is vs the image."""
     area_frac = area / image_area
-    significance = 2 * min(1.0, math.sqrt(area_frac / SIZE_REF_AREA_FRAC))
+    significance = 3.5 * min(1.0, math.sqrt(area_frac / SIZE_REF_AREA_FRAC))
     epsilon_frac = (
         MAX_EPSILON_FRAC - (MAX_EPSILON_FRAC - MIN_EPSILON_FRAC) * significance
     )
