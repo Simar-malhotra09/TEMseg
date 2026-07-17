@@ -220,7 +220,7 @@ class RFRecovery:
         t_pred = time.perf_counter()
 
         missed = (probs > threshold) & ~(mask > 0)
-        missed = remove_small_objects(missed, min_size=self.min_area)
+        missed = remove_small_objects(missed, max_size=self.min_area)
         missed = remove_small_holes(missed, max_size=self.min_area)
 
         logger.info(
@@ -245,7 +245,7 @@ class RFRecovery:
         t_pred = time.perf_counter()
 
         missed = (probs > 0.6) & ~(mask > 0)
-        missed = remove_small_objects(missed, min_size=self.min_area)
+        missed = remove_small_objects(missed, max_size=self.min_area)
 
         labeled, n = ndimage.label(missed)
         t_label = time.perf_counter()
