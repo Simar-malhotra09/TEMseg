@@ -221,7 +221,7 @@ class RFRecovery:
 
         missed = (probs > threshold) & ~(mask > 0)
         missed = remove_small_objects(missed, min_size=self.min_area)
-        missed = remove_small_holes(missed, area_threshold=self.min_area)
+        missed = remove_small_holes(missed, max_size=self.min_area)
 
         logger.info(
             f"[RFRecovery] feat={t_feat - t0:.2f}s predict={t_pred - t_feat:.2f}s "
