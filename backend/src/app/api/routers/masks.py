@@ -7,6 +7,7 @@ import cv2 as cv
 import logging
 import time
 from app.api.live_models import AvailableModels
+from app.api.utils import mask_iou
 
 # from app.api.utils import extract_instances, rasterize_instances, save_debug_overlay
 from app.api.instances import (
@@ -53,10 +54,10 @@ class InstancesResponse(BaseModel):
 
 
 class FromBoxesRequest(BaseModel):
-    # image-space boxes — each one is segmented by SAM with a box prompt and
+    # image-space boxes: each one is segmented by SAM with a box prompt and
     # returned as a proposal. Boxes should tightly contain a single particle.
     boxes: list[list[float]]  # [[x0, y0, x1, y1], ...]
-    # not-yet-committed proposals from prior box-drags in this session — same
+    # not-yet-committed proposals from prior box-drags in this session; same
     # dedup-mask role as in FromPointsRequest
     pending: list[dict] = []
     # reject SAM masks whose area > this fraction of the full image
@@ -75,7 +76,7 @@ class FromPointsRequest(BaseModel):
     # reject SAM masks whose area > this fraction of the full image
     # (kills "select everything" failures on background clicks)
     max_image_fraction: float = 0.05
-    # absolute minimum area in pixels — below this, the click likely landed
+    # absolute minimum area in pixels: below this, the click likely landed
     # on a texture/noise patch rather than a particle
     min_area: int = 100
 
@@ -100,7 +101,7 @@ class ProposeSimilarRequest(BaseModel):
     # reject proposal if IoU with any existing instance > this
     iou_dedupe: float = 0.2
     # reject proposal whose area > this fraction of the full image
-    # — kills SAM's "select everything" failure mode for ambiguous prompts
+    # as it kills SAM's "select everything" failure mode for ambiguous prompts
     max_image_fraction: float = 0.05
 
 
@@ -417,16 +418,14 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # /masks/{session_id}/from-boxes
 #
 # Box-prompt SAM. User drags a tight rectangle around a particle; the box
 # becomes a SAM prompt (multimask_output=False, since the box disambiguates
-# scale on its own). Returns proposals only — same pendingProposals flow as
+# scale on its own). Returns proposals only ie the same pendingProposals flow as
 # /from-points and /propose-similar. SAM is dramatically more reliable with
 # box prompts than point prompts on small / clumped / OOD particles, so this
 # is the preferred bootstrap path when SAM-with-point fails.
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 @router.post("/{session_id}/from-boxes")
@@ -590,15 +589,13 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # /masks/{session_id}/from-points
 #
-# Bootstrap mode for "YOLO found nothing" — user clicks 1-N particles, each
+# Bootstrap mode for "YOLO found nothing". User clicks 1-N particles, each
 # click is turned into a *proposal* via SAM single-point predict. The proposal
 # is returned only (no disk write). The frontend overlays it; the user can
 # reject individual proposals or accept the batch, at which point the existing
 # PUT /masks/.../instances commits them (save + mask.png + stats in one pass).
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _pick_smallest_safe_mask(
@@ -631,13 +628,13 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
 
     session_dir = _session_dir(session_id)
 
-    # ── load existing instances (may be empty after a zero-YOLO segment) ──────
+    # load existing instances (may be empty after a zero-YOLO segment)
     cached = load_instances(session_dir)
     if cached is not None:
         instances, labeled = cached
         labeled = labeled.copy()  # avoid mutating the cached array with pending paint
     else:
-        # No instances on disk yet — infer shape from mask.png if present,
+        # No instances on disk yet. infer shape from mask.png if present,
         # otherwise from the original_preview.png.
         shape = None
         mask_path = session_dir / "mask.png"
@@ -667,7 +664,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         if contour.ndim == 2 and len(contour) >= 3 and pid > 0:
             cv.fillPoly(labeled, [contour], color=pid)
 
-    # ── restore SAM predictor state from cached embedding ────────────────────
+    # restore SAM predictor state from cached embedding
     embedding_cache = getattr(request.app.state, "embedding_cache", {})
     embedding = embedding_cache.get(session_id)
     if embedding is None:
@@ -694,7 +691,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         f"[{body.min_area}, {int(max_area)}]px"
     )
 
-    # ── SAM predict per click ────────────────────────────────────────────────
+    # SAM predict per click
     existing_mask = labeled > 0
     all_ids = [i["id"] for i in instances] + [int(p.get("id", 0)) for p in body.pending]
     next_id = (max(all_ids) + 1) if all_ids else 1
@@ -779,7 +776,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                 )
                 continue
         else:
-            # No prior — fall back to the original multimask + smallest-in-window pick.
+            # No prior exists. fall back to the original multimask + smallest-in-window pick.
             try:
                 masks, scores, _ = predictor.predict(
                     point_coords=np.array([[px, py]]),
@@ -855,11 +852,10 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # /masks/{session_id}/propose-similar
 #
 # Use the user's already-annotated instances as in-context examples to find
-# more visually-similar particles in the SAME image. Returns proposals only —
+# more visually-similar particles in the SAME image. Returns proposals only
 # nothing is written to disk. The frontend overlays them; the user accepts /
 # rejects, then commits the kept ones via the existing PUT /masks/.../instances.
 #
@@ -873,7 +869,6 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
 #   6. For each seed, run SAM predict() with a single foreground point.
 #   7. Constrain to "not already annotated" regions; reject by area / IoU.
 #   8. Return surviving candidates as instance dicts (with provisional IDs).
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _embedding_feature_map(predictor) -> np.ndarray:
@@ -1012,14 +1007,6 @@ def _ncc_score_map(
     )
 
 
-def _mask_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
-    inter = int(np.logical_and(mask_a, mask_b).sum())
-    if inter == 0:
-        return 0.0
-    union = int(np.logical_or(mask_a, mask_b).sum())
-    return inter / union if union else 0.0
-
-
 @router.post("/{session_id}/propose-similar")
 async def propose_similar(
     session_id: str, body: ProposeSimilarRequest, request: Request
@@ -1032,7 +1019,7 @@ async def propose_similar(
 
     session_dir = _session_dir(session_id)
 
-    # ── 1. load existing instances ───────────────────────────────────────────
+    #  1. load existing instances
     cached = load_instances(session_dir)
     if cached is None:
         raise HTTPException(
@@ -1069,7 +1056,7 @@ async def propose_similar(
         f"floor={min_area:.0f}px | box widths={box_widths.round(1).tolist()}"
     )
 
-    # ── 2. cached SAM embedding ──────────────────────────────────────────────
+    # 2. cached SAM embedding
     embedding_cache = getattr(request.app.state, "embedding_cache", {})
     embedding = embedding_cache.get(session_id)
     if embedding is None:
@@ -1092,7 +1079,7 @@ async def propose_similar(
     h_img, w_img = embedding.original_size
     logger.info(f"[PROPOSE] Image size {h_img}x{w_img} | embedding restored")
 
-    # ── 3. similarity map ────────────────────────────────────────────────────
+    #  3. similarity map
     method = body.method.lower()
     if method not in ("ncc", "cosine"):
         raise HTTPException(
@@ -1152,7 +1139,7 @@ async def propose_similar(
     )
     sim[dilated > 0] = -1.0
 
-    # ── 4. NMS to pick seed points ───────────────────────────────────────────
+    # 4. NMS to pick seed points
     peaks = _greedy_peak_nms(
         sim, body.sim_threshold, body.nms_distance, body.max_proposals
     )
@@ -1166,7 +1153,7 @@ async def propose_similar(
             "message": "No regions above similarity threshold",
         }
 
-    # ── 5. SAM predict per seed, dedupe ──────────────────────────────────────
+    #  5. SAM predict per seed, dedupe
     existing_mask = existing_any.astype(bool)
     proposals: list[dict] = []
     max_id = max(existing_ids)
@@ -1224,14 +1211,14 @@ async def propose_similar(
         area = best_area
 
         # IoU against every existing instance (uses labeled mask, no per-inst loop)
-        # cheap proxy: overlap-to-area ratio with the existing union — already handled by constrain
+        # cheap proxy: overlap-to-area ratio with the existing union, already handled by constrain
         # full IoU dedupe: compare this proposal to each existing instance individually
         proposal_mask = constrained.astype(bool)
         # quick rejection if a single existing instance dominates
         worst_iou = 0.0
         for eid in existing_ids:
             inst_mask = labeled == eid
-            iou = _mask_iou(proposal_mask, inst_mask)
+            iou = mask_iou(proposal_mask, inst_mask)
             if iou > worst_iou:
                 worst_iou = iou
             if iou > body.iou_dedupe:
@@ -1272,10 +1259,10 @@ async def propose_similar(
         existing_mask = np.logical_or(existing_mask, proposal_mask)
         next_id += 1
 
-    # ── 6. debug overlay PNG for visual verification ─────────────────────────
+    # 6. debug overlay PNG
     # Renders: original image + existing instances (green) + proposals (yellow)
     # + seed points (red). Saved to session_dir for the user to inspect.
-    # Prefer original_preview.png — the org_*.emd source can't be read by cv.imread.
+    # Prefer original_preview.png as the org_*.emd source can't be read by cv.imread.
     debug_url = None
     preview_path = session_dir / "original_preview.png"
     if not preview_path.exists():
