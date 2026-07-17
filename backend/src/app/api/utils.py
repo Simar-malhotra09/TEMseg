@@ -67,6 +67,17 @@ def blackout_regions(
     return img_out
 
 
+def mask_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
+    """Intersection-over-union of two boolean masks, used to dedupe proposals
+    (from any source: SAM point/box/similar prompting, RF recovery) against
+    each other or against already-committed instances."""
+    inter = int(np.logical_and(mask_a, mask_b).sum())
+    if inter == 0:
+        return 0.0
+    union = int(np.logical_or(mask_a, mask_b).sum())
+    return inter / union if union else 0.0
+
+
 def strokes_to_mask(strokes: List[Stroke], shape: tuple[int, int]) -> np.ndarray:
     """Rasterize freehand scribble strokes into a boolean mask of the given (h, w) shape."""
     h, w = shape
