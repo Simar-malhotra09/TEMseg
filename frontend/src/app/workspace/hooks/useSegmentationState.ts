@@ -121,7 +121,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
     }
   }, [sessionId, segDone, scoreGroundTruth]);
 
-  // apply blackout — called when user clicks Apply in blackout mode
+  // apply blackout. called when user clicks Apply in blackout mode
   const applyBlackout = useCallback((regions: BlackoutRect[]) => {
     if (isInvBlackoutMode) {
       setInvBlackoutRegions(regions);
@@ -142,7 +142,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
     }
   }, [isInvBlackoutMode]);
 
-  // reset everything — called when new image is loaded
+  // reset everything. called when new image is loaded
   const reset = useCallback(() => {
     setSegDone(false);
     setMaskUrl(null);

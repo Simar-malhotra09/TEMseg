@@ -18,7 +18,7 @@ interface BlackoutRect {
   height: number;
 }
 
-// mirrors the server's Stroke pydantic model — a freehand scribble
+// mirrors the server's Stroke pydantic model ie  a freehand scribble
 export interface Stroke {
   id: string;
   points: number[]; // flat [x1, y1, x2, y2, ...] in image coordinates
@@ -153,9 +153,6 @@ export interface Instance {
   seed?: [number, number];
 }
 
-/* ------------------------------------------------------------------ */
-/*  PyWebView bridge detection                                        */
-/* ------------------------------------------------------------------ */
 
 /** True when running inside the PyWebView desktop window */
 export function isPyWebView(): boolean {
@@ -173,9 +170,6 @@ export async function exportViaPyWebView(
   return (window as any).pywebview.api.export_zip(sessionId, items);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Standard API functions                                            */
-/* ------------------------------------------------------------------ */
 
 export async function getModels(): Promise<string[]> {
   const res = await fetch(`${BASE_URL}/models`);

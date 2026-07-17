@@ -1243,7 +1243,7 @@ export default function Workspace() {
                   }} />
                 )}
 
-                {/* manual annotation canvas — SVG overlay, in image-space */}
+                {/* manual annotation canvas,SVG overlay, in image-space */}
                 {annotateMode && !refineMode && image && imgSize.width > 0 && (
                   <AnnotateCanvas
                     imageSrc={image}
@@ -1257,7 +1257,7 @@ export default function Workspace() {
                   />
                 )}
 
-                {/* box-prompt annotation canvas — drag rectangles, SAM segments */}
+                {/* box-prompt annotation canvas. drag rectangles, SAM segments */}
                 {boxMode && !refineMode && image && imgSize.width > 0 && (
                   <BoxAnnotateCanvas
                     imageSrc={image}
@@ -1272,7 +1272,7 @@ export default function Workspace() {
                   />
                 )}
 
-                {/* bootstrap click capture — sits on top, transparent, catches clicks */}
+                {/* bootstrap click capture.sits on top, transparent, catches clicks */}
                 {bootstrapMode && !refineMode && imgSize.width > 0 && (
                   <div
                     onClick={handleBootstrapClick}
@@ -1287,7 +1287,7 @@ export default function Workspace() {
                   />
                 )}
 
-                {/* scale bar line — rendered under the mouse capture overlay */}
+                {/* scale bar line. rendered under the mouse capture overlay */}
                 {scaleBarMode && scaleBarLineSvg && imgSize.width > 0 && (
                   <svg
                     viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
@@ -1311,7 +1311,7 @@ export default function Workspace() {
                   </svg>
                 )}
 
-                {/* scale bar mouse capture — draws the measurement line */}
+                {/* scale bar mouse capture to draw the measurement line */}
                 {scaleBarMode && !scaleBarPixels && imgSize.width > 0 && (
                   <div
                     onMouseDown={handleScaleBarMouseDown}
@@ -1328,10 +1328,10 @@ export default function Workspace() {
                   />
                 )}
 
-                {/* pending proposals overlay — yellow outlines, click to reject.
+                {/* pending proposals overlay: yellow outlines, click to reject.
                     Sits above the bootstrap click-capture so reject clicks
                     aren't swallowed as new proposals. Suppressed while a
-                    canvas mode is active — those canvases render their own
+                    canvas mode is active and those canvases render their own
                     in-image-space proposal overlay so the viewBox transforms
                     them together with the image. */}
                 {pendingProposals.length > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && imgSize.width > 0 && (
