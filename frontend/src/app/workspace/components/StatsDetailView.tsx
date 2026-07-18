@@ -30,8 +30,27 @@ interface Props {
 
 
 type SizeMode = "diameter" | "area";
-type SortKey = "index" | "diameter" | "area" | "perimeter" | "circularity" | "solidity" | "aspect_ratio" | "n_vertices" | "shape";
 type SortDir = "asc" | "desc";
+
+// Client side source of truth for the per-particle table's columns. 
+// sortable key type and the rendered header list derive from this
+const TABLE_COLUMN_KEYS = [
+  "index", "diameter", "area", "circularity", "solidity", "aspect_ratio", "n_vertices", "shape",
+] as const;
+type SortKey = typeof TABLE_COLUMN_KEYS[number];
+
+function columnLabel(key: SortKey, hasScale: boolean, unit: string): string {
+  switch (key) {
+    case "index": return "#";
+    case "diameter": return `Eq. Diameter (${hasScale ? unit : "px"})`;
+    case "area": return `Area (${hasScale ? unit + "²" : "px²"})`;
+    case "circularity": return "Circ.";
+    case "solidity": return "Solidity";
+    case "aspect_ratio": return "Asp. Ratio";
+    case "n_vertices": return "Vertices";
+    case "shape": return "Shape";
+  }
+}
 
 const SHAPE_COLORS: Record<string, string> = {
   spherical: "#7ee8a2",
@@ -185,13 +204,11 @@ const histData = useMemo(() => {
         case "index": va = a.index; vb = b.index; break;
         case "diameter": va = a.diameter_real ?? a.diameter_px; vb = b.diameter_real ?? b.diameter_px; break;
         case "area": va = a.area_real ?? a.area_px; vb = b.area_real ?? b.area_px; break;
-        case "perimeter": va = a.perimeter_real ?? a.perimeter_px; vb = b.perimeter_real ?? b.perimeter_px; break;
         case "circularity": va = a.circularity; vb = b.circularity; break;
         case "aspect_ratio": va = a.aspect_ratio; vb = b.aspect_ratio; break;
         case "shape": va = a.shape; vb = b.shape; break;
         case "solidity": va = a.solidity ?? 1; vb = b.solidity ?? 1; break;
         case "n_vertices": va = a.n_vertices ?? 0; vb = b.n_vertices ?? 0; break;
-        default: va = a.index; vb = b.index;
       }
       if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va);
       return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number);
@@ -512,18 +529,9 @@ const histData = useMemo(() => {
           <table className={styles.table}>
             <thead>
               <tr>
-                {([
-                  ["index", "#"],
-                  ["diameter", `Eq. Diameter (${hasScale ? unit : "px"})`],
-                  ["area", `Area (${hasScale ? unit + "²" : "px²"})`],
-                  ["circularity", "Circ."],
-                  ["solidity", "Solidity"],
-                  ["aspect_ratio", "Asp. Ratio"],
-                  ["n_vertices", "Vertices"],
-                  ["shape", "Shape"],
-                ] as [SortKey, string][]).map(([key, label]) => (
+                {TABLE_COLUMN_KEYS.map(key => (
                   <th key={key} onClick={() => handleSort(key)} className={styles.th}>
-                    {label} <SortIcon col={key} />
+                    {columnLabel(key, hasScale, unit)} <SortIcon col={key} />
                   </th>
                 ))}
               </tr>
