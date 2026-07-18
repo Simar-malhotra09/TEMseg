@@ -583,6 +583,15 @@ export default function Workspace() {
   async function handleLocateParticle(particleIndex: number) {
     if (!sessionId) return;
     setHighlightShape(null);  // clear shape highlight
+
+    // if the last mode the user was in the workspace was refine mode 
+    // and the user goes to the stats dashboard and uses ParticleHighlight
+    // through the table, it doesn't work as it expects the workspace to be 
+    // in the normal mode to add highlights. So we need to set refine mdoe 
+    // to false, which 
+    // WILL DISCARD ALL CURRENT EDITS. 
+    // Need to see what we want to do about this
+    setRefineMode(false);  
     let instances = loadedInstances;
     if (instances.length === 0) {
       const res = await getInstances(sessionId); // this should always be up to date
@@ -603,6 +612,14 @@ export default function Workspace() {
     if(!sessionId) return;
 
     setHighlightParticleIdx(null);  // clear particle id highlight
+    // if the last mode the user was in the workspace was refine mode 
+    // and the user goes to the stats dashboard and uses ParticleHighlight
+    // through the table, it doesn't work as it expects the workspace to be 
+    // in the normal mode to add highlights. So we need to set refine mdoe 
+    // to false, which 
+    // WILL DISCARD ALL CURRENT EDITS. 
+    // Need to see what we want to do about this
+    setRefineMode(false);
     let instances= loadedInstances;
     if (instances.length === 0) {
       const res = await getInstances(sessionId); // this should always be up to date
