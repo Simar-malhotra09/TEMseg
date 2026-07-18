@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect } from "react";
+import { useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
 import { Instance } from "@/lib/api";
 import { ViewBox } from "../hooks/useRefineState";
 
@@ -12,7 +12,7 @@ interface Props {
   imgWidth: number;
   imgHeight: number;
 
-  // data — rendered as-is, no local copy
+  // data is rendered as-is, no local copy
   instances: Instance[];
   selectedId: number | null;
   viewBox: ViewBox;
@@ -22,7 +22,7 @@ interface Props {
   clipboard?: Instance | null;
   polygonOpacity?: number;
 
-  // events — all business logic handled by parent via useRefineState
+  // local events ;all business logic handled by parent via useRefineState
   onSelect: (id: number) => void;
   onDeselect: () => void;
   onVertexDragEnd: (instId: number, vi: number, pos: [number, number]) => void;
@@ -60,7 +60,7 @@ export default function RefineCanvas({
   onViewBoxChange,
 }: Props) {
 
-  // pure interaction refs — no business logic, just mechanics
+  // pure interaction refs 
   const svgRef = useRef<SVGSVGElement>(null);
   const isSpaceDown = useRef(false);
   const panStart = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
@@ -68,10 +68,36 @@ export default function RefineCanvas({
   const draggingVertex = useRef<{ instId: number; vi: number; pos: [number, number] } | null>(null);
   // tracks rotation handle drag
   const rotating = useRef(false);
-  // local render-only state for smooth vertex drag — does not go to parent until mouseup
+  // local render-only state for smooth vertex drag 
   const [dragPos, setDragPos] = useLocalDragState();
   // mouse position in image space for paste-mode ghost preview
   const [pasteCursor, setPasteCursor] = useState<[number, number] | null>(null);
+
+  // hover-driven ID tooltip. position is in screen space (px, relative to the
+  // svg's own top-left), decoupled from selection so it reflects whatever the
+  // cursor is currently over, not what's selected for editing
+  const [hover, setHover] = useState<{ id: number; x: number; y: number } | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null);
+
+  // clamp the tooltip so it never spills outside the canvas viewport. 
+  // flip to the opposite side of the cursor if the default offset would overflow
+  useLayoutEffect(() => {
+    if (!hover || !tooltipRef.current) {
+      setTooltipPos(null);
+      return;
+    }
+    const tw = tooltipRef.current.offsetWidth;
+    const th = tooltipRef.current.offsetHeight;
+    const OFFSET = 14;
+    let left = hover.x + OFFSET;
+    let top = hover.y + OFFSET;
+    if (left + tw > width) left = hover.x - OFFSET - tw;
+    if (top + th > height) top = hover.y - OFFSET - th;
+    left = Math.max(0, Math.min(left, width - tw));
+    top = Math.max(0, Math.min(top, height - th));
+    setTooltipPos({ left, top });
+  }, [hover, width, height]);
 
   // scale factor: image pixels per screen pixel at current zoom
   // used to keep stroke widths and vertex sizes visually constant
@@ -89,7 +115,7 @@ export default function RefineCanvas({
   }, []);
 
   // keyboard: space = pan, backspace/delete = delete selected
-  // note: delete is handled in parent via useRefineState — canvas just needs space for pan
+  // note: delete is handled in parent via useRefineState. The canvas just needs space for pan
   useSpaceKey(svgRef, isSpaceDown);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -191,7 +217,10 @@ export default function RefineCanvas({
     }).join(" ");
   };
 
+  const hoveredInstance = hover ? instances.find(i => i.id === hover.id) : null;
+
   return (
+    <>
     <svg
       ref={svgRef}
       width={width}
@@ -231,6 +260,11 @@ export default function RefineCanvas({
                 e.stopPropagation();
                 if (!splitMode) onSelect(inst.id);
               }}
+              onMouseMove={e => {
+                const rect = svgRef.current!.getBoundingClientRect();
+                setHover({ id: inst.id, x: e.clientX - rect.left, y: e.clientY - rect.top });
+              }}
+              onMouseLeave={() => setHover(h => (h?.id === inst.id ? null : h))}
             />
 
             {isSelected && !splitMode && (
@@ -272,7 +306,7 @@ export default function RefineCanvas({
                   );
                 })}
 
-                {/* rotation handle + ID badge, both anchored to centroid */}
+                {/* rotation handle, anchored to centroid */}
                 {(() => {
                   const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
                   const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
@@ -302,29 +336,6 @@ export default function RefineCanvas({
                         strokeWidth={1.5 * s2i}
                         style={{ cursor: "grab" }}
                       />
-
-                      {/* ID badge — constant screen size, only for the selected instance */}
-                      <g style={{ pointerEvents: "none" }}>
-                        <circle
-                          cx={cx} cy={cy}
-                          r={11 * s2i}
-                          fill="#0d0d0d"
-                          fillOpacity={0.85}
-                          stroke={color}
-                          strokeWidth={1.5 * s2i}
-                        />
-                        <text
-                          x={cx} y={cy}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fill={color}
-                          fontSize={12 * s2i}
-                          fontWeight={700}
-                          fontFamily="monospace"
-                        >
-                          {inst.id}
-                        </text>
-                      </g>
                     </g>
                   );
                 })()}
@@ -334,7 +345,7 @@ export default function RefineCanvas({
         );
       })}
 
-      {/* paste mode ghost — polygon following cursor */}
+      {/* paste mode ghost. The polygon follows the cursor  */}
       {pasteMode && clipboard && pasteCursor && (
         <g style={{ pointerEvents: "none" }}>
           {(() => {
@@ -356,7 +367,7 @@ export default function RefineCanvas({
         </g>
       )}
 
-      {/* split point markers — on top of everything */}
+      {/* split point markers  */}
       {splitMode && splitPoints.map(([x, y], i) => (
         <g key={`sp-${i}`} style={{ pointerEvents: "none" }}>
           <circle cx={x} cy={y} r={10 * s2i} fill="none" stroke="#fff" strokeWidth={2 * s2i} opacity={0.8} />
@@ -365,10 +376,38 @@ export default function RefineCanvas({
         </g>
       ))}
     </svg>
+
+    {/* hover ID tooltip. It lives outside SVG image-space so it's never
+        squeezed by particle size or zoom; position clamped to the viewport
+        in the layout effect above */}
+    {hoveredInstance && (
+      <div
+        ref={tooltipRef}
+        style={{
+          position: "absolute",
+          left: tooltipPos?.left ?? 0,
+          top: tooltipPos?.top ?? 0,
+          visibility: tooltipPos ? "visible" : "hidden",
+          background: "#161616",
+          border: "1px solid #2a2a2a",
+          borderRadius: 4,
+          padding: "4px 8px",
+          fontSize: 11,
+          fontFamily: "monospace",
+          color: "#e8e6e1",
+          pointerEvents: "none",
+          whiteSpace: "nowrap",
+          zIndex: 20,
+        }}
+      >
+        ID: {hoveredInstance.id}
+      </div>
+    )}
+    </>
   );
 }
 
-// local drag position — smooth vertex rendering during drag, never sent to parent
+// local drag position; smooth vertex rendering during drag, never sent to parent
 // parent only receives final position on mouseup via onVertexDragEnd
 function useLocalDragState() {
   const [dragPos, setDragPos] = useState<{ instId: number; vi: number; pos: [number, number] } | null>(null);
