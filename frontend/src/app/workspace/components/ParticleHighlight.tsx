@@ -23,6 +23,7 @@ export default function ParticleHighlight({
   viewportHeight,
 }: Props) {
   if (!instance.contour || instance.contour.length < 3) return null;
+  if (imgWidth <= 0 || imgHeight <= 0) return null;
 
   const points = instance.contour.map(([x, y]) => `${x},${y}`).join(" ");
 
@@ -30,10 +31,19 @@ export default function ParticleHighlight({
   const cx = instance.bbox.x + instance.bbox.w / 2;
   const cy = instance.bbox.y + instance.bbox.h / 2;
 
-  // scale label to particle size so it doesn't dwarf small particles
-  const bboxMin = Math.min(instance.bbox.w, instance.bbox.h);
-  const labelR = Math.max(4, Math.min(12, bboxMin * 0.35));
-  const fontSize = Math.max(8, Math.min(14, bboxMin * 0.45));
+  // viewBox is in image-pixel space but gets scaled down to fit the viewport.
+  // size stroke/glow/label in screen pixels first, then convert back to
+  // viewBox units, so they stay legible regardless of image resolution.
+  const scale = Math.min(viewportWidth / imgWidth, viewportHeight / imgHeight) || 1;
+  const toImg = (screenPx: number) => screenPx / scale;
+
+  const strokeWidth = toImg(2.5);
+  const glowStdDeviation = toImg(3);
+
+  // scale label to particle size (in screen space) so it doesn't dwarf small particles
+  const bboxMinScreen = Math.min(instance.bbox.w, instance.bbox.h) * scale;
+  const labelR = toImg(Math.max(6, Math.min(12, bboxMinScreen * 0.35)));
+  const fontSize = toImg(Math.max(9, Math.min(14, bboxMinScreen * 0.45)));
 
   return (
     <svg
@@ -45,7 +55,7 @@ export default function ParticleHighlight({
       {/* glow effect */}
       <defs>
         <filter id="highlight-glow">
-          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feGaussianBlur stdDeviation={glowStdDeviation} result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
@@ -66,7 +76,7 @@ export default function ParticleHighlight({
         points={points}
         fill="none"
         stroke="#7ee8a2"
-        strokeWidth={2.5}
+        strokeWidth={strokeWidth}
         filter="url(#highlight-glow)"
         className={styles.pulse}
       />
