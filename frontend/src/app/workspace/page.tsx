@@ -592,6 +592,8 @@ export default function Workspace() {
 
     setHighlightParticleIdx(particleIndex);
     setShowStatsDetail(false); // pan back to workspace
+    setZoom(1); // reset so the highlight isn't clipped by a stale pan/zoom
+    setPan({ x: 0, y: 0 });
     seg.setMasksVisible(true);
     setStatus(`Highlighting particle id: ${particleIndex+1}`);
   }
@@ -610,6 +612,8 @@ export default function Workspace() {
 
     setHighlightShape(shape);
     setShowStatsDetail(false); // pan back to workspace
+    setZoom(1); // reset so highlights aren't clipped by a stale pan/zoom
+    setPan({ x: 0, y: 0 });
     seg.setMasksVisible(true);
     setStatus(`Highlighting all particles of shape: ${shape}`);
   }
