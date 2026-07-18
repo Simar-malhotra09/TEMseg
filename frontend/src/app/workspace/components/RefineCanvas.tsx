@@ -272,7 +272,7 @@ export default function RefineCanvas({
                   );
                 })}
 
-                {/* rotation handle */}
+                {/* rotation handle + ID badge, both anchored to centroid */}
                 {(() => {
                   const cx = inst.contour.reduce((s, [x]) => s + x, 0) / inst.contour.length;
                   const cy = inst.contour.reduce((s, [, y]) => s + y, 0) / inst.contour.length;
@@ -302,6 +302,29 @@ export default function RefineCanvas({
                         strokeWidth={1.5 * s2i}
                         style={{ cursor: "grab" }}
                       />
+
+                      {/* ID badge — constant screen size, only for the selected instance */}
+                      <g style={{ pointerEvents: "none" }}>
+                        <circle
+                          cx={cx} cy={cy}
+                          r={11 * s2i}
+                          fill="#0d0d0d"
+                          fillOpacity={0.85}
+                          stroke={color}
+                          strokeWidth={1.5 * s2i}
+                        />
+                        <text
+                          x={cx} y={cy}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill={color}
+                          fontSize={12 * s2i}
+                          fontWeight={700}
+                          fontFamily="monospace"
+                        >
+                          {inst.id}
+                        </text>
+                      </g>
                     </g>
                   );
                 })()}
