@@ -2,7 +2,7 @@ import operator
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Callable, Literal, get_args
 
 import numpy as np
 import cv2 as cv
@@ -12,6 +12,9 @@ from scipy import stats as sp_stats
 from app.models.helpers.settings import settings
 
 ShapeMetric = Literal["circularity", "aspect_ratio", "solidity", "n_vertices"]
+_SHAPE_METRICS = get_args(
+    ShapeMetric
+)  # server side source of truth, derived from the type above
 ShapeOperator = Literal["<", "<=", ">", ">=", "==", "!="]
 
 _SHAPE_OPERATORS: dict[ShapeOperator, Callable[[float, float], bool]] = {
@@ -52,18 +55,21 @@ def _fit_ellipse_safe(cnt):
     minor = min(axes)
     return (major, minor)
 
-# single conditon 
+
+# single conditon
 @dataclass(frozen=True)
 class ShapeCondition:
     metric: ShapeMetric
     op: ShapeOperator
     value: float
 
+
 # multiple conditions; Rule true => all conditions also true
 @dataclass(frozen=True)
 class ShapeRule:
     label: str
     conditions: list[ShapeCondition]
+
 
 # full config of conditions and rules
 @dataclass(frozen=True)
@@ -74,8 +80,10 @@ class ShapeClassificationConfig:
 
 def _parse_shape_condition(raw: dict) -> ShapeCondition:
     metric = raw["metric"]
-    if metric not in ("circularity", "aspect_ratio", "solidity", "n_vertices"):
-        raise ValueError(f"Unknown shape metric in shape_config.toml: {metric!r}")
+    if metric not in _SHAPE_METRICS:
+        raise ValueError(
+            f"Unknown shape metric in shape_config.toml: {metric!r}. Valid metrics: {_SHAPE_METRICS}"
+        )
     op = raw["op"]
     if op not in _SHAPE_OPERATORS:
         raise ValueError(f"Unknown operator in shape_config.toml: {op!r}")
@@ -236,8 +244,8 @@ def compute_stats_from_instances(
     """
 
     # I added this placeholder '-' in commit 836855bd05011e60c1d96038b00240566da4756f
-    # this is hacky and needs to be fixed later. 
-    has_scale = pixel_size!= '-' and pixel_size is not None and pixel_size > 0
+    # this is hacky and needs to be fixed later.
+    has_scale = pixel_size != "-" and pixel_size is not None and pixel_size > 0
     scale = pixel_size if has_scale else 1.0
     scale_sq = scale * scale if scale else 1.0
     unit = pixel_unit if has_scale else "px"
