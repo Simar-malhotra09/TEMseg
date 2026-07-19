@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect, useLayoutEffect } from "react";
-import { Instance } from "@/lib/api";
+import { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect } from "react";
+import { Instance, ParticleStats, ParticleMetricField, StatsResult } from "@/lib/api";
 import { ViewBox } from "../hooks/useRefineState";
 
 interface Props {
@@ -21,6 +21,8 @@ interface Props {
   pasteMode?: boolean;
   clipboard?: Instance | null;
   polygonOpacity?: number;
+  stats?: StatsResult | null;
+  visibleTooltipFields?: ParticleMetricField[];
 
   // local events ;all business logic handled by parent via useRefineState
   onSelect: (id: number) => void;
@@ -43,6 +45,26 @@ const COLORS = [
   "#44ff88", "#ff4488",
 ];
 
+// short-form label for one tooltip field, mirrors the values shown in the
+// per-particle stats table
+function formatTooltipField(key: ParticleMetricField, p: ParticleStats, hasScale: boolean, unit: string): string {
+  switch (key) {
+    case "diameter": {
+      const v = hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px;
+      return `Diameter: ${v.toFixed(2)} ${hasScale ? unit : "px"}`;
+    }
+    case "area": {
+      const v = hasScale && p.area_real != null ? p.area_real : p.area_px;
+      return `Area: ${v.toFixed(2)} ${hasScale ? unit + "²" : "px²"}`;
+    }
+    case "circularity": return `Circ.: ${p.circularity.toFixed(2)}`;
+    case "solidity": return `Solidity: ${p.solidity.toFixed(2)}`;
+    case "aspect_ratio": return `Asp. Ratio: ${p.aspect_ratio.toFixed(2)}`;
+    case "n_vertices": return `Vertices: ${p.n_vertices}`;
+    case "shape": return `Shape: ${p.shape}`;
+  }
+}
+
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 20;
 const VERTEX_RADIUS = 5;  // constant screen-space px
@@ -54,6 +76,8 @@ export default function RefineCanvas({
   pasteMode = false,
   clipboard = null,
   polygonOpacity = 0.2,
+  stats = null,
+  visibleTooltipFields = [],
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
   onEdgeClick, onSplitPointPlace, onPastePlace,
   onRotateStart, onRotateDrag, onRotateEnd,
@@ -218,6 +242,11 @@ export default function RefineCanvas({
   };
 
   const hoveredInstance = hover ? instances.find(i => i.id === hover.id) : null;
+  const particleStatsById = useMemo(
+    () => new Map((stats?.particles ?? []).map(p => [p.id, p])),
+    [stats]
+  );
+  const hoveredParticle = hoveredInstance ? particleStatsById.get(hoveredInstance.id) : null;
 
   return (
     <>
@@ -400,7 +429,12 @@ export default function RefineCanvas({
           zIndex: 20,
         }}
       >
-        ID: {hoveredInstance.id}
+        <div>ID: {hoveredInstance.id}</div>
+        {hoveredParticle && visibleTooltipFields.map(key => (
+          <div key={key}>
+            {formatTooltipField(key, hoveredParticle, stats?.has_scale ?? false, stats?.unit ?? "px")}
+          </div>
+        ))}
       </div>
     )}
     </>

@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -33,8 +33,14 @@ interface ImgSize{
 type SidebarTab = "segment" | "refine" | "augment";
 type AugmentMethod = "click" | "box" | "similar";
 
+// labels for the refine-mode hover tooltip field picker
+const TOOLTIP_FIELD_LABELS: Record<ParticleMetricField, string> = {
+  diameter: "Diameter", area: "Area", circularity: "Circularity",
+  solidity: "Solidity", aspect_ratio: "Aspect Ratio", n_vertices: "Vertices", shape: "Shape",
+};
+
 // Horizontal ascii waterfall shown in the status pill while a backend
-// request is in flight. 
+// request is in flight.
 const WATERFALL_LOOP = "=^..^=   U..U  :D  T^T   ╯°□°)╯  ";
 const WATERFALL_LENGTH = 20;
 const WATERFALL_INTERVAL_MS = 90;
@@ -1010,6 +1016,24 @@ export default function Workspace() {
                       />
                     </div>
 
+                    <div style={{ marginBottom: 8 }}>
+                      <p className={styles.sidebarHint}>Hover tooltip fields</p>
+                      {PARTICLE_METRIC_FIELDS.map(field => (
+                        <label key={field} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                          <input
+                            type="checkbox"
+                            checked={refine.tooltipFields.includes(field)}
+                            onChange={e => refine.setTooltipFields(
+                              e.target.checked
+                                ? [...refine.tooltipFields, field]
+                                : refine.tooltipFields.filter((f: ParticleMetricField) => f !== field)
+                            )}
+                          />
+                          {TOOLTIP_FIELD_LABELS[field]}
+                        </label>
+                      ))}
+                    </div>
+
                     {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
                       <>
                         <button type="button" className={styles.actionBtn} onClick={refine.handleEnterSplit}>
@@ -1421,6 +1445,8 @@ export default function Workspace() {
                       pasteMode={refine.pasteMode}
                       clipboard={refine.clipboard}
                       polygonOpacity={refine.polygonOpacity}
+                      stats={seg.stats}
+                      visibleTooltipFields={refine.tooltipFields}
                       onSelect={refine.handleSelect}
                       onDeselect={refine.handleDeselect}
                       onVertexDragEnd={refine.handleVertexDragEnd}

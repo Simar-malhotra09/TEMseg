@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { Instance } from "@/lib/api";
+import { Instance, ParticleMetricField } from "@/lib/api";
 import { splitInstances } from "@/lib/api"
 
 export interface ViewBox {
@@ -46,6 +46,9 @@ export function useRefineState({
 
   // global polygon fill opacity in refine mode
   const [polygonOpacity, setPolygonOpacity] = useState(0.2);
+
+  // which computed metrics show in the hover tooltip, beyond the always-shown ID
+  const [tooltipFields, setTooltipFields] = useState<ParticleMetricField[]>([]);
 
   // always-current ref — handlers read from this, never from stale closure over state
   const instancesRef = useRef(instances);
@@ -308,6 +311,8 @@ export function useRefineState({
     pasteMode,
     rotationDeg,
     polygonOpacity,
+    tooltipFields,
+    setTooltipFields,
     reinit,
     // handlers
     handleSelect,
