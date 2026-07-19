@@ -1,14 +1,14 @@
 "use client";
 import styles from "./page.module.css";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 // import {Image} from "next/Image"
 import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount } from "@/lib/api";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -30,6 +30,36 @@ interface ImgSize{
   height: number;
 }
 
+// Horizontal ascii waterfall shown in the status pill while a backend
+// request is in flight. 
+const WATERFALL_LOOP = "=^..^=   U..U  :D  T^T   ╯°□°)╯  ";
+const WATERFALL_LENGTH = 20;
+const WATERFALL_INTERVAL_MS = 90;
+
+function useAsciiWaterfall(active: boolean): string {
+  const offsetRef = useRef(0);
+  const [frame, setFrame] = useState(() => WATERFALL_LOOP.slice(0, WATERFALL_LENGTH));
+
+  useEffect(() => {
+    if (!active) return;
+    const doubled = WATERFALL_LOOP + WATERFALL_LOOP;
+    const id = setInterval(() => {
+      offsetRef.current = (offsetRef.current + 1) % WATERFALL_LOOP.length;
+      setFrame(doubled.slice(offsetRef.current, offsetRef.current + WATERFALL_LENGTH));
+    }, WATERFALL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [active]);
+
+  return frame;
+}
+
+function AsciiWaterfall({ active }: { active: boolean }) {
+  const frame = useAsciiWaterfall(active);
+  return (
+    <span className={styles.waterfall} aria-hidden="true">{frame}</span>
+  );
+}
+
 export default function Workspace() {
 
   // models
@@ -46,6 +76,8 @@ export default function Workspace() {
   const [imgSize, setImgSize] = useState<ImgSize>({ width: 0, height: 0 }); // set when we load image in client
   const [isDragging, setIsDragging] = useState(false); // to drag and drop files
   const [status, setStatus] = useState("Upload an image to begin."); // def status in our status bar
+  const activeRequestCount = useSyncExternalStore(subscribeToRequestActivity, getActiveRequestCount, () => 0);
+  const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
 
   // metadata
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -737,7 +769,12 @@ export default function Workspace() {
             )}
 
             {/*Display zoom size and reset to normal on click*/}
-            <span className={styles.statusPill} key={status}>{status}</span>
+            <span
+              className={`${styles.statusPill} ${isBlocked ? styles.statusPillBlocked : ""}`}
+              key={isBlocked ? "blocked" : status}
+            >
+              {isBlocked ? <AsciiWaterfall active /> : status}
+            </span>
             {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
               <button type="button" className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
                 {Math.round(zoom * 100)}% ✕
