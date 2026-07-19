@@ -1098,11 +1098,9 @@ export default function Workspace() {
                         <MousePointerClick size={14} />
                         {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
                       </button>
-                      {bootstrapMode && (
-                        <p className={styles.sidebarHint}>
-                          Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
-                        </p>
-                      )}
+                      <p className={styles.sidebarHint}>
+                        Click a missed particle so SAM segments it from that point using a point prompt, best for particles that sit clearly apart from their neighbors.
+                      </p>
                     </>
                   )}
 
@@ -1120,15 +1118,13 @@ export default function Workspace() {
                         <BoxSelect size={14} />
                         {boxMode ? "Stop Boxing" : "Box to Add Particles"}
                       </button>
+                      <p className={styles.sidebarHint}>
+                        Drag a box around a missed particle so SAM segments it from that box using a box prompt, best when particles sit close together and a point would bleed into neighbors.
+                      </p>
                       {boxMode && (
-                        <>
-                          <p className={styles.sidebarHint}>
-                            Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
-                          </p>
-                          <p className={styles.sidebarShortcuts}>
-                            [Space]+drag pan · [wheel] zoom · [Esc] cancel
-                          </p>
-                        </>
+                        <p className={styles.sidebarShortcuts}>
+                          [Space]+drag pan · [wheel] zoom · [Esc] cancel
+                        </p>
                       )}
                     </>
                   )}
