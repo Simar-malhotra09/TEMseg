@@ -35,6 +35,19 @@ flex-shrink: 0;
   /* animation: statusFlash 1.5s ease-out; */
 }
 
+.statusPillBlocked {
+  background: #0d0d0d;
+}
+
+.waterfall {
+  display: inline-block;
+  width: 20ch;
+  color: #7ee8a2;
+  white-space: pre;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 15%, #000 85%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 15%, #000 85%, transparent);
+}
+
 @keyframes statusFlash {
   0% { background: #90ee90; color: #0d0d0d; border-color: #7ee8a2; }
   70% { background: #1a2a1e; color: #7ee8a2; border-color: #2a3a2e; }
