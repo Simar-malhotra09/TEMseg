@@ -1272,7 +1272,7 @@ export default function Workspace() {
                 </div>
 
                 {pendingProposals.length > 0 && (
-                  <>
+                  <div className={styles.proposalsBar}>
                     <button type="button"
                       className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                       onClick={handleAcceptProposals}
@@ -1290,7 +1290,7 @@ export default function Workspace() {
                     <p className={styles.sidebarHint}>
                       Click a proposal on the canvas to reject it individually.
                     </p>
-                  </>
+                  </div>
                 )}
               </section>
             )}
