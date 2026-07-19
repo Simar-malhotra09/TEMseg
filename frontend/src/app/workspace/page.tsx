@@ -1166,32 +1166,11 @@ export default function Workspace() {
                 <div className={styles.subWindow}>
                   <p className={styles.subWindowTitle}>RF Recovery</p>
 
-                  {/* RF recovery. requires prior /segment so SAM embedding is cached */}
-                  <button type="button"
-                    className={styles.actionBtn}
-                    disabled={
-                      !sessionId ||
-                      refineMode ||
-                      annotateMode ||
-                      boxMode ||
-                      rfBgMode ||
-                      !seg.segDone ||
-                      bootstrapBusy
-                    }
-                    onClick={handleRFPropose}
-                    title={!seg.segDone ? "Run segmentation first" : undefined}
-                  >
-                    <Sparkles size={14} />
-                    {bootstrapBusy ? "Running..." : "RF Recover Missed"}
-                  </button>
-                  <p className={styles.sidebarHint}>
-                    Train a small classifier on your annotations to catch particles the detector missed everywhere in the image.
-                  </p>
-
                   {/* RF background scribble. mark patches that are definitely
                       background so the RF trains on real ground truth instead of
                       assuming everything far from a known particle is background
-                      (which mislabels particles the model missed). */}
+                      (which mislabels particles the model missed). Comes first —
+                      RF Recover Missed needs this to have anything to train on. */}
                   <button type="button"
                     className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
                     disabled={
@@ -1215,7 +1194,7 @@ export default function Workspace() {
                       Clear Background Marks
                     </button>
                   )}
-                  {rfBgMode && (
+                  {rfBgMode ? (
                     <>
                       <p className={styles.sidebarHint}>
                         Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
@@ -1224,7 +1203,43 @@ export default function Workspace() {
                         Cover a few different areas · [scroll] resize brush (currently {rfBgBrushSize}px)
                       </p>
                     </>
+                  ) : (
+                    <p className={styles.sidebarHint}>
+                      Mark a few patches that definitely contain no particle, since RF Recover below needs real background examples and cannot guess them safely on its own.
+                    </p>
                   )}
+
+                  {/* RF recovery. requires prior /segment so SAM embedding is cached,
+                      and requires marked background since the RF trains on your annotated
+                      particles as foreground and your marks as background, and has
+                      nothing reliable to learn from otherwise. */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={
+                      !sessionId ||
+                      refineMode ||
+                      annotateMode ||
+                      boxMode ||
+                      rfBgMode ||
+                      !seg.segDone ||
+                      rfBgScribbles.length === 0 ||
+                      bootstrapBusy
+                    }
+                    onClick={handleRFPropose}
+                    title={
+                      !seg.segDone
+                        ? "Run segmentation first"
+                        : rfBgScribbles.length === 0
+                          ? "Mark background above first so the RF has both classes to train on"
+                          : undefined
+                    }
+                  >
+                    <Sparkles size={14} />
+                    {bootstrapBusy ? "Running..." : "RF Recover Missed"}
+                  </button>
+                  <p className={styles.sidebarHint}>
+                    Train a classifier on your annotated particles as foreground and your marked background as the negative class to catch particles missed everywhere in the image.
+                  </p>
                 </div>
 
                 <div className={styles.subWindow}>
