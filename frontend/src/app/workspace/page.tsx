@@ -1262,7 +1262,10 @@ export default function Workspace() {
                         Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
                       </p>
                       <p className={styles.sidebarShortcuts}>
-                        [Enter] or double-click close · [Backspace] undo vertex · [Space]+drag pan · [Esc] cancel
+                        [Enter] or double-click close<br />
+                        [Backspace]: undo vertex<br />
+                        [Space]+drag: pan<br />
+                        [Esc]: cancel
                       </p>
                     </>
                   )}
