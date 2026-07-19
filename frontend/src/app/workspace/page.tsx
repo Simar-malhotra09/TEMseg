@@ -1051,159 +1051,171 @@ export default function Workspace() {
             )}
 
             {activeTab === "augment" && (
-              <section>
-                {/* bootstrap mode. click on the image to *propose* particles via
-                    SAM point-prompt. Requires a prior /segment run so the SAM
-                    image embedding is cached server-side (the backend 400s
-                    otherwise, but the disabled state is the clean UX). */}
-                <button type="button"
-                  className={styles.actionBtn}
-                  disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
-                  onClick={() => setBootstrapMode(b => !b)}
-                  title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-                >
-                  <MousePointerClick size={14} />
-                  {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
-                </button>
-                {bootstrapMode && (
-                  <p className={styles.sidebarHint}>
-                    Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
-                  </p>
-                )}
+              <section className={styles.sidebarSection}>
+                <div className={styles.subWindow}>
+                  <p className={styles.subWindowTitle}>Point / Box / Similar</p>
 
-                {/* box-prompt annotation. drag a tight box, SAM segments inside.
-                    Preferred over click-to-add for OOD particles where point
-                    prompts bleed; preferred over polygon for speed. */}
-                <button type="button"
-                  className={styles.actionBtn}
-                  disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
-                  onClick={() => setBoxMode(m => !m)}
-                  title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-                >
-                  <BoxSelect size={14} />
-                  {boxMode ? "Stop Boxing" : "Box to Add Particles"}
-                </button>
-                {boxMode && (
-                  <>
-                    <p className={styles.sidebarHint}>
-                      Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
-                    </p>
-                    <p className={styles.sidebarShortcuts}>
-                      [Space]+drag pan · [wheel] zoom · [Esc] cancel
-                    </p>
-                  </>
-                )}
-
-                {/* manual annotation. fallback when both YOLO and SAM-with-point
-                    fail (small / clumped / OOD particles). Doesn't require a
-                    prior /segment run since it doesn't use any model output. */}
-                <button type="button"
-                  className={styles.actionBtn}
-                  disabled={!sessionId || refineMode || bootstrapMode || boxMode}
-                  onClick={() => setAnnotateMode(m => !m)}
-                >
-                  <PenTool size={14} />
-                  {annotateMode ? "Stop Annotating" : "Annotate Manually"}
-                </button>
-                {annotateMode && (
-                  <>
-                    <p className={styles.sidebarHint}>
-                      Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
-                    </p>
-                    <p className={styles.sidebarShortcuts}>
-                      [Enter] or double-click close · [Backspace] undo vertex · [Space]+drag pan · [Esc] cancel
-                    </p>
-                  </>
-                )}
-
-                {/* propose-similar: build a SAM-embedding prior from existing
-                    annotations and find more candidates across the image. Needs
-                    at least one annotated particle to construct the prior. */}
-                <button type="button"
-                  className={styles.actionBtn}
-                  disabled={
-                    !sessionId ||
-                    refineMode ||
-                    annotateMode ||
-                    boxMode ||
-                    rfBgMode ||
-                    !seg.segDone ||
-                    !(seg.stats?.particle_count ?? 0) ||
-                    bootstrapBusy
-                  }
-                  onClick={handleProposeSimilar}
-                  title={
-                    !(seg.stats?.particle_count ?? 0)
-                      ? "Annotate at least one particle first to build the prior"
-                      : undefined
-                  }
-                >
-                  <Sparkles size={14} />
-                  {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
-                </button>
-                <p className={styles.sidebarHint}>
-                  Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
-                </p>
-
-                {/* RF recovery. requires prior /segment so SAM embedding is cached */}
-                <button type="button"
-                  className={styles.actionBtn}
-                  disabled={
-                    !sessionId ||
-                    refineMode ||
-                    annotateMode ||
-                    boxMode ||
-                    rfBgMode ||
-                    !seg.segDone ||
-                    bootstrapBusy
-                  }
-                  onClick={handleRFPropose}
-                  title={!seg.segDone ? "Run segmentation first" : undefined}
-                >
-                  <Sparkles size={14} />
-                  {bootstrapBusy ? "Running..." : "RF Recover Missed"}
-                </button>
-                <p className={styles.sidebarHint}>
-                  Train a small classifier on your annotations to catch particles the detector missed everywhere in the image.
-                </p>
-
-                {/* RF background scribble. mark patches that are definitely
-                    background so the RF trains on real ground truth instead of
-                    assuming everything far from a known particle is background
-                    (which mislabels particles the model missed). */}
-                <button type="button"
-                  className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
-                  disabled={
-                    !sessionId ||
-                    refineMode ||
-                    annotateMode ||
-                    boxMode ||
-                    !seg.segDone ||
-                    bootstrapBusy
-                  }
-                  onClick={() => setRfBgMode(v => !v)}
-                >
-                  <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
-                </button>
-                {rfBgScribbles.length > 0 && !rfBgMode && (
-                  <button type="button" className={styles.actionBtn} onClick={() => {
-                    rfBgScribblesRef.current = [];
-                    setRfBgScribbles([]);
-                    setStatus("RF background scribbles cleared.");
-                  }}>
-                    Clear Background Marks
+                  {/* bootstrap mode. click on the image to *propose* particles via
+                      SAM point-prompt. Requires a prior /segment run so the SAM
+                      image embedding is cached server-side (the backend 400s
+                      otherwise, but the disabled state is the clean UX). */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
+                    onClick={() => setBootstrapMode(b => !b)}
+                    title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                  >
+                    <MousePointerClick size={14} />
+                    {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
                   </button>
-                )}
-                {rfBgMode && (
-                  <>
+                  {bootstrapMode && (
                     <p className={styles.sidebarHint}>
-                      Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
+                      Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
                     </p>
-                    <p className={styles.sidebarShortcuts}>
-                      Cover a few different areas · [scroll] resize brush (currently {rfBgBrushSize}px)
-                    </p>
-                  </>
-                )}
+                  )}
+
+                  {/* box-prompt annotation. drag a tight box, SAM segments inside.
+                      Preferred over click-to-add for OOD particles where point
+                      prompts bleed; preferred over polygon for speed. */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
+                    onClick={() => setBoxMode(m => !m)}
+                    title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                  >
+                    <BoxSelect size={14} />
+                    {boxMode ? "Stop Boxing" : "Box to Add Particles"}
+                  </button>
+                  {boxMode && (
+                    <>
+                      <p className={styles.sidebarHint}>
+                        Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
+                      </p>
+                      <p className={styles.sidebarShortcuts}>
+                        [Space]+drag pan · [wheel] zoom · [Esc] cancel
+                      </p>
+                    </>
+                  )}
+
+                  {/* propose-similar: build a SAM-embedding prior from existing
+                      annotations and find more candidates across the image. Needs
+                      at least one annotated particle to construct the prior. */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={
+                      !sessionId ||
+                      refineMode ||
+                      annotateMode ||
+                      boxMode ||
+                      rfBgMode ||
+                      !seg.segDone ||
+                      !(seg.stats?.particle_count ?? 0) ||
+                      bootstrapBusy
+                    }
+                    onClick={handleProposeSimilar}
+                    title={
+                      !(seg.stats?.particle_count ?? 0)
+                        ? "Annotate at least one particle first to build the prior"
+                        : undefined
+                    }
+                  >
+                    <Sparkles size={14} />
+                    {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
+                  </button>
+                  <p className={styles.sidebarHint}>
+                    Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
+                  </p>
+                </div>
+
+                <div className={styles.subWindow}>
+                  <p className={styles.subWindowTitle}>RF Recovery</p>
+
+                  {/* RF recovery. requires prior /segment so SAM embedding is cached */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={
+                      !sessionId ||
+                      refineMode ||
+                      annotateMode ||
+                      boxMode ||
+                      rfBgMode ||
+                      !seg.segDone ||
+                      bootstrapBusy
+                    }
+                    onClick={handleRFPropose}
+                    title={!seg.segDone ? "Run segmentation first" : undefined}
+                  >
+                    <Sparkles size={14} />
+                    {bootstrapBusy ? "Running..." : "RF Recover Missed"}
+                  </button>
+                  <p className={styles.sidebarHint}>
+                    Train a small classifier on your annotations to catch particles the detector missed everywhere in the image.
+                  </p>
+
+                  {/* RF background scribble. mark patches that are definitely
+                      background so the RF trains on real ground truth instead of
+                      assuming everything far from a known particle is background
+                      (which mislabels particles the model missed). */}
+                  <button type="button"
+                    className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
+                    disabled={
+                      !sessionId ||
+                      refineMode ||
+                      annotateMode ||
+                      boxMode ||
+                      !seg.segDone ||
+                      bootstrapBusy
+                    }
+                    onClick={() => setRfBgMode(v => !v)}
+                  >
+                    <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
+                  </button>
+                  {rfBgScribbles.length > 0 && !rfBgMode && (
+                    <button type="button" className={styles.actionBtn} onClick={() => {
+                      rfBgScribblesRef.current = [];
+                      setRfBgScribbles([]);
+                      setStatus("RF background scribbles cleared.");
+                    }}>
+                      Clear Background Marks
+                    </button>
+                  )}
+                  {rfBgMode && (
+                    <>
+                      <p className={styles.sidebarHint}>
+                        Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
+                      </p>
+                      <p className={styles.sidebarShortcuts}>
+                        Cover a few different areas · [scroll] resize brush (currently {rfBgBrushSize}px)
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <div className={styles.subWindow}>
+                  <p className={styles.subWindowTitle}>Manual Annotation</p>
+
+                  {/* manual annotation. fallback when both YOLO and SAM-with-point
+                      fail (small / clumped / OOD particles). Doesn't require a
+                      prior /segment run since it doesn't use any model output. */}
+                  <button type="button"
+                    className={styles.actionBtn}
+                    disabled={!sessionId || refineMode || bootstrapMode || boxMode}
+                    onClick={() => setAnnotateMode(m => !m)}
+                  >
+                    <PenTool size={14} />
+                    {annotateMode ? "Stop Annotating" : "Annotate Manually"}
+                  </button>
+                  {annotateMode && (
+                    <>
+                      <p className={styles.sidebarHint}>
+                        Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
+                      </p>
+                      <p className={styles.sidebarShortcuts}>
+                        [Enter] or double-click close · [Backspace] undo vertex · [Space]+drag pan · [Esc] cancel
+                      </p>
+                    </>
+                  )}
+                </div>
 
                 {pendingProposals.length > 0 && (
                   <>

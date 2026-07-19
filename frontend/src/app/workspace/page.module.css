@@ -83,6 +83,24 @@ margin-bottom: 2px;
 .sidebarHint { font-size: 11px; color: #444; line-height: 1.5; }
 .sidebarShortcuts { font-size: 10px; color: #3a3a3a; line-height: 1.5; }
 
+/* Restrained MS-DOS style sub-window: thin border + title bar strip */
+.subWindow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #2a2a2a;
+  padding: 8px;
+}
+.subWindowTitle {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #555;
+  margin: -8px -8px 0;
+  padding: 6px 8px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
 /* Dropdown */
 .dropdownWrap { position: relative; }
 .dropdownBtn {
