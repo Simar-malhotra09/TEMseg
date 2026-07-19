@@ -81,6 +81,7 @@ color: #555;
 margin-bottom: 2px;
 }
 .sidebarHint { font-size: 11px; color: #444; line-height: 1.5; }
+.sidebarShortcuts { font-size: 10px; color: #3a3a3a; line-height: 1.5; }
 
 /* Dropdown */
 .dropdownWrap { position: relative; }

@@ -1065,6 +1065,11 @@ export default function Workspace() {
                   <MousePointerClick size={14} />
                   {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
                 </button>
+                {bootstrapMode && (
+                  <p className={styles.sidebarHint}>
+                    Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
+                  </p>
+                )}
 
                 {/* box-prompt annotation. drag a tight box, SAM segments inside.
                     Preferred over click-to-add for OOD particles where point
@@ -1079,9 +1084,14 @@ export default function Workspace() {
                   {boxMode ? "Stop Boxing" : "Box to Add Particles"}
                 </button>
                 {boxMode && (
-                  <p className={styles.sidebarHint}>
-                    Drag a tight rectangle around a particle · Space+drag pans · wheel zooms · Esc cancels.
-                  </p>
+                  <>
+                    <p className={styles.sidebarHint}>
+                      Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
+                    </p>
+                    <p className={styles.sidebarShortcuts}>
+                      [Space]+drag pan · [wheel] zoom · [Esc] cancel
+                    </p>
+                  </>
                 )}
 
                 {/* manual annotation. fallback when both YOLO and SAM-with-point
@@ -1096,9 +1106,14 @@ export default function Workspace() {
                   {annotateMode ? "Stop Annotating" : "Annotate Manually"}
                 </button>
                 {annotateMode && (
-                  <p className={styles.sidebarHint}>
-                    Click to place vertices · Enter or double-click to close · Backspace undoes · Esc cancels.
-                  </p>
+                  <>
+                    <p className={styles.sidebarHint}>
+                      Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
+                    </p>
+                    <p className={styles.sidebarShortcuts}>
+                      [Enter] or double-click close · [Backspace] undo vertex · [Space]+drag pan · [Esc] cancel
+                    </p>
+                  </>
                 )}
 
                 {/* propose-similar: build a SAM-embedding prior from existing
@@ -1126,6 +1141,9 @@ export default function Workspace() {
                   <Sparkles size={14} />
                   {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
                 </button>
+                <p className={styles.sidebarHint}>
+                  Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
+                </p>
 
                 {/* RF recovery. requires prior /segment so SAM embedding is cached */}
                 <button type="button"
@@ -1145,6 +1163,9 @@ export default function Workspace() {
                   <Sparkles size={14} />
                   {bootstrapBusy ? "Running..." : "RF Recover Missed"}
                 </button>
+                <p className={styles.sidebarHint}>
+                  Train a small classifier on your annotations to catch particles the detector missed everywhere in the image.
+                </p>
 
                 {/* RF background scribble. mark patches that are definitely
                     background so the RF trains on real ground truth instead of
@@ -1174,11 +1195,14 @@ export default function Workspace() {
                   </button>
                 )}
                 {rfBgMode && (
-                  <p className={styles.sidebarHint}>
-                    Scribble over patches that are definitely background (no particle in them).
-                    Cover a few different areas. A single tiny mark isn&apos;t enough for the RF to generalize.
-                    Scroll over the canvas to resize the brush (currently {rfBgBrushSize}px).
-                  </p>
+                  <>
+                    <p className={styles.sidebarHint}>
+                      Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
+                    </p>
+                    <p className={styles.sidebarShortcuts}>
+                      Cover a few different areas · [scroll] resize brush (currently {rfBgBrushSize}px)
+                    </p>
+                  </>
                 )}
 
                 {pendingProposals.length > 0 && (
