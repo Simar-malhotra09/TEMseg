@@ -30,6 +30,8 @@ interface ImgSize{
   height: number;
 }
 
+type SidebarTab = "segment" | "refine" | "augment";
+
 // Horizontal ascii waterfall shown in the status pill while a backend
 // request is in flight. 
 const WATERFALL_LOOP = "=^..^=   U..U  :D  T^T   ╯°□°)╯  ";
@@ -84,6 +86,9 @@ export default function Workspace() {
 
   // stats detail view
   const [showStatsDetail, setShowStatsDetail] = useState(false);
+
+  // sidebar tab: which of the 3 action groups is showing
+  const [activeTab, setActiveTab] = useState<SidebarTab>("segment");
 
   // highlights particle when it's id gets clicked on the detailed view 
   const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
@@ -730,6 +735,21 @@ export default function Workspace() {
     : seg.blackoutRegions;
   const hasRegions = activeRegions.length > 0;
 
+  // Switching tabs abandons any in-progress work in the tab being left, same
+  // rule already used when jumping to the stats dashboard mid-refine (see
+  // handleLocateParticle/handleLocateShape).
+  function switchTab(next: SidebarTab) {
+    if (next === activeTab) return;
+    if (refineMode) refine.handleDiscard();
+    if (pendingProposals.length > 0) handleDiscardProposals();
+    setBootstrapMode(false);
+    setBoxMode(false);
+    setAnnotateMode(false);
+    setRfBgMode(false);
+    seg.setIsBlackoutMode(false);
+    setActiveTab(next);
+  }
+
   return (
     <>
       {/*If in stats dashboard hide the workspace*/}
@@ -818,213 +838,374 @@ export default function Workspace() {
               </div>
             </section>
 
-            {/* actions */}
-            <section className={styles.sidebarSection}>
-              <p className={styles.sidebarLabel}>Actions</p>
-
-              {/*[ACTION]- run seg */}
-              <button
-                type="button"
-                className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-                onClick={handleRunSegmentation}
-                disabled={!image || seg.isSegmenting}
-              >
-                <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
-              </button>
-            </section>
-            <section>
-              {/*[ACTION]- show/hide masks */}
-              <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
-                onClick={() => seg.setMasksVisible(v => !v)}>
-                {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                {seg.masksVisible ? "Hide Masks" : "Show Masks"}
-              </button>
-
-              {/*[ACTION]- refine masks */}
-              <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
-                onClick={
-                  refineMode
-                    ? () => {
-                        refine.handleSave();
-                        setTimeout(() => {
-                          seg.setMasksVisible(b => !b);
-                        }, 300);
-
-                      }
-                    : () => {
-                        enterRefineMode();
-
-                        setTimeout(() => {
-                          seg.setMasksVisible(b => !b);
-                        }, 300);
-                      }
-                }
-                >
-                <Sliders size={14} />
-                {refineMode
-                  ? (refine.isSaving ? "Saving..." : "Save Refinements")
-                  : "Refine Masks"}
-              </button>
-
-              {/* discard all changes made while refining masks*/}
-              {refineMode && (
-                <button type="button" className={styles.actionBtn} onClick={refine.handleDiscard}>
-                  Discard
-                </button>
-              )}
-
-              {/* bootstrap mode. click on the image to *propose* particles via
-                  SAM point-prompt. Requires a prior /segment run so the SAM
-                  image embedding is cached server-side (the backend 400s
-                  otherwise, but the disabled state is the clean UX). */}
-              <button type="button" 
-                className={styles.actionBtn}
-                disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
-                onClick={() => setBootstrapMode(b => !b)}
-                title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-              >
-                <MousePointerClick size={14} />
-                {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
-              </button>
-
-              {/* box-prompt annotation. drag a tight box, SAM segments inside.
-                  Preferred over click-to-add for OOD particles where point
-                  prompts bleed; preferred over polygon for speed. */}
-              <button type="button" 
-                className={styles.actionBtn}
-                disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
-                onClick={() => setBoxMode(m => !m)}
-                title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-              >
-                <BoxSelect size={14} />
-                {boxMode ? "Stop Boxing" : "Box to Add Particles"}
-              </button>
-              {boxMode && (
-                <p className={styles.sidebarHint}>
-                  Drag a tight rectangle around a particle · Space+drag pans · wheel zooms · Esc cancels.
-                </p>
-              )}
-
-              {/* manual annotation. fallback when both YOLO and SAM-with-point
-                  fail (small / clumped / OOD particles). Doesn't require a
-                  prior /segment run since it doesn't use any model output. */}
-              <button type="button" 
-                className={styles.actionBtn}
-                disabled={!sessionId || refineMode || bootstrapMode || boxMode}
-                onClick={() => setAnnotateMode(m => !m)}
-              >
-                <PenTool size={14} />
-                {annotateMode ? "Stop Annotating" : "Annotate Manually"}
-              </button>
-              {annotateMode && (
-                <p className={styles.sidebarHint}>
-                  Click to place vertices · Enter or double-click to close · Backspace undoes · Esc cancels.
-                </p>
-              )}
-
-              {/* propose-similar: build a SAM-embedding prior from existing
-                  annotations and find more candidates across the image. Needs
-                  at least one annotated particle to construct the prior. */}
+            {/* tab bar. switchTab discards any in-progress work in the tab
+                being left (unsaved refine edits, pending augment proposals). */}
+            <div className={styles.tabBar}>
               <button type="button"
-                className={styles.actionBtn}
-                disabled={
-                  !sessionId ||
-                  refineMode ||
-                  annotateMode ||
-                  boxMode ||
-                  rfBgMode ||
-                  !seg.segDone ||
-                  !(seg.stats?.particle_count ?? 0) ||
-                  bootstrapBusy
-                }
-                onClick={handleProposeSimilar}
-                title={
-                  !(seg.stats?.particle_count ?? 0)
-                    ? "Annotate at least one particle first to build the prior"
-                    : undefined
-                }
-              >
-                <Sparkles size={14} />
-                {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
-              </button>
-
-              {/* RF recovery. requires prior /segment so SAM embedding is cached */}
+                className={`${styles.tabBtn} ${activeTab === "segment" ? styles.tabBtnActive : ""}`}
+                onClick={() => switchTab("segment")}
+              >Segment</button>
               <button type="button"
-                className={styles.actionBtn}
-                disabled={
-                  !sessionId ||
-                  refineMode ||
-                  annotateMode ||
-                  boxMode ||
-                  rfBgMode ||
-                  !seg.segDone ||
-                  bootstrapBusy
-                }
-                onClick={handleRFPropose}
-                title={!seg.segDone ? "Run segmentation first" : undefined}
-              >
-                <Sparkles size={14} />
-                {bootstrapBusy ? "Running..." : "RF Recover Missed"}
-              </button>
-
-              {/* RF background scribble. mark patches that are definitely
-                  background so the RF trains on real ground truth instead of
-                  assuming everything far from a known particle is background
-                  (which mislabels particles the model missed). */}
+                className={`${styles.tabBtn} ${activeTab === "refine" ? styles.tabBtnActive : ""}`}
+                onClick={() => switchTab("refine")}
+                disabled={!seg.segDone}
+              >Refine</button>
               <button type="button"
-                className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
-                disabled={
-                  !sessionId ||
-                  refineMode ||
-                  annotateMode ||
-                  boxMode ||
-                  !seg.segDone ||
-                  bootstrapBusy
-                }
-                onClick={() => setRfBgMode(v => !v)}
-              >
-                <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
-              </button>
-              {rfBgScribbles.length > 0 && !rfBgMode && (
-                <button type="button" className={styles.actionBtn} onClick={() => {
-                  rfBgScribblesRef.current = [];
-                  setRfBgScribbles([]);
-                  setStatus("RF background scribbles cleared.");
-                }}>
-                  Clear Background Marks
-                </button>
-              )}
-              {rfBgMode && (
-                <p className={styles.sidebarHint}>
-                  Scribble over patches that are definitely background (no particle in them).
-                  Cover a few different areas. A single tiny mark isn&apos;t enough for the RF to generalize.
-                  Scroll over the canvas to resize the brush (currently {rfBgBrushSize}px).
-                </p>
-              )}
+                className={`${styles.tabBtn} ${activeTab === "augment" ? styles.tabBtnActive : ""}`}
+                onClick={() => switchTab("augment")}
+                disabled={!sessionId}
+              >Augment</button>
+            </div>
 
-              {pendingProposals.length > 0 && (
-                <>
-                  <button type="button" 
+            {activeTab === "segment" && (
+              <>
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Actions</p>
+
+                  {/*[ACTION]- run seg */}
+                  <button
+                    type="button"
                     className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-                    onClick={handleAcceptProposals}
-                    disabled={bootstrapBusy}
+                    onClick={handleRunSegmentation}
+                    disabled={!image || seg.isSegmenting}
                   >
-                    Accept {pendingProposals.length} Proposal{pendingProposals.length === 1 ? "" : "s"}
+                    <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
                   </button>
-                  <button type="button" 
-                    className={styles.actionBtn}
-                    onClick={handleDiscardProposals}
-                    disabled={bootstrapBusy}
+                </section>
+                <section>
+                  {/*[ACTION]- show/hide masks */}
+                  <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
+                    onClick={() => seg.setMasksVisible(v => !v)}>
+                    {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {seg.masksVisible ? "Hide Masks" : "Show Masks"}
+                  </button>
+                </section>
+
+                {/* [ACTION] blackout regions */}
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Blackout Regions</p>
+                  <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                    <button type="button"
+                      className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                      onClick={() => seg.setIsInvBlackoutMode(false)}
+                      disabled={!image}
+                    >Exclude</button>
+                    <button type="button"
+                      className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
+                      onClick={() => seg.setIsInvBlackoutMode(true)}
+                      disabled={!image}
+                    >Isolate</button>
+                  </div>
+                  <button type="button" className={styles.actionBtn} disabled={!image}
+                    onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
+                    <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
+                  </button>
+                  {seg.isBlackoutMode && (
+                    <button type="button" className={styles.actionBtn} onClick={handleApplyBlackout}>
+                      Apply
+                    </button>
+                  )}
+                  {hasRegions && !seg.isBlackoutMode && (
+                    <button type="button" className={styles.actionBtn} onClick={() => {
+                      seg.clearRegions();
+                      if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
+                      else liveRegionsRef.current = [];
+                      setStatus("Regions cleared.");
+                    }}>
+                      Clear Regions
+                    </button>
+                  )}
+                  <p className={styles.sidebarHint}>
+                    {seg.isInvBlackoutMode
+                      ? "Isolate: model only sees selected regions."
+                      : "Exclude: model ignores selected regions."}
+                  </p>
+                </section>
+
+                {/* [ACTION] ground truth */}
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Ground Truth</p>
+                  <button type="button" className={styles.actionBtn}
+                    onClick={() => gtFileRef.current?.click()}
+                    disabled={!sessionId}>
+                    <Upload size={14} /> Upload GT
+                  </button>
+                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
+                    hidden onChange={onGroundTruthFileChange} />
+                  <p className={styles.sidebarHint}>
+                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+                  </p>
+                  {seg.gtUrl && (
+                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                      {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {seg.gtVisible ? "Hide GT" : "Show GT"}
+                    </button>
+                  )}
+                </section>
+              </>
+            )}
+
+            {activeTab === "refine" && (
+              <section>
+                {/*[ACTION]- refine masks */}
+                <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
+                  onClick={
+                    refineMode
+                      ? () => {
+                          refine.handleSave();
+                          setTimeout(() => {
+                            seg.setMasksVisible(b => !b);
+                          }, 300);
+
+                        }
+                      : () => {
+                          enterRefineMode();
+
+                          setTimeout(() => {
+                            seg.setMasksVisible(b => !b);
+                          }, 300);
+                        }
+                  }
                   >
+                  <Sliders size={14} />
+                  {refineMode
+                    ? (refine.isSaving ? "Saving..." : "Save Refinements")
+                    : "Refine Masks"}
+                </button>
+
+                {/* discard all changes made while refining masks*/}
+                {refineMode && (
+                  <button type="button" className={styles.actionBtn} onClick={refine.handleDiscard}>
                     Discard
                   </button>
+                )}
+
+                {/* refine controls — only shown in refine mode */}
+                {refineMode && (
+                  <section className={styles.sidebarSection}>
+                    <p className={styles.sidebarLabel}>Refine</p>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <p className={styles.sidebarHint}>Fill opacity {(refine.polygonOpacity * 100).toFixed(0)}%</p>
+                      <input
+                        type="range"
+                        min={5}
+                        max={100}
+                        value={Math.round(refine.polygonOpacity * 100)}
+                        onChange={e => refine.setPolygonOpacity(Number(e.target.value) / 100)}
+                        style={{ width: "100%", accentColor: "#7ee8a2" }}
+                      />
+                    </div>
+
+                    {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
+                      <>
+                        <button type="button" className={styles.actionBtn} onClick={refine.handleEnterSplit}>
+                          Split Instance
+                        </button>
+                        <button type="button" className={styles.actionBtn} onClick={refine.handleCopy}>
+                          Copy (⌘C)
+                        </button>
+                      </>
+                    )}
+
+                    {refine.clipboard && !refine.pasteMode && !refine.splitMode && (
+                      <button type="button" className={styles.actionBtn} onClick={refine.handleEnterPaste}>
+                        Paste (⌘V)
+                      </button>
+                    )}
+
+                    {refine.pasteMode && (
+                      <>
+                        <p className={styles.sidebarHint}>
+                          Click on image to place copied polygon
+                        </p>
+                        <button type="button" className={styles.actionBtn} onClick={refine.handleCancelPaste}>
+                          Cancel (Esc)
+                        </button>
+                      </>
+                    )}
+
+                    {refine.splitMode && (
+                      <>
+                        <p className={styles.sidebarHint}>
+                          {refine.splitPoints.length} point{refine.splitPoints.length !== 1 ? "s" : ""} placed
+                        </p>
+                        <p className={styles.sidebarHint}>
+                          Click each particle to place a seed point
+                        </p>
+                        <button type="button"
+                          className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                          disabled={refine.splitPoints.length < 2}
+                          onClick={refine.handleConfirmSplit}
+                        >
+                          Confirm Split
+                        </button>
+                        <button type="button" className={styles.actionBtn} onClick={refine.handleCancelSplit}>
+                          Cancel Split
+                        </button>
+                      </>
+                    )}
+                  </section>
+                )}
+              </section>
+            )}
+
+            {activeTab === "augment" && (
+              <section>
+                {/* bootstrap mode. click on the image to *propose* particles via
+                    SAM point-prompt. Requires a prior /segment run so the SAM
+                    image embedding is cached server-side (the backend 400s
+                    otherwise, but the disabled state is the clean UX). */}
+                <button type="button"
+                  className={styles.actionBtn}
+                  disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
+                  onClick={() => setBootstrapMode(b => !b)}
+                  title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                >
+                  <MousePointerClick size={14} />
+                  {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
+                </button>
+
+                {/* box-prompt annotation. drag a tight box, SAM segments inside.
+                    Preferred over click-to-add for OOD particles where point
+                    prompts bleed; preferred over polygon for speed. */}
+                <button type="button"
+                  className={styles.actionBtn}
+                  disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
+                  onClick={() => setBoxMode(m => !m)}
+                  title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                >
+                  <BoxSelect size={14} />
+                  {boxMode ? "Stop Boxing" : "Box to Add Particles"}
+                </button>
+                {boxMode && (
                   <p className={styles.sidebarHint}>
-                    Click a proposal on the canvas to reject it individually.
+                    Drag a tight rectangle around a particle · Space+drag pans · wheel zooms · Esc cancels.
                   </p>
-                </>
-              )}
-          </section>
-          <section>
+                )}
+
+                {/* manual annotation. fallback when both YOLO and SAM-with-point
+                    fail (small / clumped / OOD particles). Doesn't require a
+                    prior /segment run since it doesn't use any model output. */}
+                <button type="button"
+                  className={styles.actionBtn}
+                  disabled={!sessionId || refineMode || bootstrapMode || boxMode}
+                  onClick={() => setAnnotateMode(m => !m)}
+                >
+                  <PenTool size={14} />
+                  {annotateMode ? "Stop Annotating" : "Annotate Manually"}
+                </button>
+                {annotateMode && (
+                  <p className={styles.sidebarHint}>
+                    Click to place vertices · Enter or double-click to close · Backspace undoes · Esc cancels.
+                  </p>
+                )}
+
+                {/* propose-similar: build a SAM-embedding prior from existing
+                    annotations and find more candidates across the image. Needs
+                    at least one annotated particle to construct the prior. */}
+                <button type="button"
+                  className={styles.actionBtn}
+                  disabled={
+                    !sessionId ||
+                    refineMode ||
+                    annotateMode ||
+                    boxMode ||
+                    rfBgMode ||
+                    !seg.segDone ||
+                    !(seg.stats?.particle_count ?? 0) ||
+                    bootstrapBusy
+                  }
+                  onClick={handleProposeSimilar}
+                  title={
+                    !(seg.stats?.particle_count ?? 0)
+                      ? "Annotate at least one particle first to build the prior"
+                      : undefined
+                  }
+                >
+                  <Sparkles size={14} />
+                  {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
+                </button>
+
+                {/* RF recovery. requires prior /segment so SAM embedding is cached */}
+                <button type="button"
+                  className={styles.actionBtn}
+                  disabled={
+                    !sessionId ||
+                    refineMode ||
+                    annotateMode ||
+                    boxMode ||
+                    rfBgMode ||
+                    !seg.segDone ||
+                    bootstrapBusy
+                  }
+                  onClick={handleRFPropose}
+                  title={!seg.segDone ? "Run segmentation first" : undefined}
+                >
+                  <Sparkles size={14} />
+                  {bootstrapBusy ? "Running..." : "RF Recover Missed"}
+                </button>
+
+                {/* RF background scribble. mark patches that are definitely
+                    background so the RF trains on real ground truth instead of
+                    assuming everything far from a known particle is background
+                    (which mislabels particles the model missed). */}
+                <button type="button"
+                  className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
+                  disabled={
+                    !sessionId ||
+                    refineMode ||
+                    annotateMode ||
+                    boxMode ||
+                    !seg.segDone ||
+                    bootstrapBusy
+                  }
+                  onClick={() => setRfBgMode(v => !v)}
+                >
+                  <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
+                </button>
+                {rfBgScribbles.length > 0 && !rfBgMode && (
+                  <button type="button" className={styles.actionBtn} onClick={() => {
+                    rfBgScribblesRef.current = [];
+                    setRfBgScribbles([]);
+                    setStatus("RF background scribbles cleared.");
+                  }}>
+                    Clear Background Marks
+                  </button>
+                )}
+                {rfBgMode && (
+                  <p className={styles.sidebarHint}>
+                    Scribble over patches that are definitely background (no particle in them).
+                    Cover a few different areas. A single tiny mark isn&apos;t enough for the RF to generalize.
+                    Scroll over the canvas to resize the brush (currently {rfBgBrushSize}px).
+                  </p>
+                )}
+
+                {pendingProposals.length > 0 && (
+                  <>
+                    <button type="button"
+                      className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                      onClick={handleAcceptProposals}
+                      disabled={bootstrapBusy}
+                    >
+                      Accept {pendingProposals.length} Proposal{pendingProposals.length === 1 ? "" : "s"}
+                    </button>
+                    <button type="button"
+                      className={styles.actionBtn}
+                      onClick={handleDiscardProposals}
+                      disabled={bootstrapBusy}
+                    >
+                      Discard
+                    </button>
+                    <p className={styles.sidebarHint}>
+                      Click a proposal on the canvas to reject it individually.
+                    </p>
+                  </>
+                )}
+              </section>
+            )}
+
+            <section>
               {sessionId && (
                 <ExportPanel
                   sessionId={sessionId}
@@ -1032,136 +1213,6 @@ export default function Workspace() {
                   refineDone={refineDone}
                   hasStats={!!seg.stats}
                 />
-              )}
-            </section>
-
-            {/* refine controls — only shown in refine mode */}
-            {refineMode && (
-              <section className={styles.sidebarSection}>
-                <p className={styles.sidebarLabel}>Refine</p>
-
-                <div style={{ marginBottom: 8 }}>
-                  <p className={styles.sidebarHint}>Fill opacity {(refine.polygonOpacity * 100).toFixed(0)}%</p>
-                  <input
-                    type="range"
-                    min={5}
-                    max={100}
-                    value={Math.round(refine.polygonOpacity * 100)}
-                    onChange={e => refine.setPolygonOpacity(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }}
-                  />
-                </div>
-
-                {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
-                  <>
-                    <button type="button" className={styles.actionBtn} onClick={refine.handleEnterSplit}>
-                      Split Instance
-                    </button>
-                    <button type="button" className={styles.actionBtn} onClick={refine.handleCopy}>
-                      Copy (⌘C)
-                    </button>
-                  </>
-                )}
-
-                {refine.clipboard && !refine.pasteMode && !refine.splitMode && (
-                  <button type="button" className={styles.actionBtn} onClick={refine.handleEnterPaste}>
-                    Paste (⌘V)
-                  </button>
-                )}
-
-                {refine.pasteMode && (
-                  <>
-                    <p className={styles.sidebarHint}>
-                      Click on image to place copied polygon
-                    </p>
-                    <button type="button" className={styles.actionBtn} onClick={refine.handleCancelPaste}>
-                      Cancel (Esc)
-                    </button>
-                  </>
-                )}
-
-                {refine.splitMode && (
-                  <>
-                    <p className={styles.sidebarHint}>
-                      {refine.splitPoints.length} point{refine.splitPoints.length !== 1 ? "s" : ""} placed
-                    </p>
-                    <p className={styles.sidebarHint}>
-                      Click each particle to place a seed point
-                    </p>
-                    <button type="button"
-                      className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-                      disabled={refine.splitPoints.length < 2}
-                      onClick={refine.handleConfirmSplit}
-                    >
-                      Confirm Split
-                    </button>
-                    <button type="button" className={styles.actionBtn} onClick={refine.handleCancelSplit}>
-                      Cancel Split
-                    </button>
-                  </>
-                )}
-              </section>
-            )}
-
-            {/* [ACTION] blackout regions */}
-            <section className={styles.sidebarSection}>
-              <p className={styles.sidebarLabel}>Blackout Regions</p>
-              <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                <button type="button"
-                  className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                  onClick={() => seg.setIsInvBlackoutMode(false)}
-                  disabled={!image}
-                >Exclude</button>
-                <button type="button"
-                  className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
-                  onClick={() => seg.setIsInvBlackoutMode(true)}
-                  disabled={!image}
-                >Isolate</button>
-              </div>
-              <button type="button" className={styles.actionBtn} disabled={!image}
-                onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
-                <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
-              </button>
-              {seg.isBlackoutMode && (
-                <button type="button" className={styles.actionBtn} onClick={handleApplyBlackout}>
-                  Apply
-                </button>
-              )}
-              {hasRegions && !seg.isBlackoutMode && (
-                <button type="button" className={styles.actionBtn} onClick={() => {
-                  seg.clearRegions();
-                  if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
-                  else liveRegionsRef.current = [];
-                  setStatus("Regions cleared.");
-                }}>
-                  Clear Regions
-                </button>
-              )}
-              <p className={styles.sidebarHint}>
-                {seg.isInvBlackoutMode
-                  ? "Isolate: model only sees selected regions."
-                  : "Exclude: model ignores selected regions."}
-              </p>
-            </section>
-
-            {/* [ACTION] ground truth */}
-            <section className={styles.sidebarSection}>
-              <p className={styles.sidebarLabel}>Ground Truth</p>
-              <button type="button" className={styles.actionBtn}
-                onClick={() => gtFileRef.current?.click()}
-                disabled={!sessionId}>
-                <Upload size={14} /> Upload GT
-              </button>
-              <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-                hidden onChange={onGroundTruthFileChange} />
-              <p className={styles.sidebarHint}>
-                {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
-              </p>
-              {seg.gtUrl && (
-                <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
-                  {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {seg.gtVisible ? "Hide GT" : "Show GT"}
-                </button>
               )}
             </section>
 

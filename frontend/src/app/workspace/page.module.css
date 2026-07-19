@@ -117,6 +117,33 @@ font-size: 12px;
 .dropdownItem:hover { background: #1e1e1e; }
 .dropdownItemActive { color: #7ee8a2; }
 
+/* Sidebar tab bar */
+.tabBar {
+  display: flex;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+.tabBtn {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 4px 1ch;
+  color: #555;
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.tabBtn:hover:not(:disabled) { color: #aaa; }
+.tabBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tabBtnActive {
+  background: #0d0d0d;
+  color: #7ee8a2;
+  box-shadow: 2px 2px 0 0 #3a3a3a;
+}
+.tabBtnActive:hover:not(:disabled) { color: #7ee8a2; }
+
 /* Buttons */
 .actionBtn {
 display: flex;
