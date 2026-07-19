@@ -25,7 +25,27 @@ consistent.
 
 - How does the rf eciction glgoc work? just writye here. grep for eviction in backend as a tip. 
 
+Answer: `rf_cache.py` keeps one trained `RFRecovery` per session in an in-memory dict keyed on
+`session_id`, no TTL or size cap — `evict(session_key)` just pops that key. It's called
+whenever the cached classifier would go stale relative to the mask it was trained on: at the
+top of `/rf/train` and `/rf/propose` (both evict then retrain fresh, since the cache is only
+keyed on session_id and can't tell the mask changed underneath it), and after any mask edit —
+`masks.py` and `segment.py` call `rf_cache.evict(session_id)` right after a refine save or a
+new segmentation so the next `/rf/propose` doesn't train on a stale mask. There's also a manual
+`DELETE /rf/cache/{session_key}` endpoint for evicting on demand. Nothing evicts on session
+deletion/expiry itself — same as the rest of the filesystem-based session state.
+
 - What are the min scribble limits. again just write here 
+
+Answer: two separate floors. On the canvas (`ScribbleCanvas.tsx`), a stroke only gets kept on
+mouseup if it has at least 2 points (`points.length >= 4`, i.e. not a single click with no
+drag) — that's just a "don't save a zero-length stroke" guard, not a real limit. The real limit
+is server-side in `rf.py`: `MIN_BG_FRACTION = 0.04`, so `/rf/propose` refuses to train unless
+the rasterized bg scribbles cover at least 4% of the image's pixels, returning an error naming
+how many px were marked vs how many are required. Below that floor the RF barely sees what
+background looks like and everything slightly different from the sampled pixels drifts to the
+foreground, so it refuses to train rather than return junk (see the comment above
+`MIN_BG_FRACTION`).
 
 - Same thing with tooltip in refine mode config that we do with shape labels. Allow mutability for user to modify or extend. 
 In this case, obv user cant invent fields, they can choose to removbe/add which fields they want to see in the tooltip. 
