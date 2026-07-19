@@ -999,7 +999,7 @@ export default function Workspace() {
                     <p className={styles.sidebarLabel}>Refine</p>
 
                     <div style={{ marginBottom: 8 }}>
-                      <p className={styles.sidebarHint}>Fill opacity {(refine.polygonOpacity * 100).toFixed(0)}%</p>
+                      <p className={styles.sidebarHint}>Fill mask opacity: {(refine.polygonOpacity * 100).toFixed(0)}%</p>
                       <input
                         type="range"
                         min={5}
