@@ -113,28 +113,38 @@ export interface StatsResult {
   };
 
   // per-particle
-  particles: {
-      id: number;
-      area_px: number;
-      area_real?: number;
-      perimeter_px: number;
-      perimeter_real?: number;
-      diameter_px: number;
-      diameter_real?: number;
-      major_axis_px: number;
-      major_axis_real?: number;
-      minor_axis_px: number;
-      minor_axis_real?: number;
-      circularity: number;
-      solidity: number;
-      convexity: number;
-      rectangularity: number;
-      aspect_ratio: number;
-      n_vertices: number;
-      shape: string;
-      bbox: { x: number; y: number; w: number; h: number };
-  }[];
+  particles: ParticleStats[];
 }
+
+export interface ParticleStats {
+  id: number;
+  area_px: number;
+  area_real?: number;
+  perimeter_px: number;
+  perimeter_real?: number;
+  diameter_px: number;
+  diameter_real?: number;
+  major_axis_px: number;
+  major_axis_real?: number;
+  minor_axis_px: number;
+  minor_axis_real?: number;
+  circularity: number;
+  solidity: number;
+  convexity: number;
+  rectangularity: number;
+  aspect_ratio: number;
+  n_vertices: number;
+  shape: string;
+  bbox: { x: number; y: number; w: number; h: number };
+}
+
+// Client side source of truth for which computed metrics are selectable in
+// the stats table and the refine-mode hover tooltip. Both derive their
+// column/field list from this instead of keeping their own copy.
+export const PARTICLE_METRIC_FIELDS = [
+  "diameter", "area", "circularity", "solidity", "aspect_ratio", "n_vertices", "shape",
+] as const;
+export type ParticleMetricField = typeof PARTICLE_METRIC_FIELDS[number];
 
 export interface Metadata {
   image_shape?: number[];

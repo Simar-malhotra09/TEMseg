@@ -10,6 +10,7 @@ import {
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
 import type { StatsResult, Metadata } from "@/lib/api";
+import { PARTICLE_METRIC_FIELDS } from "@/lib/api";
 
 
 
@@ -32,11 +33,10 @@ interface Props {
 type SizeMode = "diameter" | "area";
 type SortDir = "asc" | "desc";
 
-// Client side source of truth for the per-particle table's columns. 
-// sortable key type and the rendered header list derive from this
-const TABLE_COLUMN_KEYS = [
-  "index", "diameter", "area", "circularity", "solidity", "aspect_ratio", "n_vertices", "shape",
-] as const;
+// per-particle table columns: "index" (row number) plus every field in the
+// shared metric list, so this table and the refine-mode tooltip picker never
+// drift apart on what "available fields" means
+const TABLE_COLUMN_KEYS = ["index", ...PARTICLE_METRIC_FIELDS] as const;
 type SortKey = typeof TABLE_COLUMN_KEYS[number];
 
 function columnLabel(key: SortKey, hasScale: boolean, unit: string): string {
