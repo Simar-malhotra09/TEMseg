@@ -53,6 +53,14 @@ export default function ScribbleCanvas({
     return () => window.removeEventListener("keydown", handler);
   }, [selectedId, strokes]);
 
+  // right-click a stroke to delete it directly, no select-then-backspace needed
+  const handleDeleteStroke = (id: string) => {
+    const updated = strokes.filter(s => s.id !== id);
+    setStrokes(updated);
+    if (selectedId === id) setSelectedId(null);
+    onChange(updated);
+  };
+
   // map viewport pointer -> image coordinates
   const getPointerPos = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const pos = e.target.getStage()?.getPointerPosition();
@@ -127,6 +135,10 @@ export default function ScribbleCanvas({
             lineJoin="round"
             hitStrokeWidth={Math.max(24, stroke.strokeWidth * (width / imgWidth))}
             onClick={() => setSelectedId(stroke.id)}
+            onContextMenu={e => {
+              e.evt.preventDefault();
+              handleDeleteStroke(stroke.id);
+            }}
           />
         ))}
 
