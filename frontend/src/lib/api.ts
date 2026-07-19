@@ -1,5 +1,33 @@
 export const BASE_URL = "http://localhost:8080";
 
+// Tracks in-flight requests to the backend so the UI can show a blocking
+// indicator. Every fetch below goes through trackedFetch instead of the
+// global fetch, so this stays accurate without callers opting in per call.
+type RequestActivityListener = () => void;
+
+let activeRequestCount = 0;
+const requestActivityListeners = new Set<RequestActivityListener>();
+
+export function subscribeToRequestActivity(listener: RequestActivityListener): () => void {
+  requestActivityListeners.add(listener);
+  return () => requestActivityListeners.delete(listener);
+}
+
+export function getActiveRequestCount(): number {
+  return activeRequestCount;
+}
+
+async function trackedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  activeRequestCount += 1;
+  requestActivityListeners.forEach((listener) => listener());
+  try {
+    return await fetch(input, init);
+  } finally {
+    activeRequestCount -= 1;
+    requestActivityListeners.forEach((listener) => listener());
+  }
+}
+
 // These are mirrors of the pydantic model the server defines
 export interface Box {
   id: string;
@@ -172,7 +200,7 @@ export async function exportViaPyWebView(
 
 
 export async function getModels(): Promise<string[]> {
-  const res = await fetch(`${BASE_URL}/models`);
+  const res = await trackedFetch(`${BASE_URL}/models`);
 
   if (!res.ok) {
     throw new Error("Failed to fetch models");
@@ -192,7 +220,7 @@ export async function getSessionMetadata(
 ): Promise<Metadata | null> {
   // Used to validate a session exists on refresh (?session=... restore).
   // Returns metadata dict on 200, null on 404 (session evicted/deleted).
-  const res = await fetch(`${BASE_URL}/images/${sessionId}/metadata`);
+  const res = await trackedFetch(`${BASE_URL}/images/${sessionId}/metadata`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getSessionMetadata: ${res.status}`);
   return res.json();
@@ -203,7 +231,7 @@ export async function updatePixelSize(
   pixelSize: number,
   pixelUnit: string,
 ): Promise<{ metadata: Metadata; stats?: StatsResult }> {
-  const res = await fetch(`${BASE_URL}/images/${sessionId}/metadata`, {
+  const res = await trackedFetch(`${BASE_URL}/images/${sessionId}/metadata`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pixel_size: pixelSize, pixel_unit: pixelUnit }),
@@ -214,7 +242,7 @@ export async function updatePixelSize(
 
 export async function getStats(sessionId: string): Promise<StatsResult | null> {
   // Returns cached stats.json for a session, or null if /segment hasn't run.
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/stats`);
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/stats`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`getStats: ${res.status}`);
   return res.json();
@@ -247,7 +275,7 @@ export async function proposeSimilar(
   // seed-finding algorithm; omit to use the backend default (currently NCC).
   const body: Record<string, unknown> = {};
   if (method) body.method = method;
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/propose-similar`, {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/propose-similar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -272,7 +300,7 @@ export async function fromBoxes(
 ): Promise<FromBoxesResponse> {
   // Drag-box-to-segment via SAM box prompt. Same proposal lifecycle as
   // fromPoints — caller commits accepted proposals via saveInstances.
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/from-boxes`, {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/from-boxes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ boxes, pending }),
@@ -294,7 +322,7 @@ export async function fromPoints(
   // `pending` is the list of not-yet-committed proposals from prior clicks in
   // this bootstrap session; the backend paints them into its dedup mask so a
   // new click on/near one is rejected instead of producing an overlap.
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/from-points`, {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/from-points`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ points, pending }),
@@ -312,7 +340,7 @@ export async function uploadImage(file: File) {
   const form = new FormData();
   form.append("file", file);
 
-  const res = await fetch(`${BASE_URL}/images/upload`, {
+  const res = await trackedFetch(`${BASE_URL}/images/upload`, {
     method: "POST",
     body: form,
   });
@@ -340,7 +368,7 @@ export async function segmentImage(
   console.log("Calling [segmentImage]", sessionId, model, blackout, inverseBlackout, regions);
   
 
-  const res = await fetch(`${BASE_URL}/segment/`, {
+  const res = await trackedFetch(`${BASE_URL}/segment/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -370,7 +398,7 @@ export async function uploadGroundTruth(
 ) {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE_URL}/gt/${sessionId}`, { method: "POST", body: form });
+  const res = await trackedFetch(`${BASE_URL}/gt/${sessionId}`, { method: "POST", body: form });
   if (!res.ok) throw new Error("GT upload failed");
   return res.json();
 }
@@ -381,7 +409,7 @@ export async function computeGTScore(
   blackout: boolean = false,
   inverseBlackout: boolean = false,
 ) {
-  const res = await fetch(`${BASE_URL}/gt/${sessionId}/compute`, {
+  const res = await trackedFetch(`${BASE_URL}/gt/${sessionId}/compute`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -397,13 +425,13 @@ export async function computeGTScore(
 
 
 export async function getInstances(sessionId: string) {
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/instances`, { method: "POST" });
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instances`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to get instances");
   return res.json();
 }
 
 export async function saveInstances(sessionId: string, instances: Instance[]) {
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/instances`, {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instances`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, instances }),
@@ -417,7 +445,7 @@ export async function splitInstances(
   instanceId: number,
   points: [number, number][]
 ): Promise<{ instances: Instance[] }> {
-  const res = await fetch(`${BASE_URL}/masks/${sessionId}/split`, {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/split`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ instance_id: instanceId, points }),
@@ -438,7 +466,7 @@ export async function rfPropose(
   topN: number = 5,
   bgScribbles: Stroke[] = [],
 ): Promise<RFProposeResponse> {
-  const res = await fetch(`${BASE_URL}/rf/propose`, {
+  const res = await trackedFetch(`${BASE_URL}/rf/propose`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, top_n: topN, bg_scribbles: bgScribbles }),
@@ -454,7 +482,7 @@ export async function exportSession(
   sessionId: string,
   items: string[]
 ): Promise<Blob> {
-  const res = await fetch(`${BASE_URL}/export/${sessionId}`, {
+  const res = await trackedFetch(`${BASE_URL}/export/${sessionId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items }),
