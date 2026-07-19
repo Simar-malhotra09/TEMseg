@@ -163,6 +163,13 @@ font-size: 12px;
 }
 .tabBtnActive:hover:not(:disabled) { color: #7ee8a2; }
 
+/* Tighter tab variant for use inline in a sub-window title row */
+.titleTab {
+  padding: 1px 3px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
 /* Buttons */
 .actionBtn {
 display: flex;

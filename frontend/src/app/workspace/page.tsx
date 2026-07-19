@@ -1068,17 +1068,17 @@ export default function Workspace() {
                 <div className={styles.subWindow}>
                   <p className={styles.subWindowTitle}>
                     <button type="button"
-                      className={`${styles.tabBtn} ${augmentMethod === "click" ? styles.tabBtnActive : ""}`}
+                      className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "click" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("click")}
                     >Point</button>
-                    {" / "}
+                    {"/"}
                     <button type="button"
-                      className={`${styles.tabBtn} ${augmentMethod === "box" ? styles.tabBtnActive : ""}`}
+                      className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "box" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("box")}
                     >Box</button>
-                    {" / "}
+                    {"/"}
                     <button type="button"
-                      className={`${styles.tabBtn} ${augmentMethod === "similar" ? styles.tabBtnActive : ""}`}
+                      className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "similar" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("similar")}
                     >Similar</button>
                   </p>
