@@ -520,7 +520,7 @@ export default function Workspace() {
       }
       setPendingProposals(prev => [...prev, ...res.proposals]);
       setStatus(
-        `Found ${res.proposals.length} candidate(s) from ${res.seed_count ?? "?"} seed(s) — review and Accept.`,
+        `Found ${res.proposals.length} candidate(s) from ${res.seed_count ?? "?"} seed(s). Review and accept or discard.`,
       );
     } catch (err) {
       console.error("propose similar failed:", err);
@@ -546,7 +546,7 @@ export default function Workspace() {
       }
       setPendingProposals(prev => [...prev, ...res.proposals]);
       setStatus(
-        `RF found ${res.proposals.length} missed region(s) — review and Accept.`,
+        `RF found ${res.proposals.length} missed region(s). Review and accept or discard.`,
       );
     } catch (err) {
       console.error("RF propose failed:", err);
