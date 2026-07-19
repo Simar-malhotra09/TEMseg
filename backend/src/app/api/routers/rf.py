@@ -18,15 +18,14 @@ SESSIONS_DIR = Path("sessions")
 
 # A user-marked bg scribble that's too small gives the RF almost no sense of
 # what background looks like, so anything even slightly different from the
-# handful of sampled pixels drifts to the foreground side — empirically this
-# produces a single runaway blob covering a large fraction of the image below
-# ~4% coverage. Below this floor we refuse to train rather than return junk.
+# handful of sampled pixels drifts to the foreground side.
+# Below this floor we refuse to train rather than return junk.
 MIN_BG_FRACTION = 0.04
 
 
 class TrainRequest(BaseModel):
     session_id: str
-    min_area: int | None = None  # None → derive from segmented instances
+    min_area: int | None = None  # None => derive from segmented instances
 
 
 class ProposeRequest(BaseModel):
@@ -51,7 +50,7 @@ async def train_rf(req: TrainRequest):
 
     mask_path = session_dir / "mask.png"
     if not mask_path.exists():
-        return {"error": "No mask found — run segmentation first"}
+        return {"error": "No mask found. Run segmentation first"}
 
     image_bgr = cv.imread(str(orig_files[0]))
     if image_bgr is None:
@@ -72,7 +71,6 @@ async def train_rf(req: TrainRequest):
 async def rf_propose(req: ProposeRequest, request: Request):
     """
     Run RF pixel classifier and return missed regions as proposals directly.
-    No SAM — the RF mask IS the segmentation.
     """
     t0 = time.perf_counter()
 
@@ -102,17 +100,17 @@ async def rf_propose(req: ProposeRequest, request: Request):
     bg_mask = (
         strokes_to_mask(req.bg_scribbles, mask_gray.shape) if req.bg_scribbles else None
     )
-    if bg_mask is not None:
-        min_bg_px = int(MIN_BG_FRACTION * mask_gray.size)
-        marked_px = int(bg_mask.sum())
-        if marked_px < min_bg_px:
-            return {
-                "error": (
-                    f"Not enough background marked ({marked_px}px, need at least "
-                    f"{min_bg_px}px). Scribble over a few more empty areas, spread "
-                    f"across different parts of the image("
-                )
-            }
+    # Require marked background unconditionally.
+    min_bg_px = int(MIN_BG_FRACTION * mask_gray.size)
+    marked_px = int(bg_mask.sum()) if bg_mask is not None else 0
+    if marked_px < min_bg_px:
+        return {
+            "error": (
+                f"Not enough background marked ({marked_px}px, need at least "
+                f"{min_bg_px}px). Mark a few background areas first so the RF "
+                f"has both classes to train on."
+            )
+        }
 
     # Always retrain fresh: the cache is keyed only on session_id, so a stale
     # entry from a previous call would silently ignore mask edits (refine)
