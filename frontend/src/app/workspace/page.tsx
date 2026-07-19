@@ -31,6 +31,7 @@ interface ImgSize{
 }
 
 type SidebarTab = "segment" | "refine" | "augment";
+type AugmentMethod = "click" | "box" | "similar";
 
 // Horizontal ascii waterfall shown in the status pill while a backend
 // request is in flight. 
@@ -89,6 +90,9 @@ export default function Workspace() {
 
   // sidebar tab: which of the 3 action groups is showing
   const [activeTab, setActiveTab] = useState<SidebarTab>("segment");
+
+  // which method is showing in the Point/Box/Similar sub-window
+  const [augmentMethod, setAugmentMethod] = useState<AugmentMethod>("click");
 
   // highlights particle when it's id gets clicked on the detailed view 
   const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
@@ -750,6 +754,15 @@ export default function Workspace() {
     setActiveTab(next);
   }
 
+  // Switching method within the Point/Box/Similar sub-window exits whichever
+  // of Click/Box was active, same idea as switchTab but nothing to discard.
+  function switchAugmentMethod(next: AugmentMethod) {
+    if (next === augmentMethod) return;
+    setBootstrapMode(false);
+    setBoxMode(false);
+    setAugmentMethod(next);
+  }
+
   return (
     <>
       {/*If in stats dashboard hide the workspace*/}
@@ -1053,78 +1066,105 @@ export default function Workspace() {
             {activeTab === "augment" && (
               <section className={styles.sidebarSection}>
                 <div className={styles.subWindow}>
-                  <p className={styles.subWindowTitle}>Point / Box / Similar</p>
+                  <p className={styles.subWindowTitle}>
+                    <button type="button"
+                      className={`${styles.tabBtn} ${augmentMethod === "click" ? styles.tabBtnActive : ""}`}
+                      onClick={() => switchAugmentMethod("click")}
+                    >Point</button>
+                    {" / "}
+                    <button type="button"
+                      className={`${styles.tabBtn} ${augmentMethod === "box" ? styles.tabBtnActive : ""}`}
+                      onClick={() => switchAugmentMethod("box")}
+                    >Box</button>
+                    {" / "}
+                    <button type="button"
+                      className={`${styles.tabBtn} ${augmentMethod === "similar" ? styles.tabBtnActive : ""}`}
+                      onClick={() => switchAugmentMethod("similar")}
+                    >Similar</button>
+                  </p>
 
-                  {/* bootstrap mode. click on the image to *propose* particles via
-                      SAM point-prompt. Requires a prior /segment run so the SAM
-                      image embedding is cached server-side (the backend 400s
-                      otherwise, but the disabled state is the clean UX). */}
-                  <button type="button"
-                    className={styles.actionBtn}
-                    disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
-                    onClick={() => setBootstrapMode(b => !b)}
-                    title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-                  >
-                    <MousePointerClick size={14} />
-                    {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
-                  </button>
-                  {bootstrapMode && (
-                    <p className={styles.sidebarHint}>
-                      Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
-                    </p>
-                  )}
-
-                  {/* box-prompt annotation. drag a tight box, SAM segments inside.
-                      Preferred over click-to-add for OOD particles where point
-                      prompts bleed; preferred over polygon for speed. */}
-                  <button type="button"
-                    className={styles.actionBtn}
-                    disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
-                    onClick={() => setBoxMode(m => !m)}
-                    title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
-                  >
-                    <BoxSelect size={14} />
-                    {boxMode ? "Stop Boxing" : "Box to Add Particles"}
-                  </button>
-                  {boxMode && (
+                  {augmentMethod === "click" && (
                     <>
-                      <p className={styles.sidebarHint}>
-                        Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
-                      </p>
-                      <p className={styles.sidebarShortcuts}>
-                        [Space]+drag pan · [wheel] zoom · [Esc] cancel
-                      </p>
+                      {/* bootstrap mode. click on the image to *propose* particles via
+                          SAM point-prompt. Requires a prior /segment run so the SAM
+                          image embedding is cached server-side (the backend 400s
+                          otherwise, but the disabled state is the clean UX). */}
+                      <button type="button"
+                        className={styles.actionBtn}
+                        disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
+                        onClick={() => setBootstrapMode(b => !b)}
+                        title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                      >
+                        <MousePointerClick size={14} />
+                        {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
+                      </button>
+                      {bootstrapMode && (
+                        <p className={styles.sidebarHint}>
+                          Click a missed particle so SAM segments it from that point, useful when the detector skipped it entirely.
+                        </p>
+                      )}
                     </>
                   )}
 
-                  {/* propose-similar: build a SAM-embedding prior from existing
-                      annotations and find more candidates across the image. Needs
-                      at least one annotated particle to construct the prior. */}
-                  <button type="button"
-                    className={styles.actionBtn}
-                    disabled={
-                      !sessionId ||
-                      refineMode ||
-                      annotateMode ||
-                      boxMode ||
-                      rfBgMode ||
-                      !seg.segDone ||
-                      !(seg.stats?.particle_count ?? 0) ||
-                      bootstrapBusy
-                    }
-                    onClick={handleProposeSimilar}
-                    title={
-                      !(seg.stats?.particle_count ?? 0)
-                        ? "Annotate at least one particle first to build the prior"
-                        : undefined
-                    }
-                  >
-                    <Sparkles size={14} />
-                    {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
-                  </button>
-                  <p className={styles.sidebarHint}>
-                    Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
-                  </p>
+                  {augmentMethod === "box" && (
+                    <>
+                      {/* box-prompt annotation. drag a tight box, SAM segments inside.
+                          Preferred over click-to-add for OOD particles where point
+                          prompts bleed; preferred over polygon for speed. */}
+                      <button type="button"
+                        className={styles.actionBtn}
+                        disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
+                        onClick={() => setBoxMode(m => !m)}
+                        title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                      >
+                        <BoxSelect size={14} />
+                        {boxMode ? "Stop Boxing" : "Box to Add Particles"}
+                      </button>
+                      {boxMode && (
+                        <>
+                          <p className={styles.sidebarHint}>
+                            Drag a box around a missed particle so SAM segments inside it, more reliable than a click when particles sit close together.
+                          </p>
+                          <p className={styles.sidebarShortcuts}>
+                            [Space]+drag pan · [wheel] zoom · [Esc] cancel
+                          </p>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {augmentMethod === "similar" && (
+                    <>
+                      {/* propose-similar: build a SAM-embedding prior from existing
+                          annotations and find more candidates across the image. Needs
+                          at least one annotated particle to construct the prior. */}
+                      <button type="button"
+                        className={styles.actionBtn}
+                        disabled={
+                          !sessionId ||
+                          refineMode ||
+                          annotateMode ||
+                          boxMode ||
+                          rfBgMode ||
+                          !seg.segDone ||
+                          !(seg.stats?.particle_count ?? 0) ||
+                          bootstrapBusy
+                        }
+                        onClick={handleProposeSimilar}
+                        title={
+                          !(seg.stats?.particle_count ?? 0)
+                            ? "Annotate at least one particle first to build the prior"
+                            : undefined
+                        }
+                      >
+                        <Sparkles size={14} />
+                        {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
+                      </button>
+                      <p className={styles.sidebarHint}>
+                        Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className={styles.subWindow}>
