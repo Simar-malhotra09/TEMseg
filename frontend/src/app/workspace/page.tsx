@@ -1200,7 +1200,7 @@ export default function Workspace() {
                         Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
                       </p>
                       <p className={styles.sidebarShortcuts}>
-                        Cover a few different areas · [scroll] resize brush (currently {rfBgBrushSize}px)
+                        · [scroll]: resize brush 
                       </p>
                     </>
                   ) : (
