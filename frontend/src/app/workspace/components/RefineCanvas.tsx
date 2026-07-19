@@ -121,7 +121,7 @@ export default function RefineCanvas({
     left = Math.max(0, Math.min(left, width - tw));
     top = Math.max(0, Math.min(top, height - th));
     setTooltipPos({ left, top });
-  }, [hover, width, height]);
+  }, [hover, width, height, visibleTooltipFields.length]);
 
   // scale factor: image pixels per screen pixel at current zoom
   // used to keep stroke widths and vertex sizes visually constant
@@ -427,11 +427,15 @@ export default function RefineCanvas({
           pointerEvents: "none",
           whiteSpace: "nowrap",
           zIndex: 20,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          width: "max-content",
         }}
       >
-        <div>ID: {hoveredInstance.id}</div>
+        <div style={{ lineHeight: 1.4 }}>ID: {hoveredInstance.id}</div>
         {hoveredParticle && visibleTooltipFields.map(key => (
-          <div key={key}>
+          <div key={key} style={{ lineHeight: 1.4 }}>
             {formatTooltipField(key, hoveredParticle, stats?.has_scale ?? false, stats?.unit ?? "px")}
           </div>
         ))}
