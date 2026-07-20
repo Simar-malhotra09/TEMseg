@@ -133,7 +133,10 @@ fi
 uv run pyinstaller temseg.spec --noconfirm
 
 # Rename the default output to include branch name.
+# Remove any previous build with the same name first; otherwise macOS mv
+# moves the new app *into* the old directory instead of replacing it.
 if [ -d "dist/TEMseg.app" ]; then
+    rm -rf "dist/${APP_NAME}"
     mv "dist/TEMseg.app" "dist/${APP_NAME}"
 fi
 
