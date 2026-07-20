@@ -274,7 +274,8 @@ a.binaries = [b for b in a.binaries if not _is_cuda_lib(b[0])]
 _exclude_data_patterns = [
     # dev session data — user runtime state, not app code
     "/sessions/",
-    "backend_src/sessions",
+    "backend/src/sessions/",
+    "backend_src/sessions/",
     # test directories across packages
     "hyperspy/tests/",
     "rsciio/tests/",
@@ -295,18 +296,19 @@ _exclude_data_patterns = [
 _pruned_count = 0
 _pruned_bytes = 0
 
-def _should_exclude_data(src):
-    src_str = str(src)
+def _should_exclude_data(entry):
+    src = entry[1] if len(entry) > 1 else entry[0]
+    dest = entry[0]
+    src_str, dest_str = str(src), str(dest)
     for pat in _exclude_data_patterns:
-        if pat in src_str:
+        if pat in src_str or pat in dest_str:
             return True
     return False
 
 new_datas = []
 for entry in a.datas:
     # a.datas entries are (dest_name, src_path, type) or (dest_name, src_path)
-    src = entry[1] if len(entry) > 1 else entry[0]
-    if _should_exclude_data(src):
+    if _should_exclude_data(entry):
         _pruned_count += 1
         try:
             _pruned_bytes += Path(src).stat().st_size
