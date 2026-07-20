@@ -193,6 +193,7 @@ async def segment(req: SegmentRequest, request: Request):
 
     # evict stale RF so /rf/propose trains fresh on the new mask
     from app.models.helpers import rf_cache
+
     rf_cache.evict(req.session_id)
 
     elapsed = time.perf_counter() - t_req_start
@@ -201,7 +202,10 @@ async def segment(req: SegmentRequest, request: Request):
     logger.info(f"[SEG] Pre-computing instances for session={req.session_id}")
     try:
         binary = (mask > 0).astype(np.uint8)
-        instances, labeld = extract_instances(binary, session_dir, save=True)
+        sam_epsilon_scale = 0.75 if result.model == AvailableModels.yolosam else 1.0
+        instances, labeld = extract_instances(
+            binary, session_dir, save=True, epsilon_scale=sam_epsilon_scale
+        )
         logger.info(f"[SEG] Pre-computed {len(instances)} instances and saved to disk")
     except Exception as e:
         # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
