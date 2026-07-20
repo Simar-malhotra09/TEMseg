@@ -33,6 +33,7 @@ def extract_instances(
     mask: np.ndarray,
     session_dir: Path,
     save: bool = True,
+    epsilon_scale: float = 1.0,
 ) -> tuple[list[dict], np.ndarray]:
     """
     Run connected-component labeling on a binary mask.
@@ -41,6 +42,10 @@ def extract_instances(
     If save=True, writes:
       - instances.npy  : labeled integer mask (uint16), pixel value = instance ID
       - instances.json : list of {id, contour, bbox, area} dicts
+
+    epsilon_scale relaxes (value < 1.0) or tightens (value > 1.0) polygon
+    simplification. SAM masks are typically high quality, so YOLO-SAM uses a
+    smaller scale to retain more vertices.
     """
     logger.info("[INSTANCES] Starting instance extraction")
 
@@ -54,34 +59,44 @@ def extract_instances(
     instances = []
     for inst_id in range(1, n_components + 1):
         component = (labeled == inst_id).astype(np.uint8)
-        contours, _ = cv.findContours(component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv.findContours(
+            component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+        )
         if not contours:
             logger.debug(f"[INSTANCES] Component {inst_id} had no contours, skipping")
             continue
 
         area = int(np.sum(component))
         perimeter = cv.arcLength(contours[0], True)
-        epsilon = _simplification_epsilon(perimeter, area, image_area)
+        epsilon = _simplification_epsilon(perimeter, area, image_area) * epsilon_scale
         approx = cv.approxPolyDP(contours[0], epsilon, True)
 
         # squeeze to [[x,y], ...] and convert to float
-        contour= approx.squeeze()
+        contour = approx.squeeze()
         if contour.ndim < 2 or len(contour) < 3:
-            logger.debug(f"[INSTANCES] Component {inst_id} contour too small ({len(contour)} pts), skipping")
+            logger.debug(
+                f"[INSTANCES] Component {inst_id} contour too small ({len(contour)} pts), skipping"
+            )
             continue
 
         x, y, w, h = cv.boundingRect(contours[0])
         if area < MIN_INSTANCE_AREA:
-            logger.debug(f"[INSTANCES] Component {inst_id} too small ({area}px), skipping")
+            logger.debug(
+                f"[INSTANCES] Component {inst_id} too small ({area}px), skipping"
+            )
             continue
-        instances.append({
-            "id": inst_id,
-            "contour": contour.tolist(),
-            "bbox": {"x": x, "y": y, "w": w, "h": h},
-            "area": area,
-        })
+        instances.append(
+            {
+                "id": inst_id,
+                "contour": contour.tolist(),
+                "bbox": {"x": x, "y": y, "w": w, "h": h},
+                "area": area,
+            }
+        )
 
-    logger.info(f"[INSTANCES] Extracted {len(instances)} valid instances (skipped {n_components - len(instances)})")
+    logger.info(
+        f"[INSTANCES] Extracted {len(instances)} valid instances (skipped {n_components - len(instances)})"
+    )
 
     if save:
         npy_path = session_dir / "instances.npy"
@@ -92,7 +107,9 @@ def extract_instances(
 
         with open(json_path, "w") as f:
             json.dump(instances, f)
-        logger.info(f"[INSTANCES] Saved instance metadata → {json_path} ({len(instances)} instances)")
+        logger.info(
+            f"[INSTANCES] Saved instance metadata → {json_path} ({len(instances)} instances)"
+        )
 
     return instances, labeled
 
@@ -116,7 +133,9 @@ def load_instances(session_dir: Path) -> tuple[list[dict], np.ndarray] | None:
     return instances, labeled
 
 
-def save_instances(session_dir: Path, instances: list[dict], labeled: np.ndarray) -> None:
+def save_instances(
+    session_dir: Path, instances: list[dict], labeled: np.ndarray
+) -> None:
     """Persist updated instances and labeled mask back to disk."""
     npy_path = session_dir / "instances.npy"
     json_path = session_dir / "instances.json"
