@@ -1,5 +1,5 @@
 """
-Weight path resolution — works in three contexts:
+Weight path resolution:
 
 1. FROZEN (PyInstaller .app / .exe):
    macOS : ~/Library/Application Support/TEMseg/weights/
@@ -51,41 +51,50 @@ def _resolve_weights_dir() -> Path:
     return _dev_weights_dir()
 
 
-def _app_support_shape_config_path() -> Path:
+def app_support_shape_config_path() -> Path:
     """Platform-appropriate user override location for shape_config.toml."""
     system = platform.system()
     if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "TEMseg" / "shape_config.toml"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "TEMseg"
+            / "shape_config.toml"
+        )
     elif system == "Windows":
         return Path.home() / "AppData" / "Local" / "TEMseg" / "shape_config.toml"
     else:
         return Path.home() / ".local" / "share" / "TEMseg" / "shape_config.toml"
 
 
-def _bundled_shape_config_path() -> Path:
+def bundled_shape_config_path() -> Path:
     """Default shape_config.toml shipped next to compute_stats.py."""
     return Path(__file__).resolve().parent / "shape_config.toml"
 
 
-def _resolve_shape_config_path() -> Path:
+def resolve_shape_config_path() -> Path:
     """
     Resolve shape classification config with priority:
       1. TEMSEG_SHAPE_CONFIG env var
       2. User override in app-support dir, if present
       3. Bundled default -> helpers/shape_config.toml
+
+    Resolved fresh on every call rather than cached since the override file can
+    be written or deleted at runtime via the /config/shape-rules endpoints,
+    and a cached path would keep serving stale rules until process restart.
     """
     if env_path := os.environ.get("TEMSEG_SHAPE_CONFIG"):
         return Path(env_path)
 
-    override = _app_support_shape_config_path()
+    override = app_support_shape_config_path()
     if override.exists():
         return override
 
-    return _bundled_shape_config_path()
+    return bundled_shape_config_path()
 
 
 WEIGHTS_DIR = _resolve_weights_dir()
-SHAPE_CONFIG_PATH = _resolve_shape_config_path()
 
 
 class Settings:
@@ -93,7 +102,10 @@ class Settings:
     YOLO_MODEL_PATH = WEIGHTS_DIR / "best12x.onnx"
     SAM_MODEL_PATH = WEIGHTS_DIR / "sam_vit_b_01ec64.pth"
     MASKRCNN_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model.pth"
-    SHAPE_CONFIG_PATH = SHAPE_CONFIG_PATH
+
+    @property
+    def SHAPE_CONFIG_PATH(self) -> Path:
+        return resolve_shape_config_path()
 
     @classmethod
     def weights_present(cls) -> bool:
