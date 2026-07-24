@@ -1,8 +1,6 @@
-# OS
 .DS_Store
 backend/.DS_Store
 
-# Python
 __pycache__/
 *.pyc
 *.egg-info/
@@ -10,15 +8,12 @@ backend/uv_venv/
 backend/uv_venv_clean/
 backend/uv.lock
 
-# Node / frontend
 node_modules/
 .next/
 frontend/main.py
 
-# Env / secrets
 .env
 
-# Build artifacts
 build/
 dist/
 *.zip
@@ -26,16 +21,13 @@ TEMseg_windows/
 temseg_icon.ico
 rthook_hyperspy.py
 
-# Docs (kept out of git, generated or scratch)
 *.md
 
-# Logs / debug
 backend/routes.log
 backend/src/routes.log
 debug.txt
 temseg_export_failing_obj/
 
-# Data / weights / sessions
 data/
 backend/src/data/
 backend/src/sessions/
@@ -43,7 +35,6 @@ backend/weights
 benchmarks/
 nanoDetect/
 
-# Misc
 workspace.sh
 test_build_mac.sh
 .claude/
