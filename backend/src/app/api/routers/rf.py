@@ -156,16 +156,12 @@ async def rf_propose(req: ProposeRequest, request: Request):
                 default=0.0,
             )
             if worst_iou > req.iou_dedupe:
-                logger.debug(
-                    f"[RF-Propose] instance {inst['id']} rejected: "
-                    f"IoU {worst_iou:.2f} with existing instance"
-                )
                 continue
             deduped.append(inst)
         n_rejected = len(instances) - len(deduped)
         if n_rejected:
             logger.info(
-                f"[RF-Propose] {n_rejected} proposal(s) deduped against existing instances"
+                f"Removed {n_rejected} RF proposal(s) that overlapped existing particles"
             )
         instances = deduped
 
@@ -173,7 +169,9 @@ async def rf_propose(req: ProposeRequest, request: Request):
         inst["source"] = "rf"
 
     elapsed = time.perf_counter() - t0
-    logger.info(f"[RF-Propose] {len(instances)} proposals in {elapsed:.2f}s")
+    logger.info(
+        f"RF recovery found {len(instances)} proposals in {elapsed * 1000:.1f}ms"
+    )
     return {"proposals": instances, "elapsed": elapsed}
 
 

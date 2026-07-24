@@ -62,7 +62,7 @@ def blackout_regions(
             (img_out * 255).astype("uint8") if img_out.dtype == np.float32 else img_out
         )
         cv.imwrite(str(save_path), save_img)
-        print(f"Blacked-out image saved to {save_path}")
+        logger.info(f"Saved blackout preview to {save_path.name}")
 
     return img_out
 
@@ -135,7 +135,7 @@ def inverse_blackout_regions(
                 else np.zeros_like(save_img, dtype="uint8")
             )
         cv.imwrite(str(save_path), save_img)
-        print(f"Inverse blacked-out image saved to {save_path}")
+        logger.info(f"Saved inverse blackout preview to {save_path.name}")
 
     return img_out
 

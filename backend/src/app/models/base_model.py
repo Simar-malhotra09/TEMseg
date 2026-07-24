@@ -7,6 +7,9 @@ from typing import Optional
 
 from app.models.helpers.compute_stats import compute_stats_from_instances
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 # from app.models.helpers.compute_stats import (
 #     compute_avg_circularity,
@@ -139,12 +142,9 @@ class Model(ABC):
         pass
 
     def get_model_specs(self) -> None:
-        print(f"\nModel: {self.config.name}")
-        print("-" * 40)
+        logger.info(f"Model: {self.config.name}")
         for comp in self.config.components:
-            print(f"Component: {comp.name}")
-            print(f"Path:      {comp.path}")
-            print("-" * 40)
+            logger.info(f"  Component: {comp.name}, Path: {comp.path}")
 
     def compute_stats(
         self,

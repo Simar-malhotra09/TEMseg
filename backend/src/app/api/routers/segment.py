@@ -60,11 +60,17 @@ async def segment(req: SegmentRequest, request: Request):
             "Only one of blackout_regions or inverse_blackout_regions may be True."
         )
 
-    logger.info(f"[SEG] Request received for session: {req.session_id}")
-    logger.info(f"[SEG] Model requested: {req.model}")
-    logger.info(f"[SEG] Regions selected : {len(req.regions)}")
-    logger.info(f"[SEG] Regions are being {'blacked_out' if req.blackout else 'kept'}")
-    logger.info(f"[SEG] colorize: {req.colorize}")
+    action = (
+        "blackout"
+        if req.blackout
+        else "keep"
+        if not req.inverse_blackout
+        else "patch-seg"
+    )
+    logger.info(
+        f"Segmentation request: session={req.session_id}, model={req.model.value}, "
+        f"regions={len(req.regions)}, mode={action}"
+    )
 
     session_dir = SESSIONS_DIR / req.session_id
     if not session_dir.exists():
@@ -80,14 +86,14 @@ async def segment(req: SegmentRequest, request: Request):
     t0 = time.perf_counter()
     img = model_inst.load_image(image_path)
     t_load = time.perf_counter() - t0
-    logger.info(f"[SEG-TIMING] image_load={t_load:.3f}s  shape={img.shape}")
+    logger.info(f"Loaded image in {t_load * 1000:.1f}ms, shape {img.shape}")
 
     # ── inference ────────────────────────────────────────────────
     t1 = time.perf_counter()
 
     if req.inverse_blackout:
         if req.model == AvailableModels.yolosam:
-            logger.info(f"[SEG] Batch seg on {len(req.regions)} patches")
+            logger.info(f"Running batch segmentation on {len(req.regions)} patches")
             result = batch_seg_patches(img, req.regions, model_inst)
         elif req.model == AvailableModels.maskrcnn:
             img = inverse_blackout_regions(
@@ -100,7 +106,7 @@ async def segment(req: SegmentRequest, request: Request):
             return {"error": f"Unsupported model {req.model}"}
     else:
         if req.blackout:
-            logger.info(f"[SEG] Applying blackout to {len(req.regions)} regions")
+            logger.info(f"Applying blackout to {len(req.regions)} regions")
             img = blackout_regions(
                 img,
                 req.regions,
@@ -112,7 +118,7 @@ async def segment(req: SegmentRequest, request: Request):
             result = model_inst.segment(img)
 
     t_inference = time.perf_counter() - t1
-    logger.info(f"[SEG-TIMING] inference={t_inference:.3f}s")
+    logger.info(f"Model inference took {t_inference * 1000:.1f}ms")
 
     # ── validation ───────────────────────────────────────────────
     if req.model != result.model:
@@ -138,7 +144,7 @@ async def segment(req: SegmentRequest, request: Request):
         if hasattr(result, "embedding") and result.embedding is not None:
             cache[req.session_id] = result.embedding
             logger.info(
-                f"[SEG] Cached SAM embedding despite empty mask | session={req.session_id}"
+                f"Cached SAM embedding for session {req.session_id} (no particles detected)"
             )
         return {
             "mask_url": None,
@@ -150,14 +156,14 @@ async def segment(req: SegmentRequest, request: Request):
 
     save_mask = colorize_components_inplace(mask) if req.colorize else mask
     t_colorize = time.perf_counter() - t2
-    logger.info(f"[SEG-TIMING] normalize+colorize={t_colorize:.3f}s")
+    logger.info(f"Prepared result mask in {t_colorize * 1000:.1f}ms")
 
     # ── save mask ────────────────────────────────────────────────
     t3 = time.perf_counter()
     mask_path = session_dir / "mask.png"
     success = cv.imwrite(str(mask_path), save_mask)
     t_save = time.perf_counter() - t3
-    logger.info(f"[SEG-TIMING] mask_save={t_save:.3f}s")
+    logger.info(f"Saved mask image in {t_save * 1000:.1f}ms")
 
     if not success:
         return {"error": "Failed to save mask"}
@@ -184,12 +190,12 @@ async def segment(req: SegmentRequest, request: Request):
         boxes_path = session_dir / "yolo_boxes_debug.png"
         cv.imwrite(str(boxes_path), debug_img)
         debug_boxes_url = f"/images/{req.session_id}/yolo-boxes-debug"
-        logger.info(f"[SEG] Saved YOLO boxes debug overlay to {boxes_path}")
+        logger.info(f"Saved detection debug overlay to {boxes_path.name}")
 
     # ── cache embedding ──────────────────────────────────────────
     if hasattr(result, "embedding") and result.embedding is not None:
         cache[req.session_id] = result.embedding
-        logger.info(f"[SEG] Cached SAM embedding for session {req.session_id}")
+        logger.info(f"Cached SAM embedding for session {req.session_id}")
 
     # evict stale RF so /rf/propose trains fresh on the new mask
     from app.models.helpers import rf_cache
@@ -199,17 +205,17 @@ async def segment(req: SegmentRequest, request: Request):
     elapsed = time.perf_counter() - t_req_start
 
     # ── save the instances in instance.json ──────────────────────────────────────────
-    logger.info(f"[SEG] Pre-computing instances for session={req.session_id}")
+    logger.info(f"Extracting particles for session {req.session_id}")
     try:
         binary = (mask > 0).astype(np.uint8)
         sam_epsilon_scale = 0.75 if result.model == AvailableModels.yolosam else 1.0
         instances, labeld = extract_instances(
             binary, session_dir, save=True, epsilon_scale=sam_epsilon_scale
         )
-        logger.info(f"[SEG] Pre-computed {len(instances)} instances and saved to disk")
+        logger.info(f"Extracted and saved {len(instances)} particles")
     except Exception as e:
         # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
-        logger.warning(f"[SEG] Instance pre-computation failed (non-fatal): {e}")
+        logger.warning(f"Particle extraction skipped (non-fatal): {e}")
 
     # ── stats ────────────────────────────────────────────────────
     t4 = time.perf_counter()
@@ -236,13 +242,14 @@ async def segment(req: SegmentRequest, request: Request):
 
     t_stats = time.perf_counter() - t4
     logger.info(
-        f"[SEG-TIMING] stats={t_stats:.3f}s | pixel_size={pixel_size} {pixel_unit}"
+        f"Computed statistics in {t_stats * 1000:.1f}ms "
+        f"(pixel size {pixel_size} {pixel_unit})"
     )
 
     logger.info(
-        f"[SEG-TIMING] TOTAL={elapsed:.3f}s  "
-        f"(load={t_load:.3f} | infer={t_inference:.3f} | "
-        f"colorize={t_colorize:.3f} | save={t_save:.3f} | stats={t_stats:.3f})"
+        f"Segmentation complete in {elapsed * 1000:.1f}ms "
+        f"(load {t_load * 1000:.1f}ms | inference {t_inference * 1000:.1f}ms | "
+        f"mask {t_colorize * 1000:.1f}ms | save {t_save * 1000:.1f}ms | stats {t_stats * 1000:.1f}ms)"
     )
 
     # save stats to file
@@ -250,7 +257,7 @@ async def segment(req: SegmentRequest, request: Request):
         stats_path = session_dir / "stats.json"
         with open(stats_path, "w") as f:
             json.dump(stats_results, f)
-        logger.info(f"[SEG] Stats saved to {stats_path}")
+        logger.info(f"Saved statistics to {stats_path.name}")
 
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",

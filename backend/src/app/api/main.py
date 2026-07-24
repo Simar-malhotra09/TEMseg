@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routers import images, segment, ground_truths, masks, export, rf
+from app.api.routers import images, segment, ground_truths, masks, export, rf, config
 from app.api.live_models import AvailableModels
 from app.api.model_registry import get_or_load_model
 
@@ -16,9 +16,13 @@ import os
 import platform
 
 
+LOG_FORMAT = "%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s"
+DATEFMT = "%Y-%m-%d %H:%M:%S"
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format=LOG_FORMAT,
+    datefmt=DATEFMT,
 )
 
 # resolve a writable, per-user log dir (never inside the app bundle)
@@ -37,13 +41,14 @@ log_path = os.path.join(log_dir, "routes.log")
 # parent logger for all routes
 routes_logger = logging.getLogger("routes")
 routes_logger.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+formatter = logging.Formatter(LOG_FORMAT, datefmt=DATEFMT)
 
 # file handler for routes
 if not routes_logger.handlers:
     file_handler = logging.FileHandler(log_path)
     file_handler.setFormatter(formatter)
     routes_logger.addHandler(file_handler)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,12 +77,12 @@ app.include_router(ground_truths.router)
 app.include_router(masks.router)
 app.include_router(export.router)
 app.include_router(rf.router)
+app.include_router(config.router)
 
 
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
-
 
 
 @app.get("/models", response_model=List[str])
@@ -100,4 +105,4 @@ def cleanup_old_sessions(max_age_hours: int = 24, force=False):
         age = now - session.stat().st_mtime
         if age > max_age_hours * 3600:
             shutil.rmtree(session)
-            routes_logger.info(f"Cleaned up session: {session.name}")
+            routes_logger.info(f"Cleaned up old session: {session.name}")

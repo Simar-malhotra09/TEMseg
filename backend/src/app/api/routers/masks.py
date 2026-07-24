@@ -118,14 +118,13 @@ async def get_stats(session_id: str):
 
 @router.post("/{session_id}/instances")
 async def get_instances(session_id: str):
-    logger.info(f"[MASKS] GET instances | session={session_id}")
+    t_start = time.time()
     session_dir = _session_dir(session_id)
 
     # fast path — already on disk
     cached = load_instances(session_dir)
     if cached is not None:
         instances, _ = cached
-        logger.info(f"[MASKS] Returning {len(instances)} cached instances")
         return {"instances": instances}
 
     # recompute from mask.png
@@ -136,7 +135,7 @@ async def get_instances(session_id: str):
             detail="No segmentation mask found — run segmentation first",
         )
 
-    logger.info("[MASKS] No cached instances, recomputing from mask.png")
+    logger.info(f"Recomputing particles from mask for session {session_id}")
     mask_bgr = cv.imread(str(mask_path))
     if mask_bgr is None:
         raise HTTPException(status_code=500, detail="Failed to read mask.png")
@@ -144,15 +143,16 @@ async def get_instances(session_id: str):
     binary = (cv.cvtColor(mask_bgr, cv.COLOR_BGR2GRAY) > 0).astype(np.uint8)
     instances, labeled = extract_instances(binary, session_dir, save=True)
 
-    logger.info(f"[MASKS] Recomputed and saved {len(instances)} instances")
+    elapsed_ms = (time.time() - t_start) * 1000
+    logger.info(
+        f"Recomputed and saved {len(instances)} particles in {elapsed_ms:.1f}ms"
+    )
     return {"instances": instances}
 
 
 @router.put("/{session_id}/instances")
 async def api_save_instances(session_id: str, req: SaveInstancesRequest):
-    logger.info(
-        f"[MASKS] POST save | session={session_id} | {len(req.instances)} instances"
-    )
+    t_start = time.time()
     session_dir = _session_dir(session_id)
 
     cached = load_instances(session_dir)
@@ -181,14 +181,12 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
                 detail="No mask or preview found to infer image shape",
             )
 
-    logger.info(f"[MASKS] Rasterizing into shape {shape}")
     labeled = rasterize_instances(req.instances, shape)
     save_instances(session_dir, req.instances, labeled)
 
     colored = colorize_labeled_mask(labeled)
     mask_path = session_dir / "mask.png"
     cv.imwrite(str(mask_path), colored)
-    logger.info(f"[MASKS] Regenerated mask.png | path={mask_path}")
 
     # evict stale RF so a later /rf/propose trains fresh on the edited mask
     from app.models.helpers import rf_cache
@@ -218,8 +216,11 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     with open(stats_path, "w") as f:
         json.dump(stats, f)
 
-    logger.info(f"[MASKS] Stats saved to {stats_path}")
-    logger.info(f"[MASKS] Recomputed stats | {stats['particle_count']} particles")
+    elapsed_ms = (time.time() - t_start) * 1000
+    logger.info(
+        f"Saved {len(req.instances)} particles and updated statistics "
+        f"({stats['particle_count']} total) in {elapsed_ms:.1f}ms"
+    )
 
     return {"mask_url": f"/images/{session_id}/mask", "stats": stats}
 
@@ -241,7 +242,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     """
     t_start = time.time()
     logger.info(
-        f"[SPLIT] POST split | session={session_id} | instance_id={body.instance_id} | {len(body.points)} points"
+        f"Splitting particle {body.instance_id} into {len(body.points)} parts for session {session_id}"
     )
 
     session_dir = _session_dir(session_id)
@@ -263,13 +264,10 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
             status_code=404, detail=f"Instance {body.instance_id} not found"
         )
 
-    logger.info(
-        f"[SPLIT] Target instance {body.instance_id} | area={target['area']} | bbox={target['bbox']}"
-    )
+    logger.info(f"Original particle area {target['area']}px, bbox {target['bbox']}")
 
     # extract original blob mask — used to constrain SAM output
     blob_mask = (labeled == body.instance_id).astype(np.uint8)
-    logger.info(f"[SPLIT] Blob mask | nonzero pixels={int(np.sum(blob_mask))}")
 
     # ── 2. get SAM predictor from cache ──────────────────────────────────────
     embedding_cache = getattr(request.app.state, "embedding_cache", {})
@@ -280,8 +278,6 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
             status_code=400,
             detail="SAM embedding not cached for this session — re-run segmentation to restore it",
         )
-
-    logger.info(f"[SPLIT] SAM embedding found in cache | session={session_id}")
 
     # get yolosam model from app state
     models = request.app.state.models
@@ -295,14 +291,11 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     predictor.original_size = embedding.original_size
     predictor.input_size = embedding.input_size
     predictor.is_image_set = True
-    logger.info("[SPLIT] SAM predictor state restored from cache")
+    logger.info("Restored SAM model state from cache")
 
     # ── 3. run SAM for each point ─────────────────────────────────────────────
     new_masks = []
     for i, (px, py) in enumerate(body.points):
-        logger.info(
-            f"[SPLIT] Running SAM predict | point {i + 1}/{len(body.points)} | ({px:.1f}, {py:.1f})"
-        )
         t_pred = time.time()
 
         point_coords = np.array([[px, py]])
@@ -318,23 +311,22 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         best_idx = int(np.argmax(scores))
         raw_mask = masks[best_idx].astype(np.uint8)
 
-        logger.info(
-            f"[SPLIT] SAM predict done | point {i + 1} | score={scores[best_idx]:.3f} | elapsed={time.time() - t_pred:.2f}s"
-        )
+        pred_ms = (time.time() - t_pred) * 1000
 
         # ── 4. constrain to original blob ────────────────────────────────────
         constrained = cv.bitwise_and(raw_mask, blob_mask)
         pixel_count = int(np.sum(constrained))
-        logger.info(
-            f"[SPLIT] Constrained mask | point {i + 1} | pixels={pixel_count} (raw={int(np.sum(raw_mask))})"
-        )
 
         if pixel_count < 10:
             logger.warning(
-                f"[SPLIT] Point {i + 1} produced near-empty mask after constraint — skipping"
+                f"Split point {i + 1} produced too small a mask ({pixel_count}px) — skipping"
             )
             continue
 
+        logger.info(
+            f"Split point {i + 1}/{len(body.points)} predicted mask in {pred_ms:.1f}ms "
+            f"({pixel_count}px after constraint)"
+        )
         new_masks.append(constrained)
 
     if not new_masks:
@@ -344,7 +336,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         )
 
     logger.info(
-        f"[SPLIT] Got {len(new_masks)} valid masks from {len(body.points)} points"
+        f"Got {len(new_masks)} valid masks from {len(body.points)} split points"
     )
 
     # ── 5. extract contours from each mask ───────────────────────────────────
@@ -363,7 +355,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         contour = cv.approxPolyDP(largest, epsilon, True).squeeze()
 
         if contour.ndim < 2 or len(contour) < 3:
-            logger.warning(f"[SPLIT] Contour {i + 1} too small, skipping")
+            logger.warning(f"Split result {i + 1} too small, skipping")
             continue
 
         x, y, w, h = cv.boundingRect(contours[0])
@@ -377,7 +369,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         }
         new_instances.append(inst)
         logger.info(
-            f"[SPLIT] New instance | id={new_id} | area={area} | contour_pts={len(contour)}"
+            f"Created new particle {new_id} with area {area}px from split point {i + 1}"
         )
 
     if not new_instances:
@@ -390,7 +382,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         i for i in instances if i["id"] != body.instance_id
     ] + new_instances
     logger.info(
-        f"[SPLIT] Updated instance list | before={len(instances)} | after={len(updated_instances)}"
+        f"Updated particle list from {len(instances)} to {len(updated_instances)}"
     )
 
     # update labeled mask — clear old blob, paint new ones
@@ -405,11 +397,11 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     colored = colorize_labeled_mask(labeled)
     mask_path = session_dir / "mask.png"
     cv.imwrite(str(mask_path), colored)
-    logger.info("[SPLIT] Regenerated mask.png")
 
     t_total = time.time() - t_start
     logger.info(
-        f"[SPLIT] Complete | {len(new_instances)} new instances | total={t_total:.2f}s"
+        f"Split complete: created {len(new_instances)} new particles "
+        f"in {t_total * 1000:.1f}ms"
     )
 
     return {
@@ -431,7 +423,9 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
 @router.post("/{session_id}/from-boxes")
 async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
     t_start = time.time()
-    logger.info(f"[FROM-BOXES] session={session_id} | {len(body.boxes)} box(es)")
+    logger.info(
+        f"Box-prompt segmentation for session {session_id}: {len(body.boxes)} box(es)"
+    )
 
     if not body.boxes:
         raise HTTPException(status_code=400, detail="No boxes provided")
@@ -529,7 +523,7 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
                 multimask_output=False,
             )
         except Exception as e:
-            logger.warning(f"[FROM-BOXES] SAM predict failed at box {i}: {e}")
+            logger.warning(f"SAM prediction failed for box {i}: {e}")
             rejected.append({"index": i, "reason": f"SAM error: {e}"})
             continue
 
@@ -578,8 +572,8 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
 
     t_total = time.time() - t_start
     logger.info(
-        f"[FROM-BOXES] Proposed {len(proposals)} / {len(body.boxes)} boxes "
-        f"| rejected={len(rejected)} | total={t_total:.2f}s"
+        f"Box prompts done: {len(proposals)} proposals from {len(body.boxes)} boxes "
+        f"({len(rejected)} rejected) in {t_total * 1000:.1f}ms"
     )
 
     return {
@@ -621,7 +615,9 @@ def _pick_smallest_safe_mask(
 @router.post("/{session_id}/from-points")
 async def from_points(session_id: str, body: FromPointsRequest, request: Request):
     t_start = time.time()
-    logger.info(f"[FROM-POINTS] session={session_id} | {len(body.points)} click(s)")
+    logger.info(
+        f"Point-prompt segmentation for session {session_id}: {len(body.points)} click(s)"
+    )
 
     if not body.points:
         raise HTTPException(status_code=400, detail="No points provided")
@@ -687,8 +683,8 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     image_area = float(h_img * w_img)
     max_area = body.max_image_fraction * image_area
     logger.info(
-        f"[FROM-POINTS] Image {h_img}x{w_img} | area window "
-        f"[{body.min_area}, {int(max_area)}]px"
+        f"Image size {h_img}x{w_img}, accepted particle area "
+        f"{body.min_area}-{int(max_area)}px"
     )
 
     # SAM predict per click
@@ -717,13 +713,13 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         box_widths = box_base * 1.2
         log_median = float(np.log(max(float(np.median(prior_areas)), 1.0)))
         logger.info(
-            f"[FROM-POINTS] Size prior from {len(prior_areas)} examples | "
+            f"Using size prior from {len(prior_areas)} existing particles, "
             f"box widths={box_widths.round(1).tolist()}"
         )
     else:
         box_widths = None
         log_median = None
-        logger.info("[FROM-POINTS] No prior — falling back to multimask scale picker")
+        logger.info("No existing size examples, using SAM scale picker")
 
     for i, point in enumerate(body.points):
         if len(point) != 2:
@@ -757,7 +753,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                     )
                 except Exception as e:
                     logger.warning(
-                        f"[FROM-POINTS] SAM predict failed at click {i} box {k}: {e}"
+                        f"SAM prediction failed for click {i} at box size {k}: {e}"
                     )
                     continue
                 m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
@@ -784,7 +780,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                     multimask_output=True,
                 )
             except Exception as e:
-                logger.warning(f"[FROM-POINTS] SAM predict failed at click {i}: {e}")
+                logger.warning(f"SAM prediction failed for click {i}: {e}")
                 rejected.append({"index": i, "reason": f"SAM error: {e}"})
                 continue
             pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
@@ -841,8 +837,8 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
 
     t_total = time.time() - t_start
     logger.info(
-        f"[FROM-POINTS] Proposed {len(proposals)} / {len(body.points)} clicks "
-        f"| rejected={len(rejected)} | total={t_total:.2f}s"
+        f"Point prompts done: {len(proposals)} proposals from {len(body.points)} clicks "
+        f"({len(rejected)} rejected) in {t_total * 1000:.1f}ms"
     )
 
     return {
@@ -1013,8 +1009,9 @@ async def propose_similar(
 ):
     t_start = time.time()
     logger.info(
-        f"[PROPOSE] session={session_id} | thr={body.sim_threshold} | "
-        f"max={body.max_proposals} | nms={body.nms_distance}px"
+        f"Finding similar particles for session {session_id}: "
+        f"threshold={body.sim_threshold}, max={body.max_proposals}, "
+        f"min spacing={body.nms_distance}px"
     )
 
     session_dir = _session_dir(session_id)
@@ -1052,8 +1049,8 @@ async def propose_similar(
     # mild padding so SAM has context at the box edge (tight boxes clip)
     box_widths = box_base * 1.2
     logger.info(
-        f"[PROPOSE] {len(instances)} examples | median area={median_area:.0f}px | "
-        f"floor={min_area:.0f}px | box widths={box_widths.round(1).tolist()}"
+        f"Using {len(instances)} example particles, median area {median_area:.0f}px, "
+        f"box widths={box_widths.round(1).tolist()}"
     )
 
     # 2. cached SAM embedding
@@ -1077,7 +1074,7 @@ async def propose_similar(
     predictor.is_image_set = True
 
     h_img, w_img = embedding.original_size
-    logger.info(f"[PROPOSE] Image size {h_img}x{w_img} | embedding restored")
+    logger.info(f"Image size {h_img}x{w_img}, restored SAM embedding")
 
     #  3. similarity map
     method = body.method.lower()
@@ -1095,8 +1092,8 @@ async def propose_similar(
             raise HTTPException(status_code=400, detail=str(e))
         sim_small = feat_map @ proto  # (H_e, W_e)
         logger.info(
-            f"[PROPOSE/cosine] sim range [{sim_small.min():.3f}, {sim_small.max():.3f}] | "
-            f"mean={sim_small.mean():.3f}"
+            f"Cosine similarity range [{sim_small.min():.3f}, {sim_small.max():.3f}] "
+            f"(mean {sim_small.mean():.3f})"
         )
         sim = cv.resize(sim_small, (w_img, h_img), interpolation=cv.INTER_LINEAR)
     else:
@@ -1123,13 +1120,12 @@ async def propose_similar(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         logger.info(
-            f"[PROPOSE/ncc] template side={side_px}px built from "
-            f"{len(instances)} examples"
+            f"NCC template side={side_px}px built from {len(instances)} examples"
         )
         sim = _ncc_score_map(image_gray, template, template_mask)
         logger.info(
-            f"[PROPOSE/ncc] score range [{sim.min():.3f}, {sim.max():.3f}] | "
-            f"mean={sim.mean():.3f}"
+            f"NCC score range [{sim.min():.3f}, {sim.max():.3f}] "
+            f"(mean {sim.mean():.3f})"
         )
 
     # mask out regions inside any existing instance (both methods)
@@ -1143,7 +1139,7 @@ async def propose_similar(
     peaks = _greedy_peak_nms(
         sim, body.sim_threshold, body.nms_distance, body.max_proposals
     )
-    logger.info(f"[PROPOSE] {len(peaks)} seed peaks above threshold")
+    logger.info(f"Found {len(peaks)} candidate locations above similarity threshold")
 
     if not peaks:
         return {
@@ -1188,7 +1184,9 @@ async def propose_similar(
                     multimask_output=False,
                 )
             except Exception as e:
-                logger.warning(f"[PROPOSE] SAM predict failed at seed {i} box {k}: {e}")
+                logger.warning(
+                    f"SAM prediction failed for candidate {i} at box size {k}: {e}"
+                )
                 continue
             m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
             a = int(m.sum())
@@ -1202,10 +1200,6 @@ async def propose_similar(
                 best_constrained = m
                 best_sam_score = float(scores[0])
         if best_box_idx < 0 or best_constrained is None:
-            logger.debug(
-                f"[PROPOSE] seed {i} rejected: no box variant within area window "
-                f"[{min_area:.0f}, {max_area:.0f}]"
-            )
             continue
         constrained = best_constrained.astype(np.uint8)
         area = best_area
@@ -1224,7 +1218,6 @@ async def propose_similar(
             if iou > body.iou_dedupe:
                 break
         if worst_iou > body.iou_dedupe:
-            logger.debug(f"[PROPOSE] seed {i} rejected: IoU {worst_iou:.2f}")
             continue
 
         # contour
@@ -1274,8 +1267,7 @@ async def propose_similar(
             orig = cv.imread(str(preview_path))
             if orig is None:
                 logger.warning(
-                    f"[PROPOSE] cv.imread returned None for {preview_path} — "
-                    f"skipping debug overlay"
+                    f"Could not read preview image {preview_path.name}, skipping debug overlay"
                 )
             else:
                 if orig.shape[:2] != (h_img, w_img):
@@ -1306,14 +1298,14 @@ async def propose_similar(
                 debug_path = session_dir / "proposals_debug.png"
                 cv.imwrite(str(debug_path), overlay)
                 debug_url = f"/images/{session_id}/proposals-debug"
-                logger.info(f"[PROPOSE] Debug overlay saved → {debug_path}")
+                logger.info(f"Saved proposal debug overlay to {debug_path.name}")
         except Exception as e:
-            logger.warning(f"[PROPOSE] Debug overlay render failed: {e}")
+            logger.warning(f"Could not save proposal debug overlay: {e}")
 
     t_total = time.time() - t_start
     logger.info(
-        f"[PROPOSE] Returning {len(proposals)} proposals from {len(peaks)} seeds | "
-        f"total={t_total:.2f}s"
+        f"Similar-particle search complete: {len(proposals)} proposals from "
+        f"{len(peaks)} candidates in {t_total * 1000:.1f}ms"
     )
 
     return {
