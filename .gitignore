@@ -1,35 +1,50 @@
-node_modules/
-__pycache__/
-.env
-*.pyc
-*.zip
-.next/
+# OS
 .DS_Store
+backend/.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
 backend/uv_venv/
 backend/uv_venv_clean/
-backend/.DS_Store
-backend/src/data/
-*.egg-info/
+backend/uv.lock
+
+# Node / frontend
+node_modules/
+.next/
+frontend/main.py
+
+# Env / secrets
+.env
+
+# Build artifacts
 build/
 dist/
-backend/src/routes.log
-backend/src/sessions/
-backend/uv.lock
-frontend/main.py
-workspace.sh
-.claude/
-.github/
-3
-CLAUDE.md
-RELEASE.md
+*.zip
+TEMseg_windows/
+temseg_icon.ico
+rthook_hyperspy.py
+
+# Docs (kept out of git, generated or scratch)
+*.md
+
+# Logs / debug
 backend/routes.log
+backend/src/routes.log
+debug.txt
+temseg_export_failing_obj/
+
+# Data / weights / sessions
+data/
+backend/src/data/
+backend/src/sessions/
 backend/weights
 benchmarks/
-data/
-dist.zip
 nanoDetect/
-rthook_hyperspy.py
-temseg_icon.ico
-FEATURES.md
-data.zip 
+
+# Misc
+workspace.sh
 test_build_mac.sh
+.claude/
+.github/
