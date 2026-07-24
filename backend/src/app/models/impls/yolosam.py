@@ -66,7 +66,7 @@ class YoloSam(Model):
             if name == "yolo":
                 try:
                     model = YOLO(str(model_path))
-                    print(f"[YOLOSAM] Loading model_path:{model_path}")
+                    logger.info(f"Loading YOLO model from {model_path.name}")
                 except Exception as e:
                     raise RuntimeError(f"Failed to load YOLO: {e}") from e
                 components["yolo"] = model
@@ -77,7 +77,7 @@ class YoloSam(Model):
 
                 try:
                     sam = sam_model_registry["vit_b"](checkpoint=str(model_path))
-                    print(f"[YOLOSAM] Loading model_path:{model_path}")
+                    logger.info(f"Loading SAM model from {model_path.name}")
 
                 except Exception as e:
                     raise RuntimeError(f"Failed to initialize SAM: {e}") from e
@@ -147,7 +147,7 @@ class YoloSam(Model):
     ) -> YoloSAMSegmentationResult:
         logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
 
-        # ensure predictor exists for reuse 
+        # ensure predictor exists for reuse
         if not hasattr(self, "_predictor"):
             self._predictor = SamPredictor(self.components["sam"])
         predictor = self._predictor
@@ -158,9 +158,9 @@ class YoloSam(Model):
             source=image, conf=0.25, iou=0.5, max_det=4000, verbose=False
         )
         t1 = time.perf_counter()
-        # we want to return these boxes 
-        # and overlay on the image 
-        # we can see point of failure, 
+        # we want to return these boxes
+        # and overlay on the image
+        # we can see point of failure,
         boxes = results[0].boxes.xyxy
         logger.info(f"[YoloSAM-Yolo] predict={t1 - t0:.3f}s | boxes={len(boxes)}")
 
@@ -397,7 +397,9 @@ class YoloSam(Model):
             f"detections={total_detections}"
         )
 
-        detection_boxes = np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)
+        detection_boxes = (
+            np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)
+        )
 
         return YoloSAMSegmentationResult(
             segmentation_mask=combined,
