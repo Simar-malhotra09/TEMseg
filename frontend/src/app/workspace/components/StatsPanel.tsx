@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X, Ruler } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X, Ruler, Settings } from "lucide-react";
 import styles from "./StatsPanel.module.css";
 import type { StatsResult } from "@/lib/api";
 import { updatePixelSize } from "@/lib/api";
+import ShapeRulesModal from "./ShapeRulesModal";
 interface Particle {
   area_px: number;
   area_real?: number;
@@ -145,6 +146,7 @@ export default function StatsPanel({
 }: Props) {
   const [sizeOpen, setSizeOpen] = useState(true);
   const [shapeOpen, setShapeOpen] = useState(true);
+  const [shapeRulesOpen, setShapeRulesOpen] = useState(false);
   const [editingPixel, setEditingPixel] = useState(false);
   const [editSize, setEditSize] = useState("");
   const [editUnit, setEditUnit] = useState("nm");
@@ -218,7 +220,7 @@ export default function StatsPanel({
   return (
     <div className={styles.panel}>
 
-      {/* ── Image Info ─────────────────────────────── */}
+      {/* Image Info */}
       <section className={styles.section}>
         <p className={styles.sectionLabel}>Image Info</p>
         {!image ? (
@@ -309,7 +311,7 @@ export default function StatsPanel({
               </div>
             )}
 
-            {/* Scale bar calibration — only available after image load */}
+            {/* Scale bar calibration  */}
             {scaleBarPixels == null && (
               <div className={styles.row}>
                 <span className={styles.label} style={{ color: scaleBarMode ? "#7ee8a2" : undefined }}>
@@ -366,7 +368,17 @@ export default function StatsPanel({
         )}
       </section>
 
-      {/* ── Overview Stats ──────────────────────────── */}
+      {/* Shape Rules */}
+      <section className={styles.section}>
+        <div className={styles.row}>
+          <span className={styles.label}>Shape Rules</span>
+          <button type="button" className={styles.detailsBtn} style={{ marginTop: 0, width: "auto", padding: "4px 10px" }} onClick={() => setShapeRulesOpen(true)}>
+            Edit
+          </button>
+        </div>
+      </section>
+
+      {/* Overview Stats  */}
       <section className={styles.section}>
         <p className={styles.sectionLabel}>Stats</p>
         {!segDone ? (
@@ -376,7 +388,7 @@ export default function StatsPanel({
             {stats.particle_count > 200 && (
               <div className={styles.warnRow}>
                 <AlertTriangle size={12} />
-                <span>{stats.particle_count} particles — UI may be laggy.</span>
+                <span>{stats.particle_count} particles. UI may be laggy.</span>
               </div>
             )}
             <div className={styles.row}>
@@ -441,7 +453,7 @@ export default function StatsPanel({
         )}
       </section>
 
-      {/* ── Size Distribution ──────────────────────── */}
+      {/* Size Distribution */}
       {segDone && stats && stats.particles.length > 0 && (
         <section className={styles.section}>
           <button type="button"
@@ -486,18 +498,23 @@ export default function StatsPanel({
         </section>
       )}
 
-      {/* ── Shape Distribution ─────────────────────── */}
+      {/*  Shape Distribution  */}
       {segDone && stats && Object.keys(stats.shape_distribution).length > 0 && (
         <section className={styles.section}>
-          <button type="button"
-            className={styles.collapseBtn}
-            onClick={() => setShapeOpen(o => !o)}
-          >
-            {shapeOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <span className={styles.sectionLabel} style={{ margin: 0 }}>
-              Shape Distribution
-            </span>
-          </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <button type="button"
+              className={styles.collapseBtn}
+              onClick={() => setShapeOpen(o => !o)}
+            >
+              {shapeOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <span className={styles.sectionLabel} style={{ margin: 0 }}>
+                Shape Distribution
+              </span>
+            </button>
+            <button type="button" className={styles.iconBtn} onClick={() => setShapeRulesOpen(true)} title="Edit shape rules">
+              <Settings size={12} />
+            </button>
+          </div>
           {shapeOpen && (
             <div className={styles.shapeGrid}>
             {Object.entries(stats.shape_distribution).map(([shape, data]: [string, any]) => (
@@ -512,6 +529,8 @@ export default function StatsPanel({
           )}
         </section>
       )}
+
+      <ShapeRulesModal open={shapeRulesOpen} onClose={() => setShapeRulesOpen(false)} />
     </div>
   );
 }
