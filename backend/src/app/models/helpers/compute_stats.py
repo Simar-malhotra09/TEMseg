@@ -1,23 +1,24 @@
+import json
+import math
 import operator
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal, get_args
 
-import numpy as np
 import cv2 as cv
-import math
+import numpy as np
+from app.models.helpers.settings import settings
+from scipy import ndimage
 from scipy import stats as sp_stats
 
-from app.models.helpers.settings import settings
-
 ShapeMetric = Literal["circularity", "aspect_ratio", "solidity", "n_vertices"]
-_SHAPE_METRICS = get_args(
+SHAPE_METRICS = get_args(
     ShapeMetric
 )  # server side source of truth, derived from the type above
 ShapeOperator = Literal["<", "<=", ">", ">=", "==", "!="]
 
-_SHAPE_OPERATORS: dict[ShapeOperator, Callable[[float, float], bool]] = {
+SHAPE_OPERATORS: dict[ShapeOperator, Callable[[float, float], bool]] = {
     "<": operator.lt,
     "<=": operator.le,
     ">": operator.gt,
@@ -30,11 +31,11 @@ _SHAPE_OPERATORS: dict[ShapeOperator, Callable[[float, float], bool]] = {
 _FLOAT_SHAPE_METRICS = {"circularity", "aspect_ratio", "solidity"}
 
 
-def _prepare_mask(mask: np.ndarray) -> np.ndarray:
-    """Ensure mask is binary uint8 (0 or 255)."""
-    if mask.dtype != np.uint8:
-        mask = mask.astype(np.uint8)
-    return (mask > 0).astype(np.uint8) * 255
+# def _prepare_mask(mask: np.ndarray) -> np.ndarray:
+#     """Ensure mask is binary uint8 (0 or 255)."""
+#     if mask.dtype != np.uint8:
+#         mask = mask.astype(np.uint8)
+#     return (mask > 0).astype(np.uint8) * 255
 
 
 def _equivalent_diameter_px(area_px: float) -> float:
@@ -80,12 +81,12 @@ class ShapeClassificationConfig:
 
 def _parse_shape_condition(raw: dict) -> ShapeCondition:
     metric = raw["metric"]
-    if metric not in _SHAPE_METRICS:
+    if metric not in SHAPE_METRICS:
         raise ValueError(
-            f"Unknown shape metric in shape_config.toml: {metric!r}. Valid metrics: {_SHAPE_METRICS}"
+            f"Unknown shape metric in shape_config.toml: {metric!r}. Valid metrics: {SHAPE_METRICS}"
         )
     op = raw["op"]
-    if op not in _SHAPE_OPERATORS:
+    if op not in SHAPE_OPERATORS:
         raise ValueError(f"Unknown operator in shape_config.toml: {op!r}")
     return ShapeCondition(metric=metric, op=op, value=float(raw["value"]))
 
@@ -105,6 +106,21 @@ def load_shape_classification_config(path: Path) -> ShapeClassificationConfig:
         default_shape=raw["default_shape"],
         rules=[_parse_shape_rule(r) for r in raw.get("rules", [])],
     )
+
+
+def dump_shape_classification_config(config: ShapeClassificationConfig) -> str:
+    """Serialize back to the same TOML shape shape_config.toml is written in."""
+    lines = [f"default_shape = {json.dumps(config.default_shape)}", ""]
+    for rule in config.rules:
+        lines.append("[[rules]]")
+        lines.append(f"label = {json.dumps(rule.label)}")
+        conditions = ", ".join(
+            f"{{ metric = {json.dumps(c.metric)}, op = {json.dumps(c.op)}, value = {c.value} }}"
+            for c in rule.conditions
+        )
+        lines.append(f"conditions = [{conditions}]")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def _shape_metric_value(
@@ -134,7 +150,7 @@ def _shape_rule_matches(
         actual = _shape_metric_value(
             cond.metric, circularity, aspect_ratio, solidity, n_vertices
         )
-        compare = _SHAPE_OPERATORS[cond.op]
+        compare = SHAPE_OPERATORS[cond.op]
         if cond.op in ("==", "!=") and cond.metric in _FLOAT_SHAPE_METRICS:
             if not compare(round(actual, 2), round(cond.value, 2)):
                 return False
@@ -259,23 +275,31 @@ def compute_stats_from_instances(
     # load shape classification rules once, outside the per-instance loop
     shape_config = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
 
+    # bounding-box slice per label, so each component is compared/scanned
+    # only within its own crop instead of against the full frame. Metrics
+    # below (circularity, solidity, aspect ratio, ...) are all translation
+    # invariant, so the crop-local contour needs no offset back.
+    labeled_slices = (
+        ndimage.find_objects(labeled_mask) if labeled_mask is not None else None
+    )
+
     for inst in instances:
         inst_id = inst["id"]
 
         # get contour: prefer exact pixels from labeled mask
-        if labeled_mask is not None:
-            component = (labeled_mask == inst_id).astype(np.uint8)
-            exact_contours, _ = cv.findContours(
-                component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
-            )
-            if exact_contours:
-                cnt = exact_contours[0]
-                area_px = float(np.sum(component))
-                perimeter_px = float(cv.arcLength(cnt, True))
-            else:
-                cnt = np.array(inst["contour"], dtype=np.int32)
-                area_px = float(inst["area"])
-                perimeter_px = float(cv.arcLength(cnt, True))
+        exact_contours = []
+        if labeled_slices is not None and inst_id <= len(labeled_slices):
+            sl = labeled_slices[inst_id - 1]
+            if sl is not None:
+                component = (labeled_mask[sl] == inst_id).astype(np.uint8)
+                exact_contours, _ = cv.findContours(
+                    component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
+                )
+
+        if exact_contours:
+            cnt = exact_contours[0]
+            area_px = float(np.sum(component))
+            perimeter_px = float(cv.arcLength(cnt, True))
         else:
             cnt = np.array(inst["contour"], dtype=np.int32)
             area_px = float(inst["area"])
