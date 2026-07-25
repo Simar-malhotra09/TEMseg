@@ -146,6 +146,63 @@ export const PARTICLE_METRIC_FIELDS = [
 ] as const;
 export type ParticleMetricField = typeof PARTICLE_METRIC_FIELDS[number];
 
+// mirrors the server's ShapeCondition/ShapeRule.
+// all values come from server's available_metrics/available_operators at runtime, so the client
+// never hardcodes a copy that could drift from it
+export interface ShapeCondition {
+  metric: string;
+  op: string;
+  value: number;
+}
+
+export interface ShapeRule {
+  label: string;
+  conditions: ShapeCondition[];
+}
+
+export interface ShapeRulesConfig {
+  default_shape: string;
+  rules: ShapeRule[];
+  is_default: boolean;
+  available_metrics: string[];
+  available_operators: string[];
+}
+
+// best-effort parse since the body isn't guaranteed to be JSON. 
+async function shapeRulesErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail)) {
+      return body.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join("; ");
+    }
+  } catch {
+  }
+  return `request failed: ${res.status}`;
+}
+
+export async function getShapeRules(): Promise<ShapeRulesConfig> {
+  const res = await trackedFetch(`${BASE_URL}/config/shape-rules`);
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
+export async function updateShapeRules(rules: ShapeRule[]): Promise<ShapeRulesConfig> {
+  const res = await trackedFetch(`${BASE_URL}/config/shape-rules`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rules }),
+  });
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
+export async function resetShapeRules(): Promise<ShapeRulesConfig> {
+  const res = await trackedFetch(`${BASE_URL}/config/shape-rules/reset`, { method: "POST" });
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
 export interface Metadata {
   image_shape?: number[];
   original_format?: string;
