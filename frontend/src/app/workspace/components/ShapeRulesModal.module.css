@@ -1,0 +1,227 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.panel {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 11px;
+  color: #e8e6e1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #e8e6e1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customBadge {
+  font-size: 9px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #7ee8a2;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.hint {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.error {
+  font-size: 11px;
+  color: #ff8080;
+  background: #1e1e1e;
+  border: 1px solid #3a1a1a;
+  border-radius: 4px;
+  padding: 6px 8px;
+  line-height: 1.4;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule {
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ruleHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ruleActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.condition {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.labelInput,
+.valueInput,
+.select {
+  background: #0f0f0f;
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  color: #e8e6e1;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  outline: none;
+}
+
+.labelInput:focus,
+.valueInput:focus,
+.select:focus {
+  border-color: #7ee8a2;
+}
+
+.labelInput {
+  flex: 1;
+}
+
+.select {
+  flex: 1;
+}
+
+.valueInput {
+  width: 70px;
+}
+
+.addConditionBtn,
+.addRuleBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: none;
+  border: 1px dashed #2a2a2a;
+  border-radius: 3px;
+  color: #888;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px;
+}
+
+.addConditionBtn:hover,
+.addRuleBtn:hover {
+  color: #7ee8a2;
+  border-color: #7ee8a2;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  border-top: 1px solid #1e1e1e;
+  padding-top: 10px;
+}
+
+.footerRight {
+  display: flex;
+  gap: 6px;
+}
+
+.resetBtn,
+.cancelBtn,
+.saveBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #e8e6e1;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 10px;
+  transition: border-color 0.15s;
+}
+
+.resetBtn:hover,
+.cancelBtn:hover {
+  border-color: #e8e6e1;
+}
+
+.saveBtn {
+  color: #7ee8a2;
+}
+
+.saveBtn:hover {
+  border-color: #7ee8a2;
+}
+
+.resetBtn:disabled,
+.cancelBtn:disabled,
+.saveBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: #777;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.iconBtn:hover {
+  color: #e8e6e1;
+  background: #2a2a2a;
+}
+
+.iconBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
