@@ -161,7 +161,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const particles = stats.particles ?? [];
   const chartWrapRef = useRef<HTMLDivElement>(null);
 
-  // serialize the chart's svg onto a canvas and download as PNG
+  // serialize the chart's svg onto a canvas, draw the stats line below it, and download as PNG
   const handleExportHistogramPNG = () => {
     const svgEl = chartWrapRef.current?.querySelector("svg");
     if (!svgEl) return;
@@ -169,21 +169,26 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     const svgString = new XMLSerializer().serializeToString(svgEl);
     const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
     const { width, height } = svgEl.getBoundingClientRect();
+    const statsRowHeight = 28;
 
     const img = new Image();
     img.onload = () => {
       const scale = 2; // render at 2x for a crisp export
       const canvas = document.createElement("canvas");
       canvas.width = width * scale;
-      canvas.height = height * scale;
+      canvas.height = (height + statsRowHeight) * scale;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.scale(scale, scale);
       ctx.fillStyle = "#111";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, width, height + statsRowHeight);
       ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(svgUrl);
+
+      ctx.font = "12px monospace";
+      ctx.fillStyle = "#ccc";
+      ctx.fillText(histStatsLine, 10, height + statsRowHeight / 2 + 4);
 
       canvas.toBlob(blob => {
         if (!blob) return;
@@ -197,12 +202,37 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     img.src = svgUrl;
   };
 
-  // download the chart's svg directly
+  // download the chart's svg directly, with the stats line appended as a text element
   const handleExportHistogramSVG = () => {
     const svgEl = chartWrapRef.current?.querySelector("svg");
     if (!svgEl) return;
 
-    const svgString = new XMLSerializer().serializeToString(svgEl);
+    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    const { width, height } = svgEl.getBoundingClientRect();
+    const statsRowHeight = 28;
+
+    clone.setAttribute("width", `${width}`);
+    clone.setAttribute("height", `${height + statsRowHeight}`);
+    clone.setAttribute("viewBox", `0 0 ${width} ${height + statsRowHeight}`);
+
+    const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bg.setAttribute("x", "0");
+    bg.setAttribute("y", `${height}`);
+    bg.setAttribute("width", `${width}`);
+    bg.setAttribute("height", `${statsRowHeight}`);
+    bg.setAttribute("fill", "#111");
+    clone.appendChild(bg);
+
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", "10");
+    text.setAttribute("y", `${height + statsRowHeight / 2 + 4}`);
+    text.setAttribute("font-family", "monospace");
+    text.setAttribute("font-size", "12");
+    text.setAttribute("fill", "#ccc");
+    text.textContent = histStatsLine;
+    clone.appendChild(text);
+
+    const svgString = new XMLSerializer().serializeToString(clone);
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
     link.download = `size-distribution-${sizeMode}.svg`;
@@ -230,10 +260,31 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const histMean = sizeMode === "diameter"
     ? stats.size_stats.diameter_mean
     : stats.size_stats.area_mean;
+  const histStd = sizeMode === "diameter"
+    ? stats.size_stats.diameter_std
+    : stats.size_stats.area_std;
   const histMedian = sizeMode === "diameter"
     ? stats.size_stats.diameter_median
     : stats.size_stats.area_median;
   const histUnit = sizeMode === "diameter" ? unit : `${unit}²`;
+
+  // fit model name plus its params, eg "normal (mean=1.23, std=0.45)"
+  const histFits = sizeMode === "diameter" ? stats.distribution_fits_diameter : stats.distribution_fits_area;
+  const histFitLabel = (() => {
+    if (!histFits?.reliable || !histFits.best_model || !histFits.fits) return null;
+    const fit = histFits.fits[histFits.best_model];
+    if (!fit) return null;
+    const params = Object.entries(fit.params).map(([k, v]) => `${k}=${fmt(v, 4)}`).join(", ");
+    return `${histFits.best_model} (${params})`;
+  })();
+
+  // text line summarizing the chart, drawn into both the visible stats row and the exports
+  const histStatsLine = [
+    `Mean: ${fmt(histMean)} ${histUnit}`,
+    `Std: ${fmt(histStd)} ${histUnit}`,
+    `Median: ${fmt(histMedian)} ${histUnit}`,
+    histFitLabel ? `Fit: ${histFitLabel}` : null,
+  ].filter(Boolean).join("   ");
 
   //  shape pie data 
   const shapeData = useMemo(() => {
@@ -394,14 +445,10 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
           </button>
 
           <div className={styles.chartStats}>
-            <span>Mean: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_mean" : "area_mean"])} {histUnit}</span>
-            <span>Std: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_std" : "area_std"])} {histUnit}</span>
-            <span>Median: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_median" : "area_median"])} {histUnit}</span>
-            {(() => {
-              const fits = sizeMode === "diameter" ? stats.distribution_fits_diameter : stats.distribution_fits_area;
-              if (!fits?.reliable || !fits.best_model) return null;
-              return <span style={{ color: "#e8c87e" }}>Fit: {fits.best_model}</span>;
-            })()}
+            <span>Mean: {fmt(histMean)} {histUnit}</span>
+            <span>Std: {fmt(histStd)} {histUnit}</span>
+            <span>Median: {fmt(histMedian)} {histUnit}</span>
+            {histFitLabel && <span style={{ color: "#e8c87e" }}>Fit: {histFitLabel}</span>}
           </div>
         </div>
 
