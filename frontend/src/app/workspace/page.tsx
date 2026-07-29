@@ -106,6 +106,7 @@ export default function Workspace() {
 
   const [loadedInstances, setLoadedInstances] = useState<Instance[]>([]);
 
+
   // viewport
   const viewportRef = useRef<HTMLDivElement>(null); // we want to keep track of the size of the current view: the div where the image is displayed
   const [viewportSize, setViewportSize] = useState<ImgSize>({ width: 0, height: 0 }); 
@@ -230,6 +231,9 @@ export default function Workspace() {
 
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel });
+
+  // global polygon fill opacity
+  const [polygonOpacity, setPolygonOpacity] = useState(0.2);
 
   // refine hook gets instantiated when refine mode is entered
   // imgSize.width guard ensures we don't init with zero dims
@@ -900,6 +904,18 @@ export default function Workspace() {
                   </button>
                 </section>
 
+                <div style={{ marginBottom: 8 }}>
+                  <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
+                  <input
+                    type="range"
+                    min={5}
+                    max={100}
+                    value={Math.round(polygonOpacity * 100)}
+                    onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
+                </div>
+
                 {/* [ACTION] blackout regions */}
                 <section className={styles.sidebarSection}>
                   <p className={styles.sidebarLabel}>Blackout Regions</p>
@@ -966,7 +982,7 @@ export default function Workspace() {
 
             {activeTab === "refine" && (
               <section>
-                {/*[ACTION]- refine masks */}
+                {/*[ACTION]: refine masks */}
                 <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
                   onClick={
                     refineMode
@@ -999,7 +1015,7 @@ export default function Workspace() {
                   </button>
                 )}
 
-                {/* refine controls — only shown in refine mode */}
+                {/* refine mode controls  */}
                 {refineMode && (
                   <section className={styles.sidebarSection}>
                     <p className={styles.sidebarLabel}>Refine</p>
@@ -1467,7 +1483,7 @@ export default function Workspace() {
                   <img src={seg.maskUrl} style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
-                    opacity: 0.5, mixBlendMode: "screen",
+                    opacity: polygonOpacity, mixBlendMode: "screen",
                     pointerEvents: "none",
                   }} />
                 )}

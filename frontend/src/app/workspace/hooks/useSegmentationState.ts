@@ -35,6 +35,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
   const [gtUrl, setGtUrl] = useState<string | null>(null);
   const [gtVisible, setGtVisible] = useState(false);
 
+
   // regions changed after last seg run
   const regionsOutOfSync = segDone && (
     JSON.stringify(blackoutRegions) !== JSON.stringify(committedRegions) ||

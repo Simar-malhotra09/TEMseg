@@ -39,7 +39,7 @@ export function useRefineState({
   const [clipboard, setClipboard] = useState<Instance | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
 
-  // rotation state — applies to selected instance or clipboard preview
+  // rotation state applies to selected instance or clipboard preview
   const [rotationDeg, setRotationDeg] = useState(0);
   // original contour before rotation starts (for handle-based rotation)
   const [rotateOriginal, setRotateOriginal] = useState<[number, number][] | null>(null);
@@ -50,7 +50,7 @@ export function useRefineState({
   // which computed metrics show in the hover tooltip, beyond the always-shown ID
   const [tooltipFields, setTooltipFields] = useState<ParticleMetricField[]>([]);
 
-  // always-current ref — handlers read from this, never from stale closure over state
+  // always-current ref 
   const instancesRef = useRef(instances);
 
   const commit = useCallback((updated: Instance[]) => {
