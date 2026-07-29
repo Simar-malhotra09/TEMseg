@@ -109,7 +109,7 @@ export default function Workspace() {
 
   // viewport
   const viewportRef = useRef<HTMLDivElement>(null); // we want to keep track of the size of the current view: the div where the image is displayed
-  const [viewportSize, setViewportSize] = useState<ImgSize>({ width: 0, height: 0 }); 
+  const [viewportSize, setViewportSize] = useState<ImgSize>({ width: 0, height: 0 });
   const fileRef = useRef<HTMLInputElement>(null); // org file uploaded
   const gtFileRef = useRef<HTMLInputElement>(null); // gt file uploaded
 
@@ -123,6 +123,29 @@ export default function Workspace() {
     observer.observe(viewportRef.current);
     return () => observer.disconnect();
   }, [image]);
+
+  // canvas area: the space available to display the image in, independent of the
+  // image's own size. Used to scale small images up so they're easier to annotate.
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
+  const [canvasSize, setCanvasSize] = useState<ImgSize>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!canvasAreaRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setCanvasSize({ width, height });
+    });
+    observer.observe(canvasAreaRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // fit the image to the available canvas area, scaling up small images as well as
+  // down large ones, so tiny images aren't rendered at their native (hard to annotate) size
+  const displayScale = imgSize.width > 0 && imgSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0
+    ? Math.min(canvasSize.width / imgSize.width, canvasSize.height / imgSize.height)
+    : 1;
+  const displayWidth = imgSize.width * displayScale;
+  const displayHeight = imgSize.height * displayScale;
 
   // Restore session from ?session=... on mount (e.g. after page refresh).
   // Validates by fetching metadata; on 404 we silently clear the query.
@@ -1350,7 +1373,7 @@ export default function Workspace() {
           </aside>
 
           {/* canvas */}
-          <main className={styles.canvasArea}>
+          <main className={styles.canvasArea} ref={canvasAreaRef}>
             {!image ? (
               <div
                 className={`${styles.dropZone} ${isDragging ? styles.dropZoneDragging : ""}`}
@@ -1394,6 +1417,9 @@ export default function Workspace() {
                   style={{
                     display: "block",
                     visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode ? "hidden" : "visible",
+                    ...(displayWidth > 0 && displayHeight > 0
+                      ? { width: displayWidth, height: displayHeight }
+                      : {}),
                   }}
                   onLoad={e => setImgSize({
                     width: e.currentTarget.naturalWidth,
