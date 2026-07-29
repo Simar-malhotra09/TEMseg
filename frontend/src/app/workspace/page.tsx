@@ -903,18 +903,19 @@ export default function Workspace() {
                     {seg.masksVisible ? "Hide Masks" : "Show Masks"}
                   </button>
                 </section>
-
-                <div style={{ marginBottom: 8 }}>
-                  <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
-                  <input
-                    type="range"
-                    min={5}
-                    max={100}
-                    value={Math.round(polygonOpacity * 100)}
-                    onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }}
-                  />
-                </div>
+                {seg.segDone && seg.masksVisible && (
+                  <div style={{ marginBottom: 8 }}>
+                    <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      value={Math.round(polygonOpacity * 100)}
+                      onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
+                      style={{ width: "100%", accentColor: "#7ee8a2" }}
+                    />
+                  </div>
+                )}
 
                 {/* [ACTION] blackout regions */}
                 <section className={styles.sidebarSection}>
