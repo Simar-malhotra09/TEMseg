@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, ReferenceLine, CartesianGrid,
@@ -159,24 +159,60 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const hasScale = stats.has_scale;
   const unit = stats.unit ?? "px";
   const particles = stats.particles ?? [];
+  const chartWrapRef = useRef<HTMLDivElement>(null);
 
-  // histogram/pdf 
-const histData = useMemo(() => {
-    const values = particles.map(p => {
-      if (sizeMode === "diameter") {
-        return hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px;
-      } else {
-        return hasScale && p.area_real != null ? p.area_real : p.area_px;
-      }
-    });
-    const bins = buildBins(values, Math.min(20, Math.max(8, Math.ceil(Math.sqrt(particles.length)))));
+  // serialize the chart's svg onto a canvas and download as PNG
+  const handleExportHistogramPNG = () => {
+    const svgEl = chartWrapRef.current?.querySelector("svg");
+    if (!svgEl) return;
 
-    const fits = sizeMode === "diameter"
-      ? stats.distribution_fits_diameter
-      : stats.distribution_fits_area;
+    const svgString = new XMLSerializer().serializeToString(svgEl);
+    const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+    const { width, height } = svgEl.getBoundingClientRect();
 
-    return addFitCurve(bins, fits, particles.length);
-  }, [particles, sizeMode, hasScale, stats.distribution_fits_diameter, stats.distribution_fits_area]);
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2; // render at 2x for a crisp export
+      const canvas = document.createElement("canvas");
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(svgUrl);
+
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `size-distribution-${sizeMode}.png`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
+    };
+    img.src = svgUrl;
+  };
+  // histogram/pdf
+  const histData = useMemo(() => {
+      const values = particles.map(p => {
+        if (sizeMode === "diameter") {
+          return hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px;
+        } else {
+          return hasScale && p.area_real != null ? p.area_real : p.area_px;
+        }
+      });
+      const bins = buildBins(values, Math.min(20, Math.max(8, Math.ceil(Math.sqrt(particles.length)))));
+
+      const fits = sizeMode === "diameter"
+        ? stats.distribution_fits_diameter
+        : stats.distribution_fits_area;
+
+      return addFitCurve(bins, fits, particles.length);
+    }, [particles, sizeMode, hasScale, stats.distribution_fits_diameter, stats.distribution_fits_area]);
 
   const histMean = sizeMode === "diameter"
     ? stats.size_stats.diameter_mean
@@ -186,7 +222,7 @@ const histData = useMemo(() => {
     : stats.size_stats.area_median;
   const histUnit = sizeMode === "diameter" ? unit : `${unit}²`;
 
-  // ── shape pie data ──────────────────────────────────────────
+  //  shape pie data 
   const shapeData = useMemo(() => {
     return Object.entries(stats.shape_distribution).map(([name, data]) => ({
       name,
@@ -195,7 +231,7 @@ const histData = useMemo(() => {
     }));
   }, [stats.shape_distribution]);
 
-  // ── sortable table ──────────────────────────────────────────
+  //  sortable table 
   const sortedParticles = useMemo(() => {
     const indexed = particles.map((p, i) => ({ ...p, index: i + 1 }));
     indexed.sort((a, b) => {
@@ -295,7 +331,7 @@ const histData = useMemo(() => {
             </div>
           </div>
 
-          <div className={styles.chartWrap}>
+          <div className={styles.chartWrap} ref={chartWrapRef}>
             <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={histData} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
@@ -336,6 +372,10 @@ const histData = useMemo(() => {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          {/* Download button */}
+          <button onClick={handleExportHistogramPNG}>
+            Download as PNG
+          </button>
 
           <div className={styles.chartStats}>
             <span>Mean: {fmt(stats.size_stats[sizeMode === "diameter" ? "diameter_mean" : "area_mean"])} {histUnit}</span>
