@@ -95,6 +95,37 @@
   border-top: 1px solid #1a1a1a;
 }
 
+.exportRow {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.exportBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  color: #888;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.exportBtn:hover {
+  border-color: #7ee8a2;
+  color: #7ee8a2;
+}
+
+.exportIcon {
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+
 /* toggle (diameter / area) */
 .toggleGroup {
   display: flex;

@@ -441,13 +441,16 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {/* Download buttons  */}
-          <button onClick={handleExportHistogramPNG}>
-            Download as PNG
-          </button>
-          <button onClick={handleExportHistogramSVG}>
-            Download as SVG
-          </button>
+          <div className={styles.exportRow}>
+            <button type="button" className={styles.exportBtn} onClick={handleExportHistogramPNG}>
+              <img src="/download-simple.svg" alt="" className={styles.exportIcon} />
+              PNG
+            </button>
+            <button type="button" className={styles.exportBtn} onClick={handleExportHistogramSVG}>
+              <img src="/download-simple.svg" alt="" className={styles.exportIcon} />
+              SVG
+            </button>
+          </div>
 
           <div className={styles.chartStats}>
             <span>Mean: {fmt(histMean)} {histUnit}</span>
