@@ -169,7 +169,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     const svgString = new XMLSerializer().serializeToString(svgEl);
     const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
     const { width, height } = svgEl.getBoundingClientRect();
-    const statsRowHeight = 28;
+    const lineHeight = 18;
+    const statsRowHeight = histStatsLines.length * lineHeight + 8;
 
     const img = new Image();
     img.onload = () => {
@@ -188,7 +189,9 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
 
       ctx.font = "12px monospace";
       ctx.fillStyle = "#ccc";
-      ctx.fillText(histStatsLine, 10, height + statsRowHeight / 2 + 4);
+      histStatsLines.forEach((line, i) => {
+        ctx.fillText(line, 10, height + 16 + i * lineHeight);
+      });
 
       canvas.toBlob(blob => {
         if (!blob) return;
@@ -209,7 +212,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
 
     const clone = svgEl.cloneNode(true) as SVGSVGElement;
     const { width, height } = svgEl.getBoundingClientRect();
-    const statsRowHeight = 28;
+    const lineHeight = 18;
+    const statsRowHeight = histStatsLines.length * lineHeight + 8;
 
     clone.setAttribute("width", `${width}`);
     clone.setAttribute("height", `${height + statsRowHeight}`);
@@ -223,14 +227,16 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     bg.setAttribute("fill", "#111");
     clone.appendChild(bg);
 
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", "10");
-    text.setAttribute("y", `${height + statsRowHeight / 2 + 4}`);
-    text.setAttribute("font-family", "monospace");
-    text.setAttribute("font-size", "12");
-    text.setAttribute("fill", "#ccc");
-    text.textContent = histStatsLine;
-    clone.appendChild(text);
+    histStatsLines.forEach((line, i) => {
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", "10");
+      text.setAttribute("y", `${height + 16 + i * lineHeight}`);
+      text.setAttribute("font-family", "monospace");
+      text.setAttribute("font-size", "12");
+      text.setAttribute("fill", "#ccc");
+      text.textContent = line;
+      clone.appendChild(text);
+    });
 
     const svgString = new XMLSerializer().serializeToString(clone);
     const link = document.createElement("a");
@@ -278,13 +284,11 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     return `${histFits.best_model} (${params})`;
   })();
 
-  // text line summarizing the chart, drawn into both the visible stats row and the exports
-  const histStatsLine = [
-    `Mean: ${fmt(histMean)} ${histUnit}`,
-    `Std: ${fmt(histStd)} ${histUnit}`,
-    `Median: ${fmt(histMedian)} ${histUnit}`,
+  // stats summary drawn into the exports, split across two lines so the fit params don't overflow the chart width
+  const histStatsLines = [
+    `Mean: ${fmt(histMean)} ${histUnit}   Std: ${fmt(histStd)} ${histUnit}   Median: ${fmt(histMedian)} ${histUnit}`,
     histFitLabel ? `Fit: ${histFitLabel}` : null,
-  ].filter(Boolean).join("   ");
+  ].filter((line): line is string => line !== null);
 
   //  shape pie data 
   const shapeData = useMemo(() => {
@@ -448,7 +452,9 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
             <span>Mean: {fmt(histMean)} {histUnit}</span>
             <span>Std: {fmt(histStd)} {histUnit}</span>
             <span>Median: {fmt(histMedian)} {histUnit}</span>
-            {histFitLabel && <span style={{ color: "#e8c87e" }}>Fit: {histFitLabel}</span>}
+            {histFits?.reliable && histFits.best_model && (
+              <span style={{ color: "#e8c87e" }}>Fit: {histFits.best_model}</span>
+            )}
           </div>
         </div>
 
