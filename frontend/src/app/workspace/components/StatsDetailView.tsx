@@ -286,6 +286,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
 
   // stats summary drawn into the exports, split across two lines so the fit params don't overflow the chart width
   const histStatsLines = [
+    `N: ${particles.length}`,
     `Mean: ${fmt(histMean)} ${histUnit}   Std: ${fmt(histStd)} ${histUnit}   Median: ${fmt(histMedian)} ${histUnit}`,
     histFitLabel ? `Fit: ${histFitLabel}` : null,
   ].filter((line): line is string => line !== null);
