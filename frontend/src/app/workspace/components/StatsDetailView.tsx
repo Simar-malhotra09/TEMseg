@@ -224,7 +224,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     bg.setAttribute("y", `${height}`);
     bg.setAttribute("width", `${width}`);
     bg.setAttribute("height", `${statsRowHeight}`);
-    bg.setAttribute("fill", "#111");
+    bg.setAttribute("fill", "#fff");
     clone.appendChild(bg);
 
     histStatsLines.forEach((line, i) => {
@@ -233,7 +233,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
       text.setAttribute("y", `${height + 16 + i * lineHeight}`);
       text.setAttribute("font-family", "monospace");
       text.setAttribute("font-size", "12");
-      text.setAttribute("fill", "#ccc");
+      text.setAttribute("fill", "#111");
       text.textContent = line;
       clone.appendChild(text);
     });
