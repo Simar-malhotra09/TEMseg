@@ -196,6 +196,19 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
     };
     img.src = svgUrl;
   };
+
+  // download the chart's svg directly
+  const handleExportHistogramSVG = () => {
+    const svgEl = chartWrapRef.current?.querySelector("svg");
+    if (!svgEl) return;
+
+    const svgString = new XMLSerializer().serializeToString(svgEl);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+    link.download = `size-distribution-${sizeMode}.svg`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
   // histogram/pdf
   const histData = useMemo(() => {
       const values = particles.map(p => {
@@ -372,9 +385,12 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {/* Download button */}
+          {/* Download buttons  */}
           <button onClick={handleExportHistogramPNG}>
             Download as PNG
+          </button>
+          <button onClick={handleExportHistogramSVG}>
+            Download as SVG
           </button>
 
           <div className={styles.chartStats}>
