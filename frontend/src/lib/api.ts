@@ -557,3 +557,15 @@ export async function exportSession(
   if (!res.ok) throw new Error("Export failed");
   return res.blob();
 }
+
+export async function exportHistogramCsv(
+  sessionId: string,
+  metric: "diameter" | "area" = "diameter"
+): Promise<Blob> {
+  const res = await trackedFetch(
+    `${BASE_URL}/export/${sessionId}/hist_csv?metric=${metric}`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Histogram CSV export failed");
+  return res.blob();
+}
