@@ -799,11 +799,12 @@ export default function Workspace() {
   return (
     <>
       {/*If in stats dashboard hide the workspace*/}
-      {showStatsDetail && seg.stats && (
+      {showStatsDetail && seg.stats && sessionId && (
         <StatsDetailView
           stats={seg.stats}
           metadata={metadata}
           groundTruthScore={seg.groundTruthScore as any}
+          sessionId={sessionId}
           onBack={() => setShowStatsDetail(false)}
           onLocateParticle={handleLocateParticle}
           onLocateShape={handleLocateShape}

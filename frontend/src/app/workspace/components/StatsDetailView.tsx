@@ -10,7 +10,7 @@ import {
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
 import type { StatsResult, Metadata } from "@/lib/api";
-import { PARTICLE_METRIC_FIELDS } from "@/lib/api";
+import { PARTICLE_METRIC_FIELDS, exportHistogramCsv } from "@/lib/api";
 
 
 
@@ -24,9 +24,10 @@ interface Props {
   stats: StatsResult;
   metadata: Metadata | null;
   groundTruthScore: GTScores | null;
+  sessionId: string;
   onBack: () => void;
   onLocateParticle?: (particleIndex: number) => void;
-  onLocateShape?:(shape: string)=> void; 
+  onLocateShape?:(shape: string)=> void;
 }
 
 
@@ -148,7 +149,7 @@ function addFitCurve(
 }
 
 
-export default function StatsDetailView({ stats, metadata, groundTruthScore, onBack, onLocateParticle, onLocateShape}: Props) {
+export default function StatsDetailView({ stats, metadata, groundTruthScore, sessionId, onBack, onLocateParticle, onLocateShape}: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
   const [sortKey, setSortKey] = useState<SortKey>("index");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -160,6 +161,20 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
   const unit = stats.unit ?? "px";
   const particles = stats.particles ?? [];
   const chartWrapRef = useRef<HTMLDivElement>(null);
+
+  const handleExportHistogramCSV = async () => {
+    try {
+      const blob = await exportHistogramCsv(sessionId, sizeMode);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `size-distribution-${sizeMode}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[StatsDetailView] histogram CSV export failed:", err);
+    }
+  };
 
   // serialize the chart's svg onto a canvas, draw the stats line below it, and download as PNG
   const handleExportHistogramPNG = () => {
@@ -442,6 +457,10 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, onB
             </ResponsiveContainer>
           </div>
           <div className={styles.exportRow}>
+            <button type="button" className={styles.exportBtn} onClick={handleExportHistogramCSV}>
+              <img src="/download-simple.svg" alt="" className={styles.exportIcon} />
+              CSV
+            </button>
             <button type="button" className={styles.exportBtn} onClick={handleExportHistogramPNG}>
               <img src="/download-simple.svg" alt="" className={styles.exportIcon} />
               PNG

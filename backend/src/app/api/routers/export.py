@@ -320,3 +320,77 @@ async def export_session(session_id: str, body: ExportRequest):
             "Content-Disposition": f"attachment; filename=temseg_export_{session_id[:8]}.zip"
         },
     )
+
+
+@router.post("/{session_id}/hist_csv")
+async def export_histogram_csv(session_id: str, metric: str = "diameter"):
+    """
+    Return a CSV containing histogram-sized data for the given metric.
+
+    The CSV contains per-particle values for the requested metric followed by
+    summary statistics (count, mean, std, median) and the best distribution fit.
+    """
+    metric = metric.lower().strip()
+    if metric not in {"diameter", "area"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid metric '{metric}'; use 'diameter' or 'area'",
+        )
+
+    logger.info(
+        f"[EXPORT] POST export histogram csv | session={session_id} | metric={metric}"
+    )
+
+    session_dir = _session_dir(session_id)
+    stats_path = session_dir / "stats.json"
+    if not stats_path.exists():
+        logger.warning(f"[EXPORT] stats.json not found | session={session_id}")
+        raise HTTPException(status_code=404, detail="stats.json not found")
+
+    with open(stats_path) as f:
+        stats = json.load(f)
+
+    particles = stats.get("particles", [])
+    unit = stats.get("unit", "px")
+    has_scale = stats.get("has_scale", False)
+    size_stats = stats.get("size_stats", {})
+    fits = stats.get(f"distribution_fits_{metric}", {"reliable": False})
+
+    value_key = f"{metric}_real" if has_scale else f"{metric}_px"
+    unit_label = unit if metric == "diameter" else f"{unit}²"
+    header = f"id,{metric}_{unit_label}\n"
+
+    rows = []
+    for p in particles:
+        value = p.get(value_key)
+        if value is None:
+            value = p.get(f"{metric}_px", 0)
+        rows.append(f"{p['id']},{value:.4f}")
+
+    # summary statistics after particle data
+    rows.append("")
+    rows.append(f"Number of particles,{len(particles)}")
+    rows.append(f"Mean,{size_stats.get(f'{metric}_mean', 0):.4f} {unit_label}")
+    rows.append(
+        f"Standard deviation,{size_stats.get(f'{metric}_std', 0):.4f} {unit_label}"
+    )
+    rows.append(f"Median,{size_stats.get(f'{metric}_median', 0):.4f} {unit_label}")
+
+    if fits.get("reliable") and fits.get("best_model"):
+        fit = fits.get("fits", {}).get(fits["best_model"])
+        if fit:
+            params = ", ".join(f"{k}={v:.4f}" for k, v in fit.get("params", {}).items())
+            rows.append(f"Best fit,{fits['best_model']} ({params})")
+
+    csv_bytes = (header + "\n".join(rows)).encode("utf-8")
+    logger.info(
+        f"[EXPORT] histogram CSV ready | {len(particles)} particles | metric={metric}"
+    )
+
+    return StreamingResponse(
+        io.BytesIO(csv_bytes),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=temseg_histogram_{metric}_{session_id[:8]}.csv"
+        },
+    )

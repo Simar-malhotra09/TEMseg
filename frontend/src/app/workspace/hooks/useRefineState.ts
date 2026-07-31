@@ -68,7 +68,7 @@ export function useRefineState({
     setRotationDeg(0);
   }, []);
 
-  // vertex drag end — canvas calls this on mouseup with final position
+  // canvas calls this on mouseup with final position
   const handleVertexDragEnd = useCallback((instId: number, vi: number, pos: [number, number]) => {
     commit(instancesRef.current.map(inst => inst.id !== instId ? inst : {
       ...inst,
@@ -76,7 +76,7 @@ export function useRefineState({
     }));
   }, [commit]);
 
-  // delete vertex — min 3 enforced
+  // delete vertex 
   const handleVertexDelete = useCallback((instId: number, vi: number) => {
     const inst = instancesRef.current.find(i => i.id === instId);
     if (!inst || inst.contour.length <= 3) return;
@@ -86,7 +86,7 @@ export function useRefineState({
     }));
   }, [commit]);
 
-  // edge click — find closest edge, insert midpoint vertex
+  // find closest edge and insert vertex
   const handleEdgeClick = useCallback((instId: number, pos: [number, number]) => {
     const [mx, my] = pos;
     const inst = instancesRef.current.find(i => i.id === instId);
