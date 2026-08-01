@@ -21,6 +21,7 @@ import ExportPanel from "./components/ExportPanel";
 import StatsPanel from "./components/StatsPanel";
 import StatsDetailView from "./components/StatsDetailView";
 import ParticleHighlight from "./components/ParticleHighlight";
+import ExpandableHint from "./components/ExpandableHint";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -1163,9 +1164,11 @@ export default function Workspace() {
                         <MousePointerClick size={14} />
                         {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
                       </button>
-                      <p className={styles.sidebarHint}>
-                        Click a missed particle so SAM segments it from that point using a point prompt, best for particles that sit clearly apart from their neighbors.
-                      </p>
+                      <ExpandableHint summary="Point prompt tips">
+                        <p className={styles.sidebarHint}>
+                          Click a missed particle so SAM segments it from that point using a point prompt, best for particles that sit clearly apart from their neighbors.
+                        </p>
+                      </ExpandableHint>
                     </>
                   )}
 
@@ -1183,9 +1186,11 @@ export default function Workspace() {
                         <BoxSelect size={14} />
                         {boxMode ? "Stop Boxing" : "Box to Add Particles"}
                       </button>
-                      <p className={styles.sidebarHint}>
-                        Drag a box around a missed particle so SAM segments it from that box using a box prompt, best when particles sit close together and a point would bleed into neighbors.
-                      </p>
+                      <ExpandableHint summary="Box prompt tips">
+                        <p className={styles.sidebarHint}>
+                          Drag a box around a missed particle so SAM segments it from that box using a box prompt, best when particles sit close together and a point would bleed into neighbors.
+                        </p>
+                      </ExpandableHint>
                       {boxMode && (
                         <p className={styles.sidebarShortcuts}>
                           [Space]+drag pan · [wheel] zoom · [Esc] cancel
@@ -1221,9 +1226,11 @@ export default function Workspace() {
                         <Sparkles size={14} />
                         {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
                       </button>
-                      <p className={styles.sidebarHint}>
-                        Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
-                      </p>
+                      <ExpandableHint summary="Similar search tips">
+                        <p className={styles.sidebarHint}>
+                          Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
+                        </p>
+                      </ExpandableHint>
                     </>
                   )}
                 </div>
@@ -1261,17 +1268,21 @@ export default function Workspace() {
                   )}
                   {rfBgMode ? (
                     <>
-                      <p className={styles.sidebarHint}>
-                        Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
-                      </p>
+                      <ExpandableHint summary="Background marking tips">
+                        <p className={styles.sidebarHint}>
+                          Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
+                        </p>
+                      </ExpandableHint>
                       <p className={styles.sidebarShortcuts}>
                         · [scroll]: resize brush 
                       </p>
                     </>
                   ) : (
-                    <p className={styles.sidebarHint}>
-                      Mark a few patches that definitely contain no particle, since RF Recover below needs real background examples and cannot guess them safely on its own.
-                    </p>
+                    <ExpandableHint summary="Why mark background">
+                      <p className={styles.sidebarHint}>
+                        Mark a few patches that definitely contain no particle, since RF Recover below needs real background examples and cannot guess them safely on its own.
+                      </p>
+                    </ExpandableHint>
                   )}
 
                   {/* RF recovery. requires prior /segment so SAM embedding is cached,
@@ -1302,9 +1313,11 @@ export default function Workspace() {
                     <Sparkles size={14} />
                     {bootstrapBusy ? "Running..." : "RF Recover Missed"}
                   </button>
-                  <p className={styles.sidebarHint}>
-                    Train a classifier on your annotated particles as foreground and your marked background as the negative class to catch particles missed everywhere in the image.
-                  </p>
+                  <ExpandableHint summary="RF recovery tips">
+                    <p className={styles.sidebarHint}>
+                      Train a classifier on your annotated particles as foreground and your marked background as the negative class to catch particles missed everywhere in the image.
+                    </p>
+                  </ExpandableHint>
                 </div>
 
                 <div className={styles.subWindow}>
@@ -1323,9 +1336,11 @@ export default function Workspace() {
                   </button>
                   {annotateMode && (
                     <>
-                      <p className={styles.sidebarHint}>
-                        Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
-                      </p>
+                      <ExpandableHint summary="Manual trace tips">
+                        <p className={styles.sidebarHint}>
+                          Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
+                        </p>
+                      </ExpandableHint>
                       <p className={styles.sidebarShortcuts}>
                         [Enter] or double-click close<br />
                         [Backspace]: undo vertex<br />
