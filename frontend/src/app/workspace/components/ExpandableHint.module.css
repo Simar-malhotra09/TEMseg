@@ -1,0 +1,37 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: #555;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.header:hover {
+  color: #7ee8a2;
+}
+
+.header:focus-visible {
+  outline: 1px solid #7ee8a2;
+  outline-offset: 2px;
+}
+
+.body {
+  font-size: 11px;
+  color: #444;
+  line-height: 1.5;
+  padding-left: 16px;
+}
