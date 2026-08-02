@@ -329,13 +329,22 @@ export default function Workspace() {
     setRfBgMode(false);
     setRfBgScribbles([]);
     rfBgScribblesRef.current = [];
-    const result = await uploadImage(file);
-    setSessionId(result.session_id);
-    setImage(`${BASE_URL}${result.preview_url}`);
-    if (result.image_info) setMetadata(result.image_info);
-    // Use query string so /workspace stays a real Next.js route across refreshes.
-    window.history.replaceState(null, "", `/workspace?session=${result.session_id}`);
-    setStatus(`Loaded: ${file.name} — ready to segment.`);
+    try {
+      const result = await uploadImage(file);
+      if (result.error) {
+        setStatus(result.error);
+        return;
+      }
+      setSessionId(result.session_id);
+      setImage(`${BASE_URL}${result.preview_url}`);
+      if (result.image_info) setMetadata(result.image_info);
+      // Use query string so /workspace stays a real Next.js route across refreshes.
+      window.history.replaceState(null, "", `/workspace?session=${result.session_id}`);
+      setStatus(`Loaded: ${file.name} — ready to segment.`);
+    } catch (err) {
+      console.error("upload failed:", err);
+      setStatus(`Upload failed: ${(err as Error).message}`);
+    }
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
