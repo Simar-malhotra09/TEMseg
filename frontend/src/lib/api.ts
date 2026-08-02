@@ -233,7 +233,8 @@ export interface UploadResponse {
   session_id: string;
   filename: string;
   preview_url: string;
-  image_info: Record<string, string>;
+  image_info: Metadata;
+  error?: string;
 }
 
 export interface Instance {
@@ -401,7 +402,7 @@ export async function fromPoints(
   return res.json();
 }
 
-export async function uploadImage(file: File) {
+export async function uploadImage(file: File):Promise<UploadResponse> {
   console.log("[uploadImage] uploading:", file.name);
 
   const form = new FormData();
