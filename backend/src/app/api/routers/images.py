@@ -307,7 +307,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             arr = tifffile.imread(str(dest))
         except TiffFileError as e:
             logger.warning(f"[TIFF ERROR] {e} ")
-            return {"error": f"tifffile says: {e}"}
+            return {"error": "Not a valid TIFF/TIF file!"}
     elif fname.endswith(".emd"):
         try:
             _ensure_rsciio_plugins()
