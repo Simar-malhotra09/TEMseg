@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Instance, ParticleMetricField } from "@/lib/api";
 import { splitInstances } from "@/lib/api"
+import { nextFreeId } from "@/lib/utils"
 
 export interface ViewBox {
   x: number;
@@ -208,9 +209,8 @@ export function useRefineState({
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
 
-    const maxId = instancesRef.current.reduce((m, i) => Math.max(m, i.id), 0);
     const newInstance: Instance = {
-      id: maxId + 1,
+      id: nextFreeId(instancesRef.current.map(i => i.id)),
       contour: shiftedContour,
       bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
       area: clipboard.area,

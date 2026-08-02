@@ -174,6 +174,18 @@ def rasterize_instances(instances: list[dict], shape: tuple[int, int]) -> np.nda
     return labeled
 
 
+def next_free_id(used_ids: set[int]) -> int:
+    """Smallest positive integer not in used_ids.
+
+    Used instead of max(used_ids) + 1 so ids from deleted particles get
+    reused rather than growing unbounded across repeated add/remove edits.
+    """
+    candidate = 1
+    while candidate in used_ids:
+        candidate += 1
+    return candidate
+
+
 def colorize_labeled_mask(labeled: np.ndarray) -> np.ndarray:
     """Convert a labeled integer mask to a colorized uint8 BGR image for saving as mask.png."""
     colored = np.zeros((*labeled.shape, 3), dtype=np.uint8)
