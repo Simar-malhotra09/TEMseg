@@ -123,6 +123,7 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
         if fname.endswith(".emd"):
             _ensure_rsciio_plugins()
             from rsciio.emd import file_reader
+
             signals = file_reader(str(filepath))
             s = signals[0]
 
@@ -132,13 +133,15 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
             if "axes" in s:
                 meta["axes"] = []
                 for ax in s["axes"]:
-                    meta["axes"].append({
-                        "name": ax.get("name"),
-                        "scale": float(ax["scale"]) if ax.get("scale") else None,
-                        "offset": float(ax["offset"]) if ax.get("offset") else None,
-                        "units": ax.get("units"),
-                        "size": ax.get("size"),
-                    })
+                    meta["axes"].append(
+                        {
+                            "name": ax.get("name"),
+                            "scale": float(ax["scale"]) if ax.get("scale") else None,
+                            "offset": float(ax["offset"]) if ax.get("offset") else None,
+                            "units": ax.get("units"),
+                            "size": ax.get("size"),
+                        }
+                    )
                 if meta["axes"]:
                     meta["pixel_size"] = meta["axes"][0].get("scale")
                     meta["pixel_unit"] = meta["axes"][0].get("units")
@@ -155,24 +158,28 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
 
         elif fname.endswith((".tif", ".tiff")):
             import tifffile
+            from tifffile import TiffFileError
 
-            with tifffile.TiffFile(str(filepath)) as tif:
-                page = tif.pages[0]
-                meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
+            try:
+                tif = tifffile.TiffFile(str(filepath))
+            except TiffFileError as e:
+                logger.info(f"[ERROR] {e} ")
+            page = tif.pages[0]
+            meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
 
-                # Store all TIFF tags
-                meta["tiff_tags"] = {}
-                for tag in page.tags.values():
-                    try:
-                        val = tag.value
-                        # Make JSON-serializable
-                        if isinstance(val, (bytes, np.ndarray)):
-                            val = str(val)[:500]
-                        elif isinstance(val, tuple):
-                            val = list(val)
-                        meta["tiff_tags"][tag.name] = val
-                    except Exception:
-                        pass
+            # Store all TIFF tags
+            meta["tiff_tags"] = {}
+            for tag in page.tags.values():
+                try:
+                    val = tag.value
+                    # Make JSON-serializable
+                    if isinstance(val, (bytes, np.ndarray)):
+                        val = str(val)[:500]
+                    elif isinstance(val, tuple):
+                        val = list(val)
+                    meta["tiff_tags"][tag.name] = val
+                except Exception:
+                    pass
 
         elif fname.endswith(".npy"):
             arr = np.load(str(filepath))
@@ -187,9 +194,9 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
         logger.warning(f"[META] Metadata extraction failed (non-fatal): {e}")
 
     if not meta.__contains__("pixel_size"):
-        meta["pixel_size"]= '-'
+        meta["pixel_size"] = "-"
     if not meta.__contains__("pixel_unit"):
-        meta["pixel_size"]= '-'
+        meta["pixel_size"] = "-"
 
     return meta
 
@@ -256,7 +263,9 @@ async def update_metadata(session_id: str, req: UpdateMetadataRequest):
                 )
                 return {"metadata": meta, "stats": stats}
         except Exception as e:
-            logger.warning(f"[META] Stats recompute failed after pixel_size update: {e}")
+            logger.warning(
+                f"[META] Stats recompute failed after pixel_size update: {e}"
+            )
 
     return {"metadata": meta}
 
@@ -291,12 +300,18 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         arr = np.load(str(dest))
     elif fname.endswith((".tif", ".tiff")):
         import tifffile
+        from tifffile import TiffFileError
 
-        arr = tifffile.imread(str(dest))
+        try:
+            arr = tifffile.imread(str(dest))
+        except TiffFileError as e:
+            logger.warning(f"[TIFF ERROR] {e} ")
+            return {"error": f"tifffile says: {e}"}
     elif fname.endswith(".emd"):
         try:
             _ensure_rsciio_plugins()
             from rsciio.emd import file_reader
+
             signals = file_reader(str(dest))
             s = signals[0]
             arr = s["data"]
@@ -421,7 +436,9 @@ async def get_instances_debug(session_id: str):
 async def get_yolo_boxes_debug(session_id: str):
     path = SESSIONS_DIR / session_id / "yolo_boxes_debug.png"
     if not path.exists():
-        return {"error": "No YOLO boxes debug image — run segmentation with YoloSAM first"}
+        return {
+            "error": "No YOLO boxes debug image — run segmentation with YoloSAM first"
+        }
     return FileResponse(path)
 
 
@@ -429,5 +446,7 @@ async def get_yolo_boxes_debug(session_id: str):
 async def get_proposals_debug(session_id: str):
     path = SESSIONS_DIR / session_id / "proposals_debug.png"
     if not path.exists():
-        return {"error": "No proposals debug image — call /masks/{session_id}/propose-similar first"}
+        return {
+            "error": "No proposals debug image — call /masks/{session_id}/propose-similar first"
+        }
     return FileResponse(path)
