@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
+import { nextFreeId } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -435,8 +436,8 @@ export default function Workspace() {
   }
 
   // Commit all pending proposals: fetch current on-disk instances, renumber
-  // pending IDs to live above the on-disk max (proposals from /from-points
-  // and /propose-similar are both numbered server-side without knowing about
+  // pending IDs against the on-disk set (proposals from /from-points and
+  // /propose-similar are both numbered server-side without knowing about
   // each other, so naive append can collide), then PUT the combined list.
   // PUT already regenerates mask.png + stats.
   async function handleAcceptProposals() {
@@ -447,11 +448,12 @@ export default function Workspace() {
       const existing: Instance[] = await getInstances(sessionId)
         .then(r => r.instances ?? [])
         .catch(() => []);
-      const maxExistingId = existing.reduce((m, p) => Math.max(m, p.id), 0);
-      const renumbered = pendingProposals.map((p, i) => ({
-        ...p,
-        id: maxExistingId + 1 + i,
-      }));
+      const usedIds = existing.map(p => p.id);
+      const renumbered = pendingProposals.map(p => {
+        const id = nextFreeId(usedIds);
+        usedIds.push(id);
+        return { ...p, id };
+      });
       const combined = [...existing, ...renumbered];
       const result = await saveInstances(sessionId, combined);
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);

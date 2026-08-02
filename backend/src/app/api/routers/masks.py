@@ -16,6 +16,7 @@ from app.api.instances import (
     save_instances,
     rasterize_instances,
     colorize_labeled_mask,
+    next_free_id,
 )
 
 import json
@@ -340,11 +341,13 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     )
 
     # ── 5. extract contours from each mask ───────────────────────────────────
-    max_id = max(i["id"] for i in instances)
+    # the instance being split is going away, so its id is free to reuse
+    used_ids = {i["id"] for i in instances if i["id"] != body.instance_id}
     new_instances = []
 
     for i, mask in enumerate(new_masks):
-        new_id = max_id + i + 1
+        new_id = next_free_id(used_ids)
+        used_ids.add(new_id)
         contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         if not contours:
             logger.warning(f"[SPLIT] No contour found for mask {i + 1}, skipping")
@@ -488,8 +491,9 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
     max_area = body.max_image_fraction * image_area
 
     existing_mask = labeled > 0
-    all_ids = [i["id"] for i in instances] + [int(p.get("id", 0)) for p in body.pending]
-    next_id = (max(all_ids) + 1) if all_ids else 1
+    used_ids = {i["id"] for i in instances} | {
+        int(p.get("id", 0)) for p in body.pending
+    }
     proposals: list[dict] = []
     rejected: list[dict] = []
 
@@ -551,6 +555,7 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
             continue
         x, y, w, h = cv.boundingRect(largest)
 
+        next_id = next_free_id(used_ids)
         inst = {
             "id": next_id,
             "contour": approx.tolist(),
@@ -562,7 +567,7 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
         proposals.append(inst)
         cv.fillPoly(labeled, [approx.astype(np.int32)], color=next_id)
         existing_mask = existing_mask | constrained
-        next_id += 1
+        used_ids.add(next_id)
 
     if not proposals:
         raise HTTPException(
@@ -689,8 +694,9 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
 
     # SAM predict per click
     existing_mask = labeled > 0
-    all_ids = [i["id"] for i in instances] + [int(p.get("id", 0)) for p in body.pending]
-    next_id = (max(all_ids) + 1) if all_ids else 1
+    used_ids = {i["id"] for i in instances} | {
+        int(p.get("id", 0)) for p in body.pending
+    }
     proposals: list[dict] = []
     rejected: list[dict] = []
 
@@ -814,6 +820,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             continue
         x, y, w, h = cv.boundingRect(largest)
 
+        next_id = next_free_id(used_ids)
         inst = {
             "id": next_id,
             "contour": approx.tolist(),
@@ -827,7 +834,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         # same request) don't overlap. Not persisted to disk — caller commits.
         cv.fillPoly(labeled, [approx.astype(np.int32)], color=next_id)
         existing_mask = existing_mask | constrained
-        next_id += 1
+        used_ids.add(next_id)
 
     if not proposals:
         raise HTTPException(
@@ -1152,8 +1159,7 @@ async def propose_similar(
     #  5. SAM predict per seed, dedupe
     existing_mask = existing_any.astype(bool)
     proposals: list[dict] = []
-    max_id = max(existing_ids)
-    next_id = max_id + 1
+    used_ids = set(existing_ids)
     image_area = float(h_img * w_img)
     max_area = body.max_image_fraction * image_area
     log_median = np.log(max(median_area, 1.0))
@@ -1236,6 +1242,7 @@ async def propose_similar(
         # similarity score that produced this seed (for ranking in UI)
         seed_sim = float(sim[py, px]) if sim[py, px] > 0 else 0.0
 
+        next_id = next_free_id(used_ids)
         proposals.append(
             {
                 "id": next_id,
@@ -1250,7 +1257,7 @@ async def propose_similar(
         )
         # block this region from being re-proposed by later seeds
         existing_mask = np.logical_or(existing_mask, proposal_mask)
-        next_id += 1
+        used_ids.add(next_id)
 
     # 6. debug overlay PNG
     # Renders: original image + existing instances (green) + proposals (yellow)
