@@ -9,13 +9,9 @@ interface Props {
   imgHeight: number;
   viewportWidth: number;
   viewportHeight: number;
-  // Already-committed instances on disk — rendered as semi-transparent green
-  // context so the user can see what's been annotated already and avoid
-  // re-annotating the same particle.
+  // Already-committed instances on disk  
   existingInstances: Instance[];
-  // Not-yet-committed proposals — rendered as yellow outlines for the same
-  // reason. Click-to-reject is intentionally not wired here since clicks in
-  // annotate mode are reserved for placing vertices.
+  // Not-yet-committed proposals 
   pendingProposals: Instance[];
   // Called when the user closes a polygon with ≥3 vertices. The contour is
   // in image-space coordinates. Caller is responsible for turning it into a
@@ -132,7 +128,7 @@ export default function AnnotateCanvas({
     ]);
   }
 
-  // Two clicks fire before dblclick — strip them off, close if ≥3 remain.
+  // Two clicks fire before dblclick 
   function handleDoubleClick(e: React.MouseEvent) {
     if (panHeld) return;
     e.preventDefault();
@@ -181,7 +177,7 @@ export default function AnnotateCanvas({
     panOriginRef.current = null;
   }
 
-  // Wheel zoom — anchored on cursor so the pixel under it stays put.
+  // Wheel zoom 
   // React attaches wheel as passive by default; preventDefault wouldn't
   // actually stop page scroll, so we wire a non-passive native listener.
   useEffect(() => {
@@ -216,8 +212,8 @@ export default function AnnotateCanvas({
   // Vertex marker radius / stroke widths scale with zoom so they stay visually
   // consistent at any zoom level (since viewBox shrinks but render size stays).
   const zoomScale = viewBox.w / imgWidth;
-  const vertexR = 3 * zoomScale;
-  const strokeW = 1.5 * zoomScale;
+  const vertexR = 5 * zoomScale;
+  const strokeW =  5 * zoomScale;
 
   return (
     <svg
@@ -257,7 +253,7 @@ export default function AnnotateCanvas({
         height={imgHeight}
         preserveAspectRatio="none"
       />
-      {/* committed instances — context only, no pointer events */}
+      {/* committed instances  */}
       {existingInstances.map(inst => {
         if (!inst.contour || inst.contour.length < 3) return null;
         const pts = inst.contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -272,7 +268,7 @@ export default function AnnotateCanvas({
           />
         );
       })}
-      {/* pending proposals — context only; reject UI lives in the sidebar */}
+      {/* pending proposals  */}
       {pendingProposals.map(p => {
         if (!p.contour || p.contour.length < 3) return null;
         const pts = p.contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -291,7 +287,7 @@ export default function AnnotateCanvas({
         <polyline
           points={verticesStr}
           fill="none"
-          stroke="#7ee8a2"
+          stroke="#00f0ff"
           strokeWidth={strokeW}
         />
       )}
@@ -301,7 +297,7 @@ export default function AnnotateCanvas({
           y1={lastVertex[1]}
           x2={cursor[0]}
           y2={cursor[1]}
-          stroke="#7ee8a2"
+          stroke="#00f0ff"
           strokeWidth={strokeW}
           strokeDasharray={`${4 * zoomScale} ${4 * zoomScale}`}
         />
@@ -312,7 +308,7 @@ export default function AnnotateCanvas({
           cx={x}
           cy={y}
           r={vertexR}
-          fill="#7ee8a2"
+          fill="#00f0ff"
           stroke="#0d0d0d"
           strokeWidth={strokeW * 0.7}
         />
