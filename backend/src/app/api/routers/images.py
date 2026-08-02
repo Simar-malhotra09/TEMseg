@@ -164,22 +164,23 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
                 tif = tifffile.TiffFile(str(filepath))
             except TiffFileError as e:
                 logger.info(f"[ERROR] {e} ")
-            page = tif.pages[0]
-            meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
+            else:
+                page = tif.pages[0]
+                meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
 
-            # Store all TIFF tags
-            meta["tiff_tags"] = {}
-            for tag in page.tags.values():
-                try:
-                    val = tag.value
-                    # Make JSON-serializable
-                    if isinstance(val, (bytes, np.ndarray)):
-                        val = str(val)[:500]
-                    elif isinstance(val, tuple):
-                        val = list(val)
-                    meta["tiff_tags"][tag.name] = val
-                except Exception:
-                    pass
+                # Store all TIFF tags
+                meta["tiff_tags"] = {}
+                for tag in page.tags.values():
+                    try:
+                        val = tag.value
+                        # Make JSON-serializable
+                        if isinstance(val, (bytes, np.ndarray)):
+                            val = str(val)[:500]
+                        elif isinstance(val, tuple):
+                            val = list(val)
+                        meta["tiff_tags"][tag.name] = val
+                    except Exception:
+                        pass
 
         elif fname.endswith(".npy"):
             arr = np.load(str(filepath))
