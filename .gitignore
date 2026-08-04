@@ -40,3 +40,4 @@ workspace.sh
 test_build_mac.sh
 .claude/
 .github/
+.aider*

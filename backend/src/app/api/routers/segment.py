@@ -82,19 +82,22 @@ async def segment(req: SegmentRequest, request: Request):
 
     image_path = orig_files[0]
 
-    # ── image load ───────────────────────────────────────────────
+    # load image
     t0 = time.perf_counter()
     img = model_inst.load_image(image_path)
     t_load = time.perf_counter() - t0
     logger.info(f"Loaded image in {t_load * 1000:.1f}ms, shape {img.shape}")
 
-    # ── inference ────────────────────────────────────────────────
+    # Resolve req bodies before inferencing 
     t1 = time.perf_counter()
 
     if req.inverse_blackout:
+        # inverese blackout reqs to keep only the selected regions 
+        # and ignore all else. Suitable for batch segmentation
         if req.model == AvailableModels.yolosam:
             logger.info(f"Running batch segmentation on {len(req.regions)} patches")
             result = batch_seg_patches(img, req.regions, model_inst)
+        # maskrcnn does not support batch segmentation
         elif req.model == AvailableModels.maskrcnn:
             img = inverse_blackout_regions(
                 img,
@@ -104,7 +107,10 @@ async def segment(req: SegmentRequest, request: Request):
             result = model_inst.segment(img)
         else:
             return {"error": f"Unsupported model {req.model}"}
+
     else:
+        # blackout reqs ignores the req selected regions and keeps
+        # everything else.
         if req.blackout:
             logger.info(f"Applying blackout to {len(req.regions)} regions")
             img = blackout_regions(
@@ -120,7 +126,7 @@ async def segment(req: SegmentRequest, request: Request):
     t_inference = time.perf_counter() - t1
     logger.info(f"Model inference took {t_inference * 1000:.1f}ms")
 
-    # ── validation ───────────────────────────────────────────────
+    # validation model which served req
     if req.model != result.model:
         return {
             "error": f"Mismatch between requested model {req.model} and result {result.model}"
@@ -128,7 +134,7 @@ async def segment(req: SegmentRequest, request: Request):
     if result.segmentation_mask is None:
         return {"error": "Segmentation returned no mask"}
 
-    # ── mask normalize + colorize ────────────────────────────────
+    # mask normalize + colorize
     t2 = time.perf_counter()
     mask = normalize_mask(result.segmentation_mask)
     # morphological cleanup to remove single-pixel noise and close small gaps
@@ -158,7 +164,7 @@ async def segment(req: SegmentRequest, request: Request):
     t_colorize = time.perf_counter() - t2
     logger.info(f"Prepared result mask in {t_colorize * 1000:.1f}ms")
 
-    # ── save mask ────────────────────────────────────────────────
+    # save mask 
     t3 = time.perf_counter()
     mask_path = session_dir / "mask.png"
     success = cv.imwrite(str(mask_path), save_mask)
@@ -217,7 +223,7 @@ async def segment(req: SegmentRequest, request: Request):
         # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
         logger.warning(f"Particle extraction skipped (non-fatal): {e}")
 
-    # ── stats ────────────────────────────────────────────────────
+    # comute stats
     t4 = time.perf_counter()
 
     # load pixel scale from session metadata (if available)
