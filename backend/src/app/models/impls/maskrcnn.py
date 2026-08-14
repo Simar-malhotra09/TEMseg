@@ -1,7 +1,7 @@
 import cv2 as cv
 import numpy as np
 import torch
-import logging 
+import logging
 from fastapi import APIRouter
 from torchvision.models.detection import maskrcnn_resnet50_fpn
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
@@ -16,9 +16,13 @@ router = APIRouter(prefix="/models/maskrcnn")
 logger = logging.getLogger("routes.models.maskrcnn")
 SESSIONS_DIR = Path("sessions")
 
+
 class MaskRCNN(Model):
-    def __init__(self, config: ModelConfig, device: str = "cpu"):
+    def __init__(
+        self, config: ModelConfig, model_id: AvailableModels, device: str = "cpu"
+    ):
         self.device = device
+        self.model_id = model_id
         super().__init__(config)
 
     def _load_components(self) -> Dict[str, Any]:
@@ -65,7 +69,9 @@ class MaskRCNN(Model):
             try:
                 model.to(self.device)
             except Exception as e:
-                raise RuntimeError(f"Failed to move model to device {self.device}: {e}") from e
+                raise RuntimeError(
+                    f"Failed to move model to device {self.device}: {e}"
+                ) from e
 
             model.eval()
 
@@ -78,18 +84,20 @@ class MaskRCNN(Model):
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
-        model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, 256, num_classes)
+        model.roi_heads.mask_predictor = MaskRCNNPredictor(
+            in_features_mask, 256, num_classes
+        )
         return model
 
     def load_image(self, image_path: Path) -> np.ndarray:
         if image_path.suffix == ".npy":
             img = np.load(image_path)
-        elif image_path.suffix== ".emd":
+        elif image_path.suffix == ".emd":
             import hyperspy.api as hs
 
             result = hs.load(str(image_path))
             s = result[0] if isinstance(result, list) else result
-            img= s.data
+            img = s.data
 
         else:
             img = cv.imread(str(image_path), cv.IMREAD_GRAYSCALE)
@@ -99,16 +107,18 @@ class MaskRCNN(Model):
 
         # normalize to (H, W, 3) uint8
         if img.ndim == 2:
-            img = np.stack([img] * 3, axis=-1)       # grayscale → RGB
+            img = np.stack([img] * 3, axis=-1)  # grayscale → RGB
         elif img.ndim == 3 and img.shape[0] in (1, 3):
-            img = np.transpose(img, (1, 2, 0))        # (C,H,W) → (H,W,C)
+            img = np.transpose(img, (1, 2, 0))  # (C,H,W) → (H,W,C)
         if img.shape[2] == 1:
-            img = np.repeat(img, 3, axis=2)           # (H,W,1) → (H,W,3)
+            img = np.repeat(img, 3, axis=2)  # (H,W,1) → (H,W,3)
         elif img.shape[2] == 4:
-            img = img[:, :, :3]                       # drop alpha
+            img = img[:, :, :3]  # drop alpha
 
         if img.dtype != np.uint8:
-            img = ((img - img.min()) / (img.max() - img.min() + 1e-8) * 255).astype("uint8")
+            img = ((img - img.min()) / (img.max() - img.min() + 1e-8) * 255).astype(
+                "uint8"
+            )
 
         return img.astype(np.float32) / 255.0
 
@@ -126,23 +136,24 @@ class MaskRCNN(Model):
         with torch.no_grad():
             prediction = model([tensor])[0]
 
-        keep = prediction['scores'] > 0.95
+        keep = prediction["scores"] > 0.95
         results = {
-            'boxes': prediction['boxes'][keep].cpu().numpy(),
-            'scores': prediction['scores'][keep].cpu().numpy(),
-            'masks': prediction['masks'][keep].cpu().numpy(),
+            "boxes": prediction["boxes"][keep].cpu().numpy(),
+            "scores": prediction["scores"][keep].cpu().numpy(),
+            "masks": prediction["masks"][keep].cpu().numpy(),
         }
 
         results = group_boxes_and_masks(results)
 
-        if len(results['masks']) == 0:
+        if len(results["masks"]) == 0:
             combined = np.zeros(image.shape[:2], dtype="uint8")
         else:
-            combined = (np.max(results['masks'].squeeze(1), axis=0) > 0.5).astype("uint8")
+            combined = (np.max(results["masks"].squeeze(1), axis=0) > 0.5).astype(
+                "uint8"
+            )
 
         return SegmentationResult(
             segmentation_mask=combined,
-            metadata={"detections": len(results['boxes'])},
-            model=AvailableModels.maskrcnn
+            metadata={"detections": len(results["boxes"])},
+            model=self.model_id,
         )
-
