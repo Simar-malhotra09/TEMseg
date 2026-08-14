@@ -9,8 +9,8 @@ VALID_IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".npy", ".em
 
 class ExportPreset(str, Enum):
     full = "full"
-    masks = "masks"
-    stats = "stats"
+    no_png = "no_png"
+    instances = "instances"
 
 
 EXPORT_PRESET_ITEMS: dict[ExportPreset, list[str]] = {
@@ -22,8 +22,14 @@ EXPORT_PRESET_ITEMS: dict[ExportPreset, list[str]] = {
         "stats_csv",
         "coco_json",
     ],
-    ExportPreset.masks: ["seg_mask_png", "seg_mask_npy"],
-    ExportPreset.stats: ["stats_csv", "instances_json"],
+    ExportPreset.no_png: [
+        "original_image",
+        "seg_mask_npy",
+        "instances_json",
+        "stats_csv",
+        "coco_json",
+    ],
+    ExportPreset.instances: ["instances_json"],
 }
 
 
