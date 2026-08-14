@@ -88,17 +88,20 @@ async def segment(req: SegmentRequest, request: Request):
     t_load = time.perf_counter() - t0
     logger.info(f"Loaded image in {t_load * 1000:.1f}ms, shape {img.shape}")
 
-    # Resolve req bodies before inferencing 
+    # Resolve req bodies before inferencing
     t1 = time.perf_counter()
 
     if req.inverse_blackout:
-        # inverese blackout reqs to keep only the selected regions 
+        # inverese blackout reqs to keep only the selected regions
         # and ignore all else. Suitable for batch segmentation
         if req.model == AvailableModels.yolosam:
             logger.info(f"Running batch segmentation on {len(req.regions)} patches")
             result = batch_seg_patches(img, req.regions, model_inst)
         # maskrcnn does not support batch segmentation
-        elif req.model == AvailableModels.maskrcnn:
+        elif req.model in (
+            AvailableModels.maskrcnn,
+            AvailableModels.maskrcnn_synthetic,
+        ):
             img = inverse_blackout_regions(
                 img,
                 req.regions,
@@ -164,7 +167,7 @@ async def segment(req: SegmentRequest, request: Request):
     t_colorize = time.perf_counter() - t2
     logger.info(f"Prepared result mask in {t_colorize * 1000:.1f}ms")
 
-    # save mask 
+    # save mask
     t3 = time.perf_counter()
     mask_path = session_dir / "mask.png"
     success = cv.imwrite(str(mask_path), save_mask)
