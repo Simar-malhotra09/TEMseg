@@ -15,6 +15,12 @@
     {
       "filename": "maskrcnn_best_model.pth",
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/maskrcnn_best_model.pth",
+      "sha256": "0da53804dea85de47ac78a10f7a30b15c5d9a4481ee6badff19906c28fcdf27e",
+      "size_mb": 168
+    },
+    {
+      "filename": "maskrcnn_best_model_synthetic.pth",
+      "url": "https://huggingface.co/0saker/TEMseg/resolve/main/maskrcnn_best_model_synthetic.pth",
       "sha256": "8601e68a19f50cf337cda06db92f6c2f40365200276cf3535ef6121862f83300",
       "size_mb": 168
     }

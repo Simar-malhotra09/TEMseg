@@ -258,7 +258,12 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
     manifest = _load_manifest()
     if not manifest:
         # No manifest — check if weights exist anyway (dev mode)
-        expected = ["best12x.onnx", "sam_vit_b_01ec64.pth", "maskrcnn_best_model.pth"]
+        expected = [
+            "best12x.onnx",
+            "sam_vit_b_01ec64.pth",
+            "maskrcnn_best_model.pth",
+            "maskrcnn_best_model_synthetic.pth",
+        ]
         missing = [f for f in expected if not (weights_dir / f).exists()]
         if missing:
             return False, f"Missing weights and no manifest to download from: {missing}"

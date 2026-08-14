@@ -102,6 +102,7 @@ class Settings:
     YOLO_MODEL_PATH = WEIGHTS_DIR / "best12x.onnx"
     SAM_MODEL_PATH = WEIGHTS_DIR / "sam_vit_b_01ec64.pth"
     MASKRCNN_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model.pth"
+    MASKRCNN_SYNTHETIC_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model_synthetic.pth"
 
     @property
     def SHAPE_CONFIG_PATH(self) -> Path:
@@ -116,6 +117,7 @@ class Settings:
                 cls.YOLO_MODEL_PATH,
                 cls.SAM_MODEL_PATH,
                 cls.MASKRCNN_MODEL_PATH,
+                cls.MASKRCNN_SYNTHETIC_MODEL_PATH,
             ]
         )
 
@@ -127,6 +129,7 @@ class Settings:
             ("best12x.onnx", cls.YOLO_MODEL_PATH),
             ("sam_vit_b_01ec64.pth", cls.SAM_MODEL_PATH),
             ("maskrcnn_best_model.pth", cls.MASKRCNN_MODEL_PATH),
+            ("maskrcnn_best_model_synthetic.pth", cls.MASKRCNN_SYNTHETIC_MODEL_PATH),
         ]:
             if not path.exists():
                 missing.append(name)
