@@ -40,7 +40,7 @@ def main() -> None:
         "--export",
         "-e",
         default="full",
-        help="Export preset (full, masks, stats) or comma-separated item list",
+        help="Export preset (full, no_png, instances) or comma-separated item list",
     )
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="Suppress per-image progress output"
