@@ -1,8 +1,11 @@
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from app.api.live_models import AvailableModels
+
+logger = logging.getLogger("batch.types")
 
 VALID_IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".npy", ".emd"}
 
@@ -71,6 +74,34 @@ def resolve_export_items(value: str) -> list[str]:
     if unknown:
         raise ValueError(f"Unknown export items: {unknown}")
     return items
+
+
+def apply_include(items: list[str], include: list[str]) -> list[str]:
+    """Add --include items to a resolved export item list. Unknown items or
+    items already present are skipped with a warning."""
+    result = list(items)
+    for item in include:
+        if item not in VALID_EXPORT_ITEMS:
+            logger.warning(f"--include: unknown export item '{item}', ignoring")
+        elif item in result:
+            logger.warning(f"--include: '{item}' already in export items, ignoring")
+        else:
+            result.append(item)
+    return result
+
+
+def apply_exclude(items: list[str], exclude: list[str]) -> list[str]:
+    """Remove --exclude items from a resolved export item list. Unknown items
+    or items not present in the list are skipped with a warning."""
+    result = list(items)
+    for item in exclude:
+        if item not in VALID_EXPORT_ITEMS:
+            logger.warning(f"--exclude: unknown export item '{item}', ignoring")
+        elif item not in result:
+            logger.warning(f"--exclude: '{item}' not in export items, ignoring")
+        else:
+            result.remove(item)
+    return result
 
 
 @dataclass(frozen=True)

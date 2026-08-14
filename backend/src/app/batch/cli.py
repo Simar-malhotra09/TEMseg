@@ -18,6 +18,8 @@ from app.batch.summary import build_summary_csv  # noqa: E402
 from app.batch.types import (  # noqa: E402
     VALID_IMAGE_EXTENSIONS,
     BatchConfig,
+    apply_exclude,
+    apply_include,
     resolve_export_items,
     resolve_model_name,
 )
@@ -41,6 +43,16 @@ def main() -> None:
         "-e",
         default="full",
         help="Export preset (full, no_png, instances) or comma-separated item list",
+    )
+    parser.add_argument(
+        "--include",
+        default=None,
+        help="Comma-separated export items to add to the resolved preset/list",
+    )
+    parser.add_argument(
+        "--exclude",
+        default=None,
+        help="Comma-separated export items to remove from the resolved preset/list",
     )
     parser.add_argument(
         "--quiet", "-q", action="store_true", help="Suppress per-image progress output"
@@ -70,6 +82,15 @@ def main() -> None:
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if args.exclude:
+        export_items = apply_exclude(
+            export_items, [i.strip() for i in args.exclude.split(",") if i.strip()]
+        )
+    if args.include:
+        export_items = apply_include(
+            export_items, [i.strip() for i in args.include.split(",") if i.strip()]
+        )
 
     config = BatchConfig(
         input_dir=input_dir,
