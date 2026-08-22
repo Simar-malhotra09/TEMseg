@@ -20,7 +20,7 @@ from pathlib import Path
 from ultralytics import YOLO
 from segment_anything import sam_model_registry, SamPredictor
 from app.models.base_model import Model, SegmentationResult, ModelConfig
-from app.models.helpers.config import nano_config, house_config
+from app.models.helpers.config import nano_config
 
 # @pytest.fixture(scope="session", autouse=True)
 # def setup_app():

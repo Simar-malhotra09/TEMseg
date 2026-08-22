@@ -97,9 +97,9 @@ async def segment(req: SegmentRequest, request: Request):
         if req.model == AvailableModels.yolosam:
             logger.info(f"Running batch segmentation on {len(req.regions)} patches")
             result = batch_seg_patches(img, req.regions, model_inst)
-        # maskrcnn does not support batch segmentation
+        # yolomaskrcnn and maskrcnn_synthetic do not support batch segmentation
         elif req.model in (
-            AvailableModels.maskrcnn,
+            AvailableModels.yolomaskrcnn,
             AvailableModels.maskrcnn_synthetic,
         ):
             img = inverse_blackout_regions(

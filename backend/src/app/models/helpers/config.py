@@ -11,7 +11,9 @@ maskrcnn_synthetic_config = SubModelConfig(
 
 nano_config = ModelConfig(name="nano_pipeline", components=[yolo_config, sam_config])
 
-house_config = ModelConfig(name="house_pipeline", components=[maskrcnn_config])
+yolomaskrcnn_config = ModelConfig(
+    name="yolomaskrcnn_pipeline", components=[yolo_config, maskrcnn_config]
+)
 
 house_synthetic_config = ModelConfig(
     name="house_pipeline_synthetic", components=[maskrcnn_synthetic_config]

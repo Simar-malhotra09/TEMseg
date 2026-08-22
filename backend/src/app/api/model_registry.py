@@ -3,16 +3,21 @@ import logging
 import torch
 
 from app.api.live_models import AvailableModels
-from app.models.helpers.config import house_config, house_synthetic_config, nano_config
+from app.models.helpers.config import (
+    house_synthetic_config,
+    nano_config,
+    yolomaskrcnn_config,
+)
 from app.models.impls.maskrcnn import MaskRCNN
+from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
 
 logger = logging.getLogger("routes")
 
 _MODEL_BUILDERS = {
     AvailableModels.yolosam: lambda device: YoloSam(nano_config, device=device),
-    AvailableModels.maskrcnn: lambda device: MaskRCNN(
-        house_config, AvailableModels.maskrcnn, device=device
+    AvailableModels.yolomaskrcnn: lambda device: YoloMaskRCNN(
+        yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
     ),
     AvailableModels.maskrcnn_synthetic: lambda device: MaskRCNN(
         house_synthetic_config, AvailableModels.maskrcnn_synthetic, device=device

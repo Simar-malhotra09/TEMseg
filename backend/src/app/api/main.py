@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     # cleanup_old_sessions(force=True)
 
     # initalize on startup: only YoloSAM, the default/better model, is loaded
-    # eagerly. MaskRCNN is lazily loaded on first use (see model_registry.py)
+    # eagerly. YoloMaskRCNN is lazily loaded on first use (see model_registry.py)
     # to avoid holding both models in RAM at once.
     app.state.models = {}
     get_or_load_model(app.state.models, AvailableModels.yolosam)
