@@ -1,19 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-TEMseg PyInstaller spec — Windows CUDA build
+TEMseg PyInstaller spec for windows CUDA build
 
 Usage:
     pyinstaller temseg_cuda.spec
 
 Differences from temseg.spec (CPU build):
-    - CUDA runtime DLLs are NOT stripped — required for torch.cuda on NVIDIA GPUs.
+    - CUDA runtime DLLs are NOT stripped. 
     - Expects onnxruntime-gpu (not onnxruntime) installed in the venv before building.
-    - Windows-only; produces dist/TEMseg-cuda/ one-dir bundle (~2GB).
+    - Windows-only; produces dist/TEMseg-cuda/ one-dir bundle
 
 Prerequisites:
     - NVIDIA driver (CUDA 12.1 compatible) on the build machine is NOT required,
       but onnxruntime-gpu must be installed: uv pip install onnxruntime-gpu
-      (onnxruntime and onnxruntime-gpu cannot coexist — uninstall cpu variant first)
+      (onnxruntime and onnxruntime-gpu cannot coexist, so uninstall cpu variant first)
 """
 
 import sys
@@ -32,9 +32,7 @@ if IS_MAC:
 
 ICON_PATH = str(ROOT / "temseg_icon.ico") if IS_WIN else None
 
-# ---------------------------------------------------------------------------
 # Data files
-# ---------------------------------------------------------------------------
 
 datas = [
     (str(ROOT / "frontend" / "out"), "frontend_out"),
@@ -65,9 +63,7 @@ for _subdir in _rsciio_dir.iterdir():
     if _subdir.is_dir() and not _subdir.name.startswith("_"):
         datas += [(str(_subdir), f"rsciio/{_subdir.name}")]
 
-# ---------------------------------------------------------------------------
 # Hidden imports
-# ---------------------------------------------------------------------------
 
 hiddenimports = [
     "uvicorn",
@@ -169,9 +165,7 @@ hiddenimports += extra_hiddenimports
 
 hiddenimports = list(set(hiddenimports))
 
-# ---------------------------------------------------------------------------
 # Excludes
-# ---------------------------------------------------------------------------
 
 excludes = [
     "tkinter",
@@ -190,9 +184,7 @@ excludes = [
     "PyQt5.sip",
 ]
 
-# ---------------------------------------------------------------------------
 # Analysis
-# ---------------------------------------------------------------------------
 
 a = Analysis(
     [str(ROOT / "launcher.py")],
@@ -212,15 +204,11 @@ a = Analysis(
     noarchive=False,
 )
 
-# ---------------------------------------------------------------------------
-# CUDA libs: intentionally NOT stripped in this spec.
+# CUDA libs.
 # cudart64_*.dll, cublas64_*.dll, cudnn*.dll etc. stay in the bundle so
 # torch.cuda.is_available() returns True on NVIDIA hardware.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
 # Post-analysis size pruning (same as CPU spec)
-# ---------------------------------------------------------------------------
 
 _exclude_data_patterns = [
     "/sessions/",
@@ -265,9 +253,7 @@ a.datas = new_datas
 
 print(f"[TEMseg-cuda.spec] Pruned {_pruned_count} data entries (~{_pruned_bytes // (1024*1024)}MB)")
 
-# ---------------------------------------------------------------------------
 # Build
-# ---------------------------------------------------------------------------
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

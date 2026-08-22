@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-TEMseg PyInstaller spec — cross-platform (macOS .app bundle / Windows .exe one-dir)
+TEMseg PyInstaller spec: cross-platform (macOS .app bundle / Windows .exe one-dir)
 
 Usage:
     pyinstaller temseg.spec
@@ -10,7 +10,6 @@ What this bundles:
     - backend/src/ as backend_src (the FastAPI app + models)
     - frontend/out/ as frontend_out (static Next.js build)
     - weight_manifest.json (for first-run download)
-    - DOES NOT bundle model weights — downloaded on first launch
 
 Notes:
     - PyTorch, ONNX Runtime, OpenCV etc. are collected automatically
@@ -37,9 +36,7 @@ elif IS_WIN:
 else:
     ICON_PATH = None
 
-# ---------------------------------------------------------------------------
 # Data files to bundle
-# ---------------------------------------------------------------------------
 
 datas = [
     # Static frontend build
@@ -60,7 +57,7 @@ datas += collect_data_files("hyperspy")
 datas += copy_metadata("hyperspy")
 
 # collect_all() returns a 3-tuple: (datas, binaries, hiddenimports)
-# — it must be unpacked, NOT appended directly to datas.
+#, it must be unpacked, NOT appended directly to datas.
 _hs_datas, _hs_binaries, _hs_hiddenimports = collect_all("hyperspy")
 datas += _hs_datas
 extra_binaries = _hs_binaries
@@ -80,9 +77,8 @@ for _subdir in _rsciio_dir.iterdir():
     if _subdir.is_dir() and not _subdir.name.startswith("_"):
         # Bundle each format subdirectory (emd/, tiff/, bruker/, etc.)
         datas += [(str(_subdir), f"rsciio/{_subdir.name}")]
-# ---------------------------------------------------------------------------
+
 # Hidden imports PyInstaller tends to miss
-# ---------------------------------------------------------------------------
 
 hiddenimports = [
     # FastAPI / Starlette / Uvicorn
@@ -197,9 +193,7 @@ if IS_WIN:
 # Deduplicate
 hiddenimports = list(set(hiddenimports))
 
-# ---------------------------------------------------------------------------
-# Excludes — things we don't need, to reduce bundle size
-# ---------------------------------------------------------------------------
+# Excludes to reduce bundle size
 
 excludes = [
     "tkinter",
@@ -210,9 +204,8 @@ excludes = [
     "setuptools",
     "pip",
     # CUDA runtime libs are stripped from binaries below, but the Python
-    # module torch.cuda must stay — PyTorch imports it at init.
+    # module torch.cuda must stay since pytorch calls at init. 
     "triton",
-    # Qt — PyWebView on macOS uses native WebKit, not Qt
     "PyQt5",
     "PyQt6",
     "PySide2",
@@ -221,9 +214,7 @@ excludes = [
     "PyQt5.sip",
 ]
 
-# ---------------------------------------------------------------------------
 # Analysis
-# ---------------------------------------------------------------------------
 
 a = Analysis(
     [str(ROOT / "launcher.py")],
@@ -243,10 +234,6 @@ a = Analysis(
     noarchive=False,
 )
 
-# ---------------------------------------------------------------------------
-# Remove CUDA libs if they snuck in (can save ~1GB)
-# Strip CPU-only build: we don't ship CUDA. Names differ per platform.
-# ---------------------------------------------------------------------------
 
 # Linux / macOS naming (lib*.so / lib*.dylib)
 _cuda_unix = ("libcuda", "libnvrtc", "libcublas", "libcudnn", "libcufft",
@@ -266,9 +253,7 @@ def _is_cuda_lib(name: str) -> bool:
 
 a.binaries = [b for b in a.binaries if not _is_cuda_lib(b[0])]
 
-# ---------------------------------------------------------------------------
 # Post-analysis size pruning
-# ---------------------------------------------------------------------------
 
 # Patterns to exclude from a.datas (src_path check)
 _exclude_data_patterns = [
@@ -286,9 +271,7 @@ _exclude_data_patterns = [
     "numpy/typing/tests/",
     "pint/testsuite/",
     "backend_src/app/api/tests/",
-    # metadata — MUST keep .dist-info for importlib.metadata (torchvision, etc.)
     ".egg-info/",
-    # polars — pulled in transitively, not used directly
     "_polars_runtime_32/",
     "_polars_runtime",
 ]
@@ -321,9 +304,7 @@ a.datas = new_datas
 
 print(f"[TEMseg.spec] Pruned {_pruned_count} data entries (~{_pruned_bytes // (1024*1024)}MB)")
 
-# ---------------------------------------------------------------------------
 # Build
-# ---------------------------------------------------------------------------
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -351,7 +332,7 @@ coll = COLLECT(
     name="TEMseg",
 )
 
-# macOS .app bundle — Windows builds skip this and ship dist/TEMseg/ as one-dir
+# macOS .app bundle 
 if IS_MAC:
     app = BUNDLE(
         coll,
