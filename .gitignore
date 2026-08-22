@@ -45,3 +45,5 @@ test_build_mac.sh
 experimental_cobalt/*.png
 experimental_cobalt/*.jpg
 experimental_cobalt/*.jpeg
+draft2.typ
+paper/
