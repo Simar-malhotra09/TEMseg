@@ -61,6 +61,22 @@ def resolve_model_name(name: str) -> AvailableModels:
     return MODEL_NAME_MAP[key]
 
 
+def normalize_extension(value: str | None) -> str | None:
+    """Normalize an --extension value to a lowercase suffix with a leading dot.
+
+    Returns None for empty/None values, meaning "accept any supported image
+    extension".
+    """
+    if value is None:
+        return None
+    ext = value.strip().lower()
+    if not ext:
+        return None
+    if not ext.startswith("."):
+        ext = "." + ext
+    return ext
+
+
 def resolve_export_items(value: str) -> list[str]:
     """Resolve --export value: either a preset name or a comma-separated item list."""
     try:
@@ -111,6 +127,7 @@ class BatchConfig:
     model_name: str
     export_items: list[str]
     quiet: bool
+    extension: str | None = None
 
 
 @dataclass

@@ -20,6 +20,7 @@ from app.batch.types import (  # noqa: E402
     BatchConfig,
     apply_exclude,
     apply_include,
+    normalize_extension,
     resolve_export_items,
     resolve_model_name,
 )
@@ -28,34 +29,63 @@ from app.batch.types import (  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="temseg-batch",
-        description="Batch TEM image segmentation",
+        description=(
+            "Segment TEM images in a folder and write masks, instances, "
+            "statistics, and COCO annotations to the output folder."
+        ),
     )
-    parser.add_argument("--input", "-i", required=True, help="Folder of input images")
-    parser.add_argument("--output", "-o", required=True, help="Output folder")
+    parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="Directory containing the input images to segment.",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        required=True,
+        help="Directory where results are written (one subfolder per image, plus summary.csv).",
+    )
     parser.add_argument(
         "--model",
         "-m",
         required=True,
-        help="Model name: yolosam, yolomaskrcnn, maskrcnn-synthetic",
+        help="Model to use: yolosam, yolomaskrcnn, or maskrcnn-synthetic.",
+    )
+    parser.add_argument(
+        "--extension",
+        "-e",
+        default=None,
+        help=(
+            "Only process files with this extension (e.g. '.tif' or 'tif'). "
+            "Default: all supported image types (.tif, .tiff, .jpg, .jpeg, "
+            ".png, .npy, .emd)."
+        ),
     )
     parser.add_argument(
         "--export",
-        "-e",
+        "-x",
         default="full",
-        help="Export preset (full, no_png, instances) or comma-separated item list",
+        help=(
+            "Export items to write: a preset (full, no_png, instances) or a "
+            "comma-separated item list. Default: full."
+        ),
     )
     parser.add_argument(
         "--include",
         default=None,
-        help="Comma-separated export items to add to the resolved preset/list",
+        help="Comma-separated export items to add to the resolved preset/list.",
     )
     parser.add_argument(
         "--exclude",
         default=None,
-        help="Comma-separated export items to remove from the resolved preset/list",
+        help="Comma-separated export items to remove from the resolved preset/list.",
     )
     parser.add_argument(
-        "--quiet", "-q", action="store_true", help="Suppress per-image progress output"
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress per-image progress output.",
     )
     args = parser.parse_args()
 
@@ -64,11 +94,22 @@ def main() -> None:
         print(f"Error: input directory does not exist: {input_dir}", file=sys.stderr)
         sys.exit(1)
 
+    extension = normalize_extension(args.extension)
+
     images = [
-        p for p in input_dir.iterdir() if p.suffix.lower() in VALID_IMAGE_EXTENSIONS
+        p
+        for p in input_dir.iterdir()
+        if p.suffix.lower() in VALID_IMAGE_EXTENSIONS
+        and (extension is None or p.suffix.lower() == extension)
     ]
     if not images:
-        print(f"Error: no valid images found in {input_dir}", file=sys.stderr)
+        if extension is not None:
+            print(
+                f"Error: no files with extension '{extension}' found in {input_dir}",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: no valid images found in {input_dir}", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -98,6 +139,7 @@ def main() -> None:
         model_name=args.model,
         export_items=export_items,
         quiet=args.quiet,
+        extension=extension,
     )
 
     t_start = time.perf_counter()

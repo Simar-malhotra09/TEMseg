@@ -261,6 +261,7 @@ def run_batch(config: BatchConfig) -> list[ImageResult]:
         p
         for p in config.input_dir.iterdir()
         if p.suffix.lower() in VALID_IMAGE_EXTENSIONS
+        and (config.extension is None or p.suffix.lower() == config.extension)
     )
     if not images:
         raise ValueError(f"No valid images found in {config.input_dir}")
