@@ -354,7 +354,10 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
                 await loop.run_in_executor(
                     pool,
                     lambda: yolosam.components["yolo"].predict(
-                        source=img, verbose=False, conf=0.25
+                        source=img,
+                        verbose=False,
+                        conf=0.25,
+                        device=yolosam.device,
                     ),
                 )
             logger.info("[UPLOAD] YOLO warmup complete")

@@ -155,7 +155,12 @@ class YoloSam(Model):
         # --- YOLO Detection ---
         t0 = time.perf_counter()
         results = self.components["yolo"].predict(
-            source=image, conf=0.25, iou=0.5, max_det=4000, verbose=False
+            source=image,
+            conf=0.25,
+            iou=0.5,
+            max_det=4000,
+            verbose=False,
+            device=self.device,
         )
         t1 = time.perf_counter()
         # we want to return these boxes
@@ -340,7 +345,12 @@ class YoloSam(Model):
             # YOLO per patch (ONNX model is batch=1)
             t_yolo_start = time.perf_counter()
             results = yolo_model.predict(
-                source=patch, conf=0.25, iou=0.5, max_det=4000, verbose=False
+                source=patch,
+                conf=0.25,
+                iou=0.5,
+                max_det=4000,
+                verbose=False,
+                device=self.device,
             )
             t_yolo_patch = time.perf_counter() - t_yolo_start
             t_yolo_total += t_yolo_patch
