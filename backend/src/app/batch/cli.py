@@ -36,7 +36,7 @@ def main() -> None:
         "--model",
         "-m",
         required=True,
-        help="Model name: yolosam, maskrcnn, maskrcnn-synthetic",
+        help="Model name: yolosam, yolomaskrcnn, maskrcnn-synthetic",
     )
     parser.add_argument(
         "--export",

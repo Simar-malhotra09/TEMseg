@@ -24,8 +24,13 @@ from app.batch.types import (
 )
 from app.models.base_model import Model
 from app.models.helpers.compute_stats import compute_stats_from_instances
-from app.models.helpers.config import house_config, house_synthetic_config, nano_config
+from app.models.helpers.config import (
+    house_synthetic_config,
+    nano_config,
+    yolomaskrcnn_config,
+)
 from app.models.impls.maskrcnn import MaskRCNN
+from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
 
 logger = logging.getLogger("batch.pipeline")
@@ -55,8 +60,10 @@ def build_model(model_id: AvailableModels) -> Model:
     device = get_device()
     if model_id == AvailableModels.yolosam:
         return YoloSam(nano_config, device=device)
-    elif model_id == AvailableModels.maskrcnn:
-        return MaskRCNN(house_config, AvailableModels.maskrcnn, device=device)
+    elif model_id == AvailableModels.yolomaskrcnn:
+        return YoloMaskRCNN(
+            yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
+        )
     elif model_id == AvailableModels.maskrcnn_synthetic:
         return MaskRCNN(
             house_synthetic_config, AvailableModels.maskrcnn_synthetic, device=device

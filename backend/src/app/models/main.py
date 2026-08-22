@@ -1,8 +1,8 @@
 from pathlib import Path
-from app.models.base_model import SubModelConfig, ModelConfig, StatType, StatsConfig
+from app.models.base_model import StatType, StatsConfig
 from app.models.impls.yolosam import YoloSam
-from app.models.impls.maskrcnn import MaskRCNN
-from app.models.helpers.config import nano_config, house_config
+from app.models.impls.yolomaskrcnn import YoloMaskRCNN
+from app.models.helpers.config import nano_config, yolomaskrcnn_config
 from app.api.live_models import AvailableModels
 from app.models.helpers.compute_stats import (
     compute_particle_count,
@@ -44,7 +44,7 @@ def compute_stats(mask, config: StatsConfig):
     return results
 
 
-model1 = MaskRCNN(house_config, AvailableModels.maskrcnn, device="cpu")
+model1 = YoloMaskRCNN(yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device="cpu")
 print(torch.cuda.is_available())
 model1.get_model_specs()
 
@@ -66,5 +66,5 @@ if result2.segmentation_mask.ndim == 3 and result2.segmentation_mask.shape[0] ==
 stats1 = compute_stats(result1.segmentation_mask, stats_config)
 stats2 = compute_stats(result2.segmentation_mask, stats_config)
 
-print("MaskRCNN stats:", stats1)
+print("YoloMaskRCNN stats:", stats1)
 print("YoloSam stats:", stats2)
