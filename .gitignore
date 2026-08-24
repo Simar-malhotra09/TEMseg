@@ -18,7 +18,6 @@ build/
 dist/
 *.zip
 TEMseg_windows/
-temseg_icon.ico
 rthook_hyperspy.py
 
 *.md
@@ -47,10 +46,3 @@ experimental_cobalt/*.jpg
 experimental_cobalt/*.jpeg
 draft2.typ
 paper/
-
-
-.past_issues_and_sols
-experimental_cobalt/
-model_scripts/
-scripts/test_rf_recovery.sh
-tools/
