@@ -1,31 +1,4 @@
-# ============================================================================
-# build_win.ps1 — Build TEMseg.exe for Windows (one-dir bundle)
-#
-# Prerequisites:
-#   - Python 3.11+ with the backend venv set up (uv sync done)
-#   - Node.js + npm (for frontend build)
-#   - PyInstaller: uv pip install pyinstaller
-#   - weight_manifest.json in project root (URLs can be placeholders for build)
-#   - temseg_icon.ico in project root (generate on mac via ./convert_icon.sh)
-#   - For -Cuda: onnxruntime-gpu installed, onnxruntime (cpu) uninstalled:
-#       uv pip uninstall onnxruntime
-#       uv pip install onnxruntime-gpu
-#
-# Usage (PowerShell):
-#   .\build_win.ps1                        # CPU-only incremental build (fastest)
-#   .\build_win.ps1 -Cuda                  # CUDA-enabled build (NVIDIA GPUs, ~2GB)
-#   .\build_win.ps1 -SkipFrontend          # skip frontend rebuild (when only Python changed)
-#   .\build_win.ps1 -Clean                 # wipe build/ and dist/ first (use after spec changes)
-#   .\build_win.ps1 -Cuda -Clean -SkipFrontend
-#
-# If execution policy blocks the script:
-#   powershell -ExecutionPolicy Bypass -File .\build_win.ps1
-#
-# Output:
-#   CPU:  dist\TEMseg\TEMseg.exe        (~1GB)
-#   CUDA: dist\TEMseg-cuda\TEMseg.exe   (~2GB)
-# ============================================================================
-
+# new window script
 param(
     [switch]$Clean,
     [switch]$SkipFrontend,
@@ -34,16 +7,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
+# Repo root = two levels above scripts/windows
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+Set-Location $RepoRoot
 
 $SpecFile = if ($Cuda) { "temseg_cuda.spec" } else { "temseg.spec" }
 $BaseDistName = if ($Cuda) { "TEMseg-cuda" } else { "TEMseg" }
 
-# Embed the current git branch in the output name so builds are traceable.
-$RawBranch = (git rev-parse --abbrev-ref HEAD 2>$null) -replace '[^a-zA-Z0-9]', '-'
-$Branch = $RawBranch.Trim('-')
+# Git branch
+$RawBranch = try {
+    git rev-parse --abbrev-ref HEAD 2>$null
+} catch {
+    "unknown"
+}
+
+$Branch = ($RawBranch -replace '[^a-zA-Z0-9]', '-').Trim('-')
 if (-not $Branch) { $Branch = "unknown" }
+
 $DistName = "$BaseDistName-$Branch"
 
 Write-Host "========================================"
@@ -51,153 +31,230 @@ Write-Host "  TEMseg Windows Build"
 Write-Host "  Target: $(if ($Cuda) { 'CUDA (NVIDIA GPU)' } else { 'CPU-only' })"
 Write-Host "  Branch: $Branch"
 Write-Host "  Output: dist\$DistName"
-if ($Clean)        { Write-Host "  Mode: CLEAN" }
+if ($Clean) { Write-Host "  Mode: CLEAN" }
 if ($SkipFrontend) { Write-Host "  Skipping frontend rebuild" }
 Write-Host "========================================"
 
-# -------------------------------------------
-# Step 1: Check weight manifest + icon (cheap)
-# -------------------------------------------
+# --------------------------------------------------
+# 1. Check files
+# --------------------------------------------------
+
 Write-Host ""
-Write-Host "[1/4] Checking weight manifest..."
+Write-Host "[1/5] Checking files..."
 
 if (-not (Test-Path "weight_manifest.json")) {
-    throw "weight_manifest.json not found in project root"
+    throw "weight_manifest.json not found"
 }
-Write-Host "  Manifest found"
+
+if (-not (Test-Path $SpecFile)) {
+    throw "$SpecFile not found"
+}
 
 if (-not (Test-Path "temseg_icon.ico")) {
-    Write-Warning "  temseg_icon.ico not found - build will use default PyInstaller icon"
+    Write-Warning "temseg_icon.ico not found - using default icon"
 }
 
-# -------------------------------------------
-# Step 2: Check onnxruntime variant matches build target
-# -------------------------------------------
-Write-Host ""
-Write-Host "[2/5] Checking onnxruntime variant..."
+Write-Host "  Files OK"
 
-$OrtProviders = uv run python -c "import onnxruntime; print(','.join(onnxruntime.get_available_providers()))" 2>$null
+# --------------------------------------------------
+# 2. Check ONNX Runtime
+# --------------------------------------------------
+
+Write-Host ""
+Write-Host "[2/5] Checking onnxruntime..."
+
+$OrtProviders = uv run python -c "import onnxruntime; print(','.join(onnxruntime.get_available_providers()))"
+
 if ($Cuda) {
     if ($OrtProviders -notmatch "CUDAExecutionProvider") {
-        throw "CUDA build requires onnxruntime-gpu, but CUDAExecutionProvider is not available.`nFix:`n  uv pip uninstall onnxruntime`n  uv pip install onnxruntime-gpu"
+        throw @"
+CUDA build requires onnxruntime-gpu.
+
+Run:
+  uv pip uninstall onnxruntime
+  uv pip install onnxruntime-gpu
+"@
     }
-    Write-Host "  onnxruntime-gpu detected — OK"
-} else {
+
+    Write-Host "  CUDAExecutionProvider detected"
+}
+else {
     if ($OrtProviders -match "CUDAExecutionProvider") {
-        Write-Warning "  onnxruntime-gpu is installed but this is a CPU build. Consider -Cuda or reinstalling cpu ort."
-    } else {
-        Write-Host "  onnxruntime (cpu) detected — OK"
+        Write-Warning "onnxruntime-gpu detected. CPU build will still be attempted."
+    }
+    else {
+        Write-Host "  CPU onnxruntime detected"
     }
 }
 
-# -------------------------------------------
-# Step 3: Ensure PyInstaller is installed (cheap)
-# -------------------------------------------
+# --------------------------------------------------
+# 3. PyInstaller
+# --------------------------------------------------
+
 Write-Host ""
 Write-Host "[3/5] Checking PyInstaller..."
 
 uv run python -c "import PyInstaller" 2>$null
+
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  Installing PyInstaller..."
     uv pip install pyinstaller
-    if ($LASTEXITCODE -ne 0) { throw "PyInstaller install failed" }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyInstaller installation failed"
+    }
 }
+
 Write-Host "  PyInstaller OK"
 
-# -------------------------------------------
-# Step 3: Build frontend static export
-# -------------------------------------------
-Write-Host ""
-if (-not $SkipFrontend) {
-    Write-Host "[4/5] Building frontend..."
+# --------------------------------------------------
+# 4. Frontend
+# --------------------------------------------------
 
-    if (-not (Test-Path "frontend\node_modules")) {
-        Write-Host "  Installing npm dependencies..."
-        Push-Location frontend
-        npm install
-        if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm install failed" }
+Write-Host ""
+Write-Host "[4/5] Frontend..."
+
+if ($SkipFrontend) {
+    if (-not (Test-Path "frontend\out\index.html")) {
+        throw "frontend\out\index.html does not exist. Run without -SkipFrontend first."
+    }
+
+    Write-Host "  Skipped"
+}
+else {
+    Push-Location frontend
+
+    try {
+        if (-not (Test-Path "node_modules")) {
+            Write-Host "  Installing npm dependencies..."
+            npm install
+
+            if ($LASTEXITCODE -ne 0) {
+                throw "npm install failed"
+            }
+        }
+
+        Write-Host "  Building frontend..."
+        npm run build
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm run build failed"
+        }
+    }
+    finally {
         Pop-Location
     }
 
-    Push-Location frontend
-    npm run build
-    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm run build failed" }
-    Pop-Location
+    if (-not (Test-Path "frontend\out\index.html")) {
+        throw "frontend build failed - frontend\out\index.html not found"
+    }
 
-    if (-not (Test-Path "frontend\out\index.html")) {
-        throw "Frontend build failed - frontend\out\index.html not found"
-    }
-    Write-Host "  Frontend build OK"
-} else {
-    Write-Host "[4/5] Skipping frontend build (-SkipFrontend)"
-    if (-not (Test-Path "frontend\out\index.html")) {
-        throw "Cannot skip frontend - frontend\out\index.html doesn't exist yet, run without -SkipFrontend first"
-    }
+    Write-Host "  Frontend OK"
 }
 
-# -------------------------------------------
-# Step 4: Run PyInstaller
-# -------------------------------------------
+# --------------------------------------------------
+# 5. PyInstaller
+# --------------------------------------------------
+
 Write-Host ""
-Write-Host "[5/5] Running PyInstaller ($SpecFile)..."
+Write-Host "[5/5] Running PyInstaller..."
 
 if ($Clean) {
-    Write-Host "  Clean build requested - wiping build\$BaseDistName and dist\$BaseDistName ..."
-    if (Test-Path "build\$BaseDistName") { Remove-Item -Recurse -Force "build\$BaseDistName" }
-    if (Test-Path "dist\$BaseDistName")  { Remove-Item -Recurse -Force "dist\$BaseDistName" }
-    if (Test-Path "dist\$DistName")      { Remove-Item -Recurse -Force "dist\$DistName" }
-    Write-Host "  This will take ~10 minutes..."
-} else {
-    Write-Host "  Incremental build - reusing build\ cache..."
-    Write-Host "  (Pass -Clean for a full rebuild if spec/deps changed)"
+    Write-Host "  Cleaning previous build..."
+
+    if (Test-Path "build\$BaseDistName") {
+        Remove-Item -Recurse -Force "build\$BaseDistName"
+    }
+
+    if (Test-Path "dist\$BaseDistName") {
+        Remove-Item -Recurse -Force "dist\$BaseDistName"
+    }
+
+    if (Test-Path "dist\$DistName") {
+        Remove-Item -Recurse -Force "dist\$DistName"
+    }
+}
+else {
+    Write-Host "  Incremental build"
 }
 
 uv run pyinstaller $SpecFile --noconfirm
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
-# Rename the default output to include branch name.
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed"
+}
+
+# --------------------------------------------------
+# Rename output
+# --------------------------------------------------
+
 if (Test-Path "dist\$BaseDistName") {
-    if (Test-Path "dist\$DistName") { Remove-Item -Recurse -Force "dist\$DistName" }
+    if (Test-Path "dist\$DistName") {
+        Remove-Item -Recurse -Force "dist\$DistName"
+    }
+
     Rename-Item "dist\$BaseDistName" $DistName
 }
 
-# -------------------------------------------
-# Step 5b: Fix rsciio - PyInstaller fails to bundle its subdirectories
-# Windows one-dir layout: dist\<name>\_internal\rsciio
-# -------------------------------------------
-$RsciioSrc = uv run python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)" 2>$null
-$RsciioSrc = $RsciioSrc.Trim()
+# --------------------------------------------------
+# Fix rsciio
+# --------------------------------------------------
+
+Write-Host ""
+Write-Host "Fixing rsciio bundle..."
+
+$RsciioSrc = uv run python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)"
+
+if ($RsciioSrc) {
+    $RsciioSrc = $RsciioSrc.Trim()
+}
+
 $RsciioDest = "dist\$DistName\_internal\rsciio"
 
-if (Test-Path $RsciioSrc) {
-    Write-Host "  Copying rsciio from $RsciioSrc ..."
-    if (Test-Path $RsciioDest) { Remove-Item -Recurse -Force $RsciioDest }
-    Copy-Item -Recurse $RsciioSrc $RsciioDest
-    if (Test-Path "$RsciioDest\emd\specifications.yaml") {
-        Write-Host "  rsciio\emd OK"
-    } else {
-        Write-Warning "  rsciio\emd\specifications.yaml still missing!"
+if ($RsciioSrc -and (Test-Path $RsciioSrc)) {
+
+    Write-Host "  Source: $RsciioSrc"
+
+    if (Test-Path $RsciioDest) {
+        Remove-Item -Recurse -Force $RsciioDest
     }
-} else {
-    Write-Warning "  Could not find rsciio source at $RsciioSrc"
+
+    Copy-Item -Recurse $RsciioSrc $RsciioDest
+
+    if (Test-Path "$RsciioDest\emd\specifications.yaml") {
+        Write-Host "  rsciio OK"
+    }
+    else {
+        Write-Warning "rsciio\emd\specifications.yaml missing"
+    }
+}
+else {
+    Write-Warning "Could not find rsciio"
 }
 
-# -------------------------------------------
+# --------------------------------------------------
 # Done
-# -------------------------------------------
-if (Test-Path "dist\$DistName\TEMseg.exe") {
-    Write-Host ""
-    Write-Host "========================================"
-    Write-Host "  BUILD SUCCESSFUL"
-    Write-Host "========================================"
-    Write-Host ""
-    Write-Host "  Output: dist\$DistName\TEMseg.exe"
-    $size = (Get-ChildItem -Recurse "dist\$DistName" | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Host ("  Size:   {0:N1} MB" -f $size)
-    Write-Host ""
-    Write-Host "  Note: Model weights will be downloaded on first launch"
-    Write-Host "  to %USERPROFILE%\AppData\Local\TEMseg\weights\"
-    Write-Host ""
-} else {
-    throw "Build failed - dist\$DistName\TEMseg.exe not found"
+# --------------------------------------------------
+
+$Exe = "dist\$DistName\TEMseg.exe"
+
+if (-not (Test-Path $Exe)) {
+    throw "Build failed - $Exe not found"
 }
+
+$Size = (
+    Get-ChildItem -Recurse "dist\$DistName" |
+    Where-Object { -not $_.PSIsContainer } |
+    Measure-Object -Property Length -Sum
+).Sum / 1MB
+
+Write-Host ""
+Write-Host "========================================"
+Write-Host "  BUILD SUCCESSFUL"
+Write-Host "========================================"
+Write-Host ""
+Write-Host "  Output: $Exe"
+Write-Host ("  Size:   {0:N1} MB" -f $Size)
+Write-Host ""
+Write-Host "  Model weights download on first launch."
+Write-Host "========================================"
