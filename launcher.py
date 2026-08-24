@@ -242,7 +242,13 @@ def _verify_sha256(filepath: Path, expected: str) -> bool:
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
-    return h.hexdigest() == expected
+    actual = h.hexdigest()
+    if actual != expected:
+        log.warning(
+            "SHA256 mismatch for %s: expected %s, got %s",
+            filepath.name, expected, actual,
+        )
+    return actual == expected
 
 
 def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
