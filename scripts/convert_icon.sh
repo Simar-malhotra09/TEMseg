@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # convert_icon.sh: Convert a 1024x1024 PNG to .icns (macOS) and .ico (Windows)
 #
-# Usage: ./convert_icon.sh temseg_icon.png
+# Usage: ./convert_icon.sh assets/temseg_icon.png
 #
 # Requires: sips, iconutil (built into macOS); Pillow (uv run python)
 
 set -euo pipefail
 
-INPUT="${1:-temseg_icon.png}"
+INPUT="${1:-assets/temseg_icon.png}"
 ICNS_OUT="${INPUT%.png}.icns"
 ICO_OUT="${INPUT%.png}.ico"
 ICONSET="${INPUT%.png}.iconset"

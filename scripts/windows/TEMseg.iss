@@ -45,7 +45,7 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-SetupIconFile=..\..\temseg_icon.ico
+SetupIconFile=..\..\assets\temseg_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

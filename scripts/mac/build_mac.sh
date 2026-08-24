@@ -71,9 +71,11 @@ if [ ! -f "weight_manifest.json" ]; then
 fi
 echo "  Manifest found"
 
-if [ ! -f "temseg_icon.icns" ]; then
-    echo "WARNING: temseg_icon.icns not found - build will use default PyInstaller icon"
+if [ ! -f "assets/temseg_icon.icns" ]; then
+    echo "ERROR: assets/temseg_icon.icns not found - generate it via ./scripts/convert_icon.sh"
+    exit 1
 fi
+echo "  Icon found: assets/temseg_icon.icns"
 
 # -------------------------------------------
 # Step 2: Ensure PyInstaller is installed (cheap)

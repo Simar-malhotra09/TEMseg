@@ -30,7 +30,23 @@ IS_WIN = sys.platform == "win32"
 if IS_MAC:
     raise RuntimeError("temseg_cuda.spec is Windows-only. Use temseg.spec on macOS.")
 
-ICON_PATH = str(ROOT / "temseg_icon.ico") if IS_WIN else None
+ICON_PATH = str(ROOT / "assets" / "temseg_icon.ico") if IS_WIN else None
+
+_required_inputs = [
+    str(ROOT / "launcher.py"),
+    str(ROOT / "weight_manifest.json"),
+    str(ROOT / "rthook_hyperspy.py"),
+    str(ROOT / "frontend" / "out" / "index.html"),
+    str(ROOT / "backend" / "src"),
+]
+if ICON_PATH:
+    _required_inputs.append(ICON_PATH)
+_missing = [p for p in _required_inputs if not Path(p).exists()]
+if _missing:
+    print("[temseg_cuda.spec] FATAL. missing required input(s):", file=sys.stderr)
+    for p in _missing:
+        print(f"  - {p}", file=sys.stderr)
+    raise SystemExit(1)
 
 # Data files
 
