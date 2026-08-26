@@ -111,10 +111,12 @@ def _ensure_rsciio_plugins():
 
 def _extract_metadata(filepath: Path, filename: str) -> dict:
     """
-    Extract all available metadata from the uploaded file.
+    Extract metadata from the uploaded file.
     """
     fname = filename.lower()
     meta = {
+        "file_path": str(filepath),
+        "file_name": str(Path(filename).stem),
         "original_format": Path(filename).suffix.lstrip("."),
         "image_shape": None,
     }
@@ -371,6 +373,8 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         "filename": file.filename,
         "preview_url": preview_url,
         "image_info": {
+            "file_path": metadata.get("file_path"),
+            "file_name": metadata.get("file_name"),
             "image_shape": metadata.get("image_shape"),
             "original_format": metadata.get("original_format"),
             "pixel_size": metadata.get("pixel_size"),
