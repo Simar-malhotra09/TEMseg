@@ -8,7 +8,9 @@ type RequestActivityListener = () => void;
 let activeRequestCount = 0;
 const requestActivityListeners = new Set<RequestActivityListener>();
 
-export function subscribeToRequestActivity(listener: RequestActivityListener): () => void {
+export function subscribeToRequestActivity(
+  listener: RequestActivityListener,
+): () => void {
   requestActivityListeners.add(listener);
   return () => requestActivityListeners.delete(listener);
 }
@@ -17,7 +19,10 @@ export function getActiveRequestCount(): number {
   return activeRequestCount;
 }
 
-async function trackedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function trackedFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
   activeRequestCount += 1;
   requestActivityListeners.forEach((listener) => listener());
   try {
@@ -91,25 +96,31 @@ export interface StatsResult {
   shape_distribution: Record<string, { count: number; fraction: number }>;
 
   distribution_fits_diameter: {
-      reliable: boolean;
-      reason?: string;
-      best_model?: string;
-      fits?: Record<string, {
+    reliable: boolean;
+    reason?: string;
+    best_model?: string;
+    fits?: Record<
+      string,
+      {
         params: Record<string, number>;
         ks_statistic: number;
         ks_pvalue: number;
-      }>;
+      }
+    >;
   };
 
   distribution_fits_area: {
-      reliable: boolean;
-      reason?: string;
-      best_model?: string;
-      fits?: Record<string, {
+    reliable: boolean;
+    reason?: string;
+    best_model?: string;
+    fits?: Record<
+      string,
+      {
         params: Record<string, number>;
         ks_statistic: number;
         ks_pvalue: number;
-      }>;
+      }
+    >;
   };
 
   // per-particle
@@ -142,9 +153,15 @@ export interface ParticleStats {
 // the stats table and the refine-mode hover tooltip. Both derive their
 // column/field list from this instead of keeping their own copy.
 export const PARTICLE_METRIC_FIELDS = [
-  "diameter", "area", "circularity", "solidity", "aspect_ratio", "n_vertices", "shape",
+  "diameter",
+  "area",
+  "circularity",
+  "solidity",
+  "aspect_ratio",
+  "n_vertices",
+  "shape",
 ] as const;
-export type ParticleMetricField = typeof PARTICLE_METRIC_FIELDS[number];
+export type ParticleMetricField = (typeof PARTICLE_METRIC_FIELDS)[number];
 
 // mirrors the server's ShapeCondition/ShapeRule.
 // all values come from server's available_metrics/available_operators at runtime, so the client
@@ -168,16 +185,17 @@ export interface ShapeRulesConfig {
   available_operators: string[];
 }
 
-// best-effort parse since the body isn't guaranteed to be JSON. 
+// best-effort parse since the body isn't guaranteed to be JSON.
 async function shapeRulesErrorMessage(res: Response): Promise<string> {
   try {
     const body = await res.json();
     if (typeof body.detail === "string") return body.detail;
     if (Array.isArray(body.detail)) {
-      return body.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join("; ");
+      return body.detail
+        .map((d: { msg?: string }) => d.msg ?? JSON.stringify(d))
+        .join("; ");
     }
-  } catch {
-  }
+  } catch {}
   return `request failed: ${res.status}`;
 }
 
@@ -187,7 +205,9 @@ export async function getShapeRules(): Promise<ShapeRulesConfig> {
   return res.json();
 }
 
-export async function updateShapeRules(rules: ShapeRule[]): Promise<ShapeRulesConfig> {
+export async function updateShapeRules(
+  rules: ShapeRule[],
+): Promise<ShapeRulesConfig> {
   const res = await trackedFetch(`${BASE_URL}/config/shape-rules`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -198,12 +218,16 @@ export async function updateShapeRules(rules: ShapeRule[]): Promise<ShapeRulesCo
 }
 
 export async function resetShapeRules(): Promise<ShapeRulesConfig> {
-  const res = await trackedFetch(`${BASE_URL}/config/shape-rules/reset`, { method: "POST" });
+  const res = await trackedFetch(`${BASE_URL}/config/shape-rules/reset`, {
+    method: "POST",
+  });
   if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
   return res.json();
 }
 
 export interface Metadata {
+  file_path: string;
+  file_name: string;
   image_shape?: number[];
   original_format?: string;
   pixel_size: number | string | null;
@@ -249,10 +273,12 @@ export interface Instance {
   seed?: [number, number];
 }
 
-
 /** True when running inside the PyWebView desktop window */
 export function isPyWebView(): boolean {
-  return typeof window !== "undefined" && !!(window as any).pywebview?.api?.export_zip;
+  return (
+    typeof window !== "undefined" &&
+    !!(window as any).pywebview?.api?.export_zip
+  );
 }
 
 /**
@@ -261,11 +287,10 @@ export function isPyWebView(): boolean {
  */
 export async function exportViaPyWebView(
   sessionId: string,
-  items: string[]
+  items: string[],
 ): Promise<{ success: boolean; path?: string; error?: string }> {
   return (window as any).pywebview.api.export_zip(sessionId, items);
 }
-
 
 export async function getModels(): Promise<string[]> {
   const res = await trackedFetch(`${BASE_URL}/models`);
@@ -343,11 +368,14 @@ export async function proposeSimilar(
   // seed-finding algorithm; omit to use the backend default (currently NCC).
   const body: Record<string, unknown> = {};
   if (method) body.method = method;
-  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/propose-similar`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const res = await trackedFetch(
+    `${BASE_URL}/masks/${sessionId}/propose-similar`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`proposeSimilar failed (${res.status}): ${err}`);
@@ -402,7 +430,7 @@ export async function fromPoints(
   return res.json();
 }
 
-export async function uploadImage(file: File):Promise<UploadResponse> {
+export async function uploadImage(file: File): Promise<UploadResponse> {
   console.log("[uploadImage] uploading:", file.name);
 
   const form = new FormData();
@@ -418,7 +446,7 @@ export async function uploadImage(file: File):Promise<UploadResponse> {
     throw new Error("Upload failed");
   }
 
-  const data = await res.json(); 
+  const data = await res.json();
   console.log("[uploadImage] success:", data);
 
   return data;
@@ -430,11 +458,16 @@ export async function segmentImage(
   regions: Box[],
   blackout: boolean = false,
   inverseBlackout: boolean = false,
-  colorize: boolean= true
-) : Promise<SegmentResponse> {
-
-  console.log("Calling [segmentImage]", sessionId, model, blackout, inverseBlackout, regions);
-  
+  colorize: boolean = true,
+): Promise<SegmentResponse> {
+  console.log(
+    "Calling [segmentImage]",
+    sessionId,
+    model,
+    blackout,
+    inverseBlackout,
+    regions,
+  );
 
   const res = await trackedFetch(`${BASE_URL}/segment/`, {
     method: "POST",
@@ -444,35 +477,33 @@ export async function segmentImage(
       model: model,
       blackout: blackout,
       inverse_blackout: inverseBlackout,
-      regions: regions ,
+      regions: regions,
       colorize: colorize,
-    })
+    }),
   });
 
-  if (!res.ok){
+  if (!res.ok) {
     console.error("[segmentImage] failed:", res.status);
     throw new Error("Segmentation failed");
-  } 
-  const data= await res.json()
+  }
+  const data = await res.json();
   console.log("[segmentImage] success:", data);
   return data;
 }
 
-
-
-export async function uploadGroundTruth(
-  sessionId: string, 
-  file: File,
-) {
+export async function uploadGroundTruth(sessionId: string, file: File) {
   const form = new FormData();
   form.append("file", file);
-  const res = await trackedFetch(`${BASE_URL}/gt/${sessionId}`, { method: "POST", body: form });
+  const res = await trackedFetch(`${BASE_URL}/gt/${sessionId}`, {
+    method: "POST",
+    body: form,
+  });
   if (!res.ok) throw new Error("GT upload failed");
   return res.json();
 }
 
 export async function computeGTScore(
-  sessionId: string, 
+  sessionId: string,
   regions: BlackoutRect[],
   blackout: boolean = false,
   inverseBlackout: boolean = false,
@@ -482,18 +513,19 @@ export async function computeGTScore(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       session_id: sessionId,
-      regions: regions, 
-      blackout: blackout, 
-      inverse_blackout: inverseBlackout
+      regions: regions,
+      blackout: blackout,
+      inverse_blackout: inverseBlackout,
     }),
   });
   if (!res.ok) throw new Error("GT compute failed");
-  return res.json(); 
+  return res.json();
 }
 
-
 export async function getInstances(sessionId: string) {
-  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instances`, { method: "POST" });
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instances`, {
+    method: "POST",
+  });
   if (!res.ok) throw new Error("Failed to get instances");
   return res.json();
 }
@@ -511,7 +543,7 @@ export async function saveInstances(sessionId: string, instances: Instance[]) {
 export async function splitInstances(
   sessionId: string,
   instanceId: number,
-  points: [number, number][]
+  points: [number, number][],
 ): Promise<{ instances: Instance[] }> {
   const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/split`, {
     method: "POST",
@@ -537,7 +569,11 @@ export async function rfPropose(
   const res = await trackedFetch(`${BASE_URL}/rf/propose`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId, top_n: topN, bg_scribbles: bgScribbles }),
+    body: JSON.stringify({
+      session_id: sessionId,
+      top_n: topN,
+      bg_scribbles: bgScribbles,
+    }),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -548,7 +584,7 @@ export async function rfPropose(
 
 export async function exportSession(
   sessionId: string,
-  items: string[]
+  items: string[],
 ): Promise<Blob> {
   const res = await trackedFetch(`${BASE_URL}/export/${sessionId}`, {
     method: "POST",
@@ -561,11 +597,11 @@ export async function exportSession(
 
 export async function exportHistogramCsv(
   sessionId: string,
-  metric: "diameter" | "area" = "diameter"
+  metric: "diameter" | "area" = "diameter",
 ): Promise<Blob> {
   const res = await trackedFetch(
     `${BASE_URL}/export/${sessionId}/hist_csv?metric=${metric}`,
-    { method: "POST" }
+    { method: "POST" },
   );
   if (!res.ok) throw new Error("Histogram CSV export failed");
   return res.blob();
