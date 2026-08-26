@@ -1,59 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X, Ruler, Settings } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  Pencil,
+  Check,
+  X,
+  Ruler,
+  Settings,
+} from "lucide-react";
 import styles from "./StatsPanel.module.css";
-import type { StatsResult } from "@/lib/api";
+import type { StatsResult, Metadata } from "@/lib/api";
 import { updatePixelSize } from "@/lib/api";
 import ShapeRulesModal from "./ShapeRulesModal";
-interface Particle {
-  area_px: number;
-  area_real?: number;
-  perimeter_px: number;
-  perimeter_real?: number;
-  diameter_px: number;
-  diameter_real?: number;
-  major_axis_px: number;
-  major_axis_real?: number;
-  minor_axis_px: number;
-  minor_axis_real?: number;
-  circularity: number;
-  aspect_ratio: number;
-  shape: string;
-}
-
-interface SizeStats {
-  area_mean: number;
-  area_std: number;
-  area_min: number;
-  area_max: number;
-  area_median: number;
-  diameter_mean: number;
-  diameter_std: number;
-  diameter_min: number;
-  diameter_max: number;
-  diameter_median: number;
-  unit: string;
-}
-
-interface ShapeEntry {
-  count: number;
-  fraction: number;
-}
-
 
 interface GTScores {
   iou: number;
   dice: number;
   pixel_acc: number;
-}
-
-interface Metadata {
-  image_shape?: number[];
-  original_format?: string;
-  pixel_size: number | string | null;
-  pixel_unit?: string | null;
-  axes?: { scale: number; size: number; units: string }[];
 }
 
 interface Props {
@@ -76,8 +42,26 @@ function fmt(val: number, decimals = 3): string {
   return val.toFixed(decimals);
 }
 
+/** Format the image source as "<parent-dir>/<filename-without-ext>". */
+function formatSource(filePath?: string, fileName?: string): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  const parent = parts.length > 1 ? parts[parts.length - 2] : null;
+  const last = parts.length ? parts[parts.length - 1] : "";
+  const stem = (fileName && fileName.trim()) || last.replace(/\.[^.]*$/, "");
+  if (parent && stem) return `${parent}/${stem}`;
+  return stem || normalized;
+}
+
 /** Tiny inline histogram using divs */
-function MiniHistogram({ values, bins = 12 }: { values: number[]; bins?: number }) {
+function MiniHistogram({
+  values,
+  bins = 12,
+}: {
+  values: number[];
+  bins?: number;
+}) {
   if (values.length === 0) return null;
 
   const min = Math.min(...values);
@@ -107,7 +91,15 @@ function MiniHistogram({ values, bins = 12 }: { values: number[]; bins?: number 
 }
 
 /** Shape distribution bar */
-function ShapeBar({ label, fraction, count }: { label: string; fraction: number; count: number }) {
+function ShapeBar({
+  label,
+  fraction,
+  count,
+}: {
+  label: string;
+  fraction: number;
+  count: number;
+}) {
   const colors: Record<string, string> = {
     circular: "#7ee8a2",
     elongated: "#e8c87e",
@@ -161,6 +153,7 @@ export default function StatsPanel({
     }
   }, [scaleBarPixels, metadata?.pixel_unit]);
 
+  const imageSource = formatSource(metadata?.file_path, metadata?.file_name);
   const unit = stats?.unit ?? "px";
   const hasScale = stats?.has_scale ?? false;
   const pixelSize = metadata?.pixel_size;
@@ -187,9 +180,16 @@ export default function StatsPanel({
     if (Number.isNaN(val) || val <= 0) return;
     setPixelBusy(true);
     try {
-      const result = await updatePixelSize(sessionId, val, editUnit.trim() || "nm");
+      const result = await updatePixelSize(
+        sessionId,
+        val,
+        editUnit.trim() || "nm",
+      );
       if (result.metadata) {
-        onMetadataUpdate?.(result.metadata as Metadata, result.stats as StatsResult | undefined);
+        onMetadataUpdate?.(
+          result.metadata as Metadata,
+          result.stats as StatsResult | undefined,
+        );
       }
       setEditingPixel(false);
     } catch (e) {
@@ -206,9 +206,16 @@ export default function StatsPanel({
     const pixelSize = length / scaleBarPixels;
     setPixelBusy(true);
     try {
-      const result = await updatePixelSize(sessionId, pixelSize, sbUnit.trim() || "nm");
+      const result = await updatePixelSize(
+        sessionId,
+        pixelSize,
+        sbUnit.trim() || "nm",
+      );
       if (result.metadata) {
-        onMetadataUpdate?.(result.metadata as Metadata, result.stats as StatsResult | undefined);
+        onMetadataUpdate?.(
+          result.metadata as Metadata,
+          result.stats as StatsResult | undefined,
+        );
       }
       onScaleBarCancel?.();
     } catch (e) {
@@ -219,7 +226,6 @@ export default function StatsPanel({
   }
   return (
     <div className={styles.panel}>
-
       {/* Image Info */}
       <section className={styles.section}>
         <p className={styles.sectionLabel}>Image Info</p>
@@ -233,6 +239,20 @@ export default function StatsPanel({
                 <span className={styles.val}>{sessionId}</span>
               </div>
             )}
+            {imageSource && (
+              <div className={styles.row}>
+                <span className={styles.label}>Source</span>
+                <span className={styles.val}>{imageSource}</span>
+              </div>
+            )}
+            {metadata?.original_format && (
+              <div className={styles.row}>
+                <span className={styles.label}>Format</span>
+                <span className={styles.val}>
+                  {metadata.original_format.toUpperCase()}
+                </span>
+              </div>
+            )}
             {metadata?.image_shape && (
               <div className={styles.row}>
                 <span className={styles.label}>Dimensions</span>
@@ -241,17 +261,14 @@ export default function StatsPanel({
                 </span>
               </div>
             )}
-            {metadata?.original_format && (
-              <div className={styles.row}>
-                <span className={styles.label}>Format</span>
-                <span className={styles.val}>{metadata.original_format.toUpperCase()}</span>
-              </div>
-            )}
             {metadata?.pixel_size != null && (
               <div className={styles.row}>
                 <span className={styles.label}>Pixel Size</span>
                 {!editingPixel ? (
-                  <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    className={styles.val}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
                     {pixelSize == null || pixelSize === "-"
                       ? "Not Found"
                       : typeof pixelSize === "number"
@@ -272,14 +289,20 @@ export default function StatsPanel({
                     )}
                   </span>
                 ) : (
-                  <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <span
+                    className={styles.val}
+                    style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  >
                     <input
                       type="number"
                       step="any"
                       min="0"
                       value={editSize}
-                      onChange={e => setEditSize(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+                      onChange={(e) => setEditSize(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEdit();
+                        if (e.key === "Escape") cancelEdit();
+                      }}
                       className={styles.pixelInput}
                       placeholder="0.00"
                       autoFocus
@@ -287,43 +310,79 @@ export default function StatsPanel({
                     <input
                       type="text"
                       value={editUnit}
-                      onChange={e => setEditUnit(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+                      onChange={(e) => setEditUnit(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveEdit();
+                        if (e.key === "Escape") cancelEdit();
+                      }}
                       className={styles.pixelUnitInput}
                       placeholder="nm"
                     />
-                    <button type="button" className={styles.iconBtn} onClick={saveEdit} disabled={pixelBusy} title="Save">
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={saveEdit}
+                      disabled={pixelBusy}
+                      title="Save"
+                    >
                       <Check size={10} />
                     </button>
-                    <button type="button" className={styles.iconBtn} onClick={cancelEdit} disabled={pixelBusy} title="Cancel">
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={cancelEdit}
+                      disabled={pixelBusy}
+                      title="Cancel"
+                    >
                       <X size={10} />
                     </button>
                   </span>
                 )}
               </div>
             )}
-            {metadata?.axes && metadata.axes.length > 0 && metadata.axes[0]?.units && (
-              <div className={styles.row}>
-                <span className={styles.label}>FOV</span>
-                <span className={styles.val}>
-                  {(metadata.axes[0].scale * metadata.axes[0].size).toFixed(1)} {metadata.axes[0].units}
-                </span>
-              </div>
-            )}
+            {metadata?.axes &&
+              metadata.axes.length > 0 &&
+              metadata.axes[0]?.units && (
+                <div className={styles.row}>
+                  <span className={styles.label}>FOV</span>
+                  <span className={styles.val}>
+                    {(metadata.axes[0].scale * metadata.axes[0].size).toFixed(
+                      1,
+                    )}{" "}
+                    {metadata.axes[0].units}
+                  </span>
+                </div>
+              )}
 
             {/* Scale bar calibration  */}
             {scaleBarPixels == null && (
               <div className={styles.row}>
-                <span className={styles.label} style={{ color: scaleBarMode ? "#7ee8a2" : undefined }}>
+                <span
+                  className={styles.label}
+                  style={{ color: scaleBarMode ? "#7ee8a2" : undefined }}
+                >
                   {scaleBarMode ? "Draw line →" : "Scale Bar"}
                 </span>
-                <span className={styles.val} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <span
+                  className={styles.val}
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                >
                   {scaleBarMode ? (
-                    <button type="button" className={styles.iconBtn} onClick={onScaleBarCancel} title="Cancel">
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={onScaleBarCancel}
+                      title="Cancel"
+                    >
                       <X size={10} />
                     </button>
                   ) : (
-                    <button type="button" className={styles.iconBtn} onClick={onToggleScaleBar} title="Measure pixel size from scale bar">
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      onClick={onToggleScaleBar}
+                      title="Measure pixel size from scale bar"
+                    >
                       <Ruler size={10} />
                     </button>
                   )}
@@ -331,7 +390,14 @@ export default function StatsPanel({
               </div>
             )}
             {scaleBarPixels != null && (
-              <div className={styles.row} style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+              <div
+                className={styles.row}
+                style={{
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  gap: 4,
+                }}
+              >
                 <span className={styles.label} style={{ color: "#7ee8a2" }}>
                   {scaleBarPixels.toFixed(1)} px — enter length:
                 </span>
@@ -341,8 +407,11 @@ export default function StatsPanel({
                     step="any"
                     min="0"
                     value={sbLength}
-                    onChange={e => setSbLength(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") confirmScaleBar(); if (e.key === "Escape") onScaleBarCancel?.(); }}
+                    onChange={(e) => setSbLength(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") confirmScaleBar();
+                      if (e.key === "Escape") onScaleBarCancel?.();
+                    }}
                     className={styles.pixelInput}
                     placeholder="0.00"
                     autoFocus
@@ -350,15 +419,30 @@ export default function StatsPanel({
                   <input
                     type="text"
                     value={sbUnit}
-                    onChange={e => setSbUnit(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") confirmScaleBar(); if (e.key === "Escape") onScaleBarCancel?.(); }}
+                    onChange={(e) => setSbUnit(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") confirmScaleBar();
+                      if (e.key === "Escape") onScaleBarCancel?.();
+                    }}
                     className={styles.pixelUnitInput}
                     placeholder="nm"
                   />
-                  <button type="button" className={styles.iconBtn} onClick={confirmScaleBar} disabled={pixelBusy} title="Confirm">
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    onClick={confirmScaleBar}
+                    disabled={pixelBusy}
+                    title="Confirm"
+                  >
                     <Check size={10} />
                   </button>
-                  <button type="button" className={styles.iconBtn} onClick={onScaleBarCancel} disabled={pixelBusy} title="Cancel">
+                  <button
+                    type="button"
+                    className={styles.iconBtn}
+                    onClick={onScaleBarCancel}
+                    disabled={pixelBusy}
+                    title="Cancel"
+                  >
                     <X size={10} />
                   </button>
                 </span>
@@ -372,7 +456,12 @@ export default function StatsPanel({
       <section className={styles.section}>
         <div className={styles.row}>
           <span className={styles.label}>Shape Rules</span>
-          <button type="button" className={styles.detailsBtn} style={{ marginTop: 0, width: "auto", padding: "4px 10px" }} onClick={() => setShapeRulesOpen(true)}>
+          <button
+            type="button"
+            className={styles.detailsBtn}
+            style={{ marginTop: 0, width: "auto", padding: "4px 10px" }}
+            onClick={() => setShapeRulesOpen(true)}
+          >
             Edit
           </button>
         </div>
@@ -382,7 +471,9 @@ export default function StatsPanel({
       <section className={styles.section}>
         <p className={styles.sectionLabel}>Stats</p>
         {!segDone ? (
-          <p className={styles.hint}>Run segmentation to see particle statistics.</p>
+          <p className={styles.hint}>
+            Run segmentation to see particle statistics.
+          </p>
         ) : stats ? (
           <div className={styles.grid}>
             {stats.particle_count > 200 && (
@@ -397,7 +488,9 @@ export default function StatsPanel({
             </div>
             <div className={styles.row}>
               <span className={styles.label}>Coverage</span>
-              <span className={styles.val}>{(stats.coverage * 100).toFixed(1)}%</span>
+              <span className={styles.val}>
+                {(stats.coverage * 100).toFixed(1)}%
+              </span>
             </div>
             <div className={styles.row}>
               <span className={styles.label}>Avg Diameter</span>
@@ -428,8 +521,11 @@ export default function StatsPanel({
             {groundTruthScore && (
               <>
                 <div className={styles.divider} />
-                {(["IoU", "Dice", "Pixel Acc"] as const).map(lbl => {
-                  const key = lbl === "Pixel Acc" ? "pixel_acc" : lbl.toLowerCase() as "iou" | "dice";
+                {(["IoU", "Dice", "Pixel Acc"] as const).map((lbl) => {
+                  const key =
+                    lbl === "Pixel Acc"
+                      ? "pixel_acc"
+                      : (lbl.toLowerCase() as "iou" | "dice");
                   return (
                     <div className={styles.row} key={lbl}>
                       <span className={styles.label}>{lbl}</span>
@@ -442,11 +538,18 @@ export default function StatsPanel({
               </>
             )}
 
-            {segDone && stats && stats.particles?.length > 0 && onViewDetails && (
-              <button type="button" className={styles.detailsBtn} onClick={onViewDetails}>
-                View Details →
-              </button>
-            )}
+            {segDone &&
+              stats &&
+              stats.particles?.length > 0 &&
+              onViewDetails && (
+                <button
+                  type="button"
+                  className={styles.detailsBtn}
+                  onClick={onViewDetails}
+                >
+                  View Details →
+                </button>
+              )}
           </div>
         ) : (
           <p className={styles.hint}>—</p>
@@ -456,9 +559,10 @@ export default function StatsPanel({
       {/* Size Distribution */}
       {segDone && stats && stats.particles.length > 0 && (
         <section className={styles.section}>
-          <button type="button"
+          <button
+            type="button"
             className={styles.collapseBtn}
-            onClick={() => setSizeOpen(o => !o)}
+            onClick={() => setSizeOpen((o) => !o)}
           >
             {sizeOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <span className={styles.sectionLabel} style={{ margin: 0 }}>
@@ -468,8 +572,10 @@ export default function StatsPanel({
           {sizeOpen && (
             <>
               <MiniHistogram
-                values={stats.particles.map((p:any) =>
-                  hasScale && p.diameter_real != null ? p.diameter_real : p.diameter_px
+                values={stats.particles.map((p: any) =>
+                  hasScale && p.diameter_real != null
+                    ? p.diameter_real
+                    : p.diameter_px,
                 )}
               />
               <p className={styles.histLabel}>
@@ -479,17 +585,21 @@ export default function StatsPanel({
                 <div className={styles.row}>
                   <span className={styles.label}>Mean ± Std</span>
                   <span className={styles.val}>
-                    {fmt(stats.size_stats.diameter_mean)} ± {fmt(stats.size_stats.diameter_std)}
+                    {fmt(stats.size_stats.diameter_mean)} ±{" "}
+                    {fmt(stats.size_stats.diameter_std)}
                   </span>
                 </div>
                 <div className={styles.row}>
                   <span className={styles.label}>Median</span>
-                  <span className={styles.val}>{fmt(stats.size_stats.diameter_median)}</span>
+                  <span className={styles.val}>
+                    {fmt(stats.size_stats.diameter_median)}
+                  </span>
                 </div>
                 <div className={styles.row}>
                   <span className={styles.label}>Range</span>
                   <span className={styles.val}>
-                    {fmt(stats.size_stats.diameter_min)} – {fmt(stats.size_stats.diameter_max)}
+                    {fmt(stats.size_stats.diameter_min)} –{" "}
+                    {fmt(stats.size_stats.diameter_max)}
                   </span>
                 </div>
               </div>
@@ -501,36 +611,57 @@ export default function StatsPanel({
       {/*  Shape Distribution  */}
       {segDone && stats && Object.keys(stats.shape_distribution).length > 0 && (
         <section className={styles.section}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <button type="button"
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <button
+              type="button"
               className={styles.collapseBtn}
-              onClick={() => setShapeOpen(o => !o)}
+              onClick={() => setShapeOpen((o) => !o)}
             >
-              {shapeOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {shapeOpen ? (
+                <ChevronDown size={12} />
+              ) : (
+                <ChevronRight size={12} />
+              )}
               <span className={styles.sectionLabel} style={{ margin: 0 }}>
                 Shape Distribution
               </span>
             </button>
-            <button type="button" className={styles.iconBtn} onClick={() => setShapeRulesOpen(true)} title="Edit shape rules">
+            <button
+              type="button"
+              className={styles.iconBtn}
+              onClick={() => setShapeRulesOpen(true)}
+              title="Edit shape rules"
+            >
               <Settings size={12} />
             </button>
           </div>
           {shapeOpen && (
             <div className={styles.shapeGrid}>
-            {Object.entries(stats.shape_distribution).map(([shape, data]: [string, any]) => (
-                <ShapeBar
-                  key={shape}
-                  label={shape}
-                  fraction={data.fraction}
-                  count={data.count}
-                />
-              ))}
+              {Object.entries(stats.shape_distribution).map(
+                ([shape, data]: [string, any]) => (
+                  <ShapeBar
+                    key={shape}
+                    label={shape}
+                    fraction={data.fraction}
+                    count={data.count}
+                  />
+                ),
+              )}
             </div>
           )}
         </section>
       )}
 
-      <ShapeRulesModal open={shapeRulesOpen} onClose={() => setShapeRulesOpen(false)} />
+      <ShapeRulesModal
+        open={shapeRulesOpen}
+        onClose={() => setShapeRulesOpen(false)}
+      />
     </div>
   );
 }
