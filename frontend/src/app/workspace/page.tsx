@@ -255,6 +255,7 @@ export default function Workspace() {
   const [angleMeasurements, setAngleMeasurements] = useState<
     { a: { x: number; y: number }; b: { x: number; y: number }; c: { x: number; y: number } }[]
   >([]);
+  const [angleCursor, setAngleCursor] = useState<{ x: number; y: number } | null>(null);
 
   const analysisMode = measureMode || angleMode;
 
@@ -391,6 +392,7 @@ export default function Workspace() {
     setAngleMode(false);
     setAnglePoints([]);
     setAngleMeasurements([]);
+    setAngleCursor(null);
     try {
       const result = await uploadImage(file);
       if (result.error) {
@@ -799,6 +801,7 @@ export default function Workspace() {
       setActiveMeasureVertex(null);
       setAngleMode(false);
       setAnglePoints([]);
+      setAngleCursor(null);
       setScaleBarMode(true);
       setScaleBarPixels(null);
       setScaleBarLineSvg(null);
@@ -850,6 +853,7 @@ export default function Workspace() {
     setAngleMode(false);
     setAnglePoints([]);
     setAngleMeasurements([]);
+    setAngleCursor(null);
     setMeasureVertices([]);
     setMeasureEdges([]);
     setActiveMeasureVertex(null);
@@ -999,17 +1003,20 @@ export default function Workspace() {
     setLastMeasureVertex(null);
     setAnglePoints([]);
     setAngleMeasurements([]);
+    setAngleCursor(null);
     setAngleMode(true);
   }
 
   function cancelAngle() {
     setAngleMode(false);
     setAnglePoints([]);
+    setAngleCursor(null);
   }
 
   function clearAngleMeasurements() {
     setAnglePoints([]);
     setAngleMeasurements([]);
+    setAngleCursor(null);
   }
 
   function handleAngleClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -1022,9 +1029,22 @@ export default function Workspace() {
       const [a, b, c] = next;
       setAngleMeasurements(prev => [...prev, { a, b, c }]);
       setAnglePoints([]);
+      setAngleCursor(null);
     } else {
       setAnglePoints(next);
     }
+  }
+
+  function handleAngleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    setAngleCursor({ x: imgX, y: imgY });
+  }
+
+  function handleAngleMouseLeave() {
+    setAngleCursor(null);
   }
 
   function handleAngleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
@@ -1097,6 +1117,43 @@ export default function Workspace() {
     return { deg, startAngle, diff };
   }
 
+  function angleArcGeometry(
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    c: { x: number; y: number },
+  ) {
+    const { deg, startAngle, diff } = angleMetrics(a, b, c);
+
+    // Scale the arc with the triangle, but never larger than the original
+    // fixed size — we only scale downward.
+    const defaultArcR = measureFontSize * 2.2;
+    const maxDist = Math.max(
+      Math.hypot(a.x - b.x, a.y - b.y),
+      Math.hypot(b.x - c.x, b.y - c.y),
+      Math.hypot(a.x - c.x, a.y - c.y),
+    );
+    const arcR = Math.max(
+      measureFontSize * 0.5,
+      Math.min(defaultArcR, maxDist * 0.35),
+    );
+
+    const steps = 24;
+    let d = "";
+    for (let s = 0; s <= steps; s++) {
+      const t = startAngle + (diff * s) / steps;
+      const x = b.x + arcR * Math.cos(t);
+      const y = b.y + arcR * Math.sin(t);
+      d += `${s === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)} `;
+    }
+
+    const midAngle = startAngle + diff / 2;
+    const labelR = Math.max(arcR + measureFontSize, measureFontSize * 2);
+    const lx = b.x + labelR * Math.cos(midAngle);
+    const ly = b.y + labelR * Math.sin(midAngle);
+
+    return { deg, arcR, d, lx, ly };
+  }
+
   // track which regions are to be used
   const activeRegions = seg.isInvBlackoutMode
     ? seg.invBlackoutRegions
@@ -1118,6 +1175,7 @@ export default function Workspace() {
     setActiveMeasureVertex(null);
     setAngleMode(false);
     setAnglePoints([]);
+    setAngleCursor(null);
     seg.setIsBlackoutMode(false);
     setActiveTab(next);
   }
@@ -2129,40 +2187,48 @@ export default function Workspace() {
                       />
                     ))}
 
+                    {/* live preview of the third point */}
+                    {angleMode && anglePoints.length === 2 && angleCursor && (() => {
+                      const a = anglePoints[0];
+                      const b = anglePoints[1];
+                      const c = angleCursor;
+                      const g = angleArcGeometry(a, b, c);
+                      return (
+                        <g opacity={0.8}>
+                          <line
+                            x1={b.x} y1={b.y} x2={a.x} y2={a.y}
+                            stroke="#5ad1ff"
+                            strokeWidth={measureStroke}
+                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                          />
+                          <line
+                            x1={b.x} y1={b.y} x2={c.x} y2={c.y}
+                            stroke="#5ad1ff"
+                            strokeWidth={measureStroke}
+                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                          />
+                          <path d={g.d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
+                          <text
+                            x={g.lx}
+                            y={g.ly}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill="#5ad1ff"
+                            stroke="#0d0d0d"
+                            strokeWidth={measureTextStroke}
+                            paintOrder="stroke"
+                            fontSize={measureFontSize}
+                            fontFamily="monospace"
+                          >
+                            {g.deg.toFixed(1)}°
+                          </text>
+                        </g>
+                      );
+                    })()}
+
                     {angleMeasurements.map((m, i) => {
                       const { a, b, c } = m;
-                      const { deg, startAngle, diff } = angleMetrics(a, b, c);
-
-                      // Scale the arc with the triangle, but never larger than
-                      // the original fixed size — we only scale downward.
-                      const defaultArcR = measureFontSize * 2.2;
-                      const maxDist = Math.max(
-                        Math.hypot(a.x - b.x, a.y - b.y),
-                        Math.hypot(b.x - c.x, b.y - c.y),
-                        Math.hypot(a.x - c.x, a.y - c.y),
-                      );
-                      const arcR = Math.max(
-                        measureFontSize * 0.5,
-                        Math.min(defaultArcR, maxDist * 0.35),
-                      );
-                      const steps = 24;
-                      let d = "";
-                      for (let s = 0; s <= steps; s++) {
-                        const t = startAngle + (diff * s) / steps;
-                        const x = b.x + arcR * Math.cos(t);
-                        const y = b.y + arcR * Math.sin(t);
-                        d += `${s === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)} `;
-                      }
-
-                      const midAngle = startAngle + diff / 2;
-                      // Keep the label clear of the vertex/arms even when the
-                      // arc shrinks for a tight triplet.
-                      const labelR = Math.max(
-                        arcR + measureFontSize,
-                        measureFontSize * 2,
-                      );
-                      const lx = b.x + labelR * Math.cos(midAngle);
-                      const ly = b.y + labelR * Math.sin(midAngle);
+                      const g = angleArcGeometry(a, b, c);
 
                       return (
                         <g key={`am-${i}`}>
@@ -2181,10 +2247,10 @@ export default function Workspace() {
                           <circle cx={a.x} cy={a.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
                           <circle cx={b.x} cy={b.y} r={measureMarkerR} fill="#0d0d0d" stroke="#5ad1ff" strokeWidth={measureStroke} />
                           <circle cx={c.x} cy={c.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
-                          <path d={d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
+                          <path d={g.d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
                           <text
-                            x={lx}
-                            y={ly}
+                            x={g.lx}
+                            y={g.ly}
                             textAnchor="middle"
                             dominantBaseline="central"
                             fill="#5ad1ff"
@@ -2194,7 +2260,7 @@ export default function Workspace() {
                             fontSize={measureFontSize}
                             fontFamily="monospace"
                           >
-                            {deg.toFixed(1)}°
+                            {g.deg.toFixed(1)}°
                           </text>
                         </g>
                       );
@@ -2207,6 +2273,8 @@ export default function Workspace() {
                   <div
                     onClick={handleAngleClick}
                     onContextMenu={handleAngleContextMenu}
+                    onMouseMove={handleAngleMouseMove}
+                    onMouseLeave={handleAngleMouseLeave}
                     style={{
                       position: "absolute", top: 0, left: 0,
                       width: "100%", height: "100%",
