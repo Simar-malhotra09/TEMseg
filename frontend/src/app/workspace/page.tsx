@@ -76,6 +76,25 @@ function AsciiWaterfall({ active }: { active: boolean }) {
   );
 }
 
+/** Distance from a point to a line segment (used for edge hit-testing). */
+function distanceToSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
 export default function Workspace() {
 
   // models
@@ -904,6 +923,63 @@ export default function Workspace() {
     setLastMeasureVertex(newIdx);
   }
 
+  function deleteMeasureVertex(del: number) {
+    setMeasureVertices(prev => prev.filter((_, i) => i !== del));
+    setMeasureEdges(prev =>
+      prev
+        .filter(e => e.a !== del && e.b !== del)
+        .map(e => ({
+          a: e.a > del ? e.a - 1 : e.a,
+          b: e.b > del ? e.b - 1 : e.b,
+        })),
+    );
+    setActiveMeasureVertex(prev =>
+      prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
+    );
+    setLastMeasureVertex(prev =>
+      prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
+    );
+  }
+
+  function handleMeasureContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+
+    // Vertex hit-test takes priority over edge hit-test.
+    let hitIdx: number | null = null;
+    let hitDist = Infinity;
+    measureVertices.forEach((v, i) => {
+      const d = Math.hypot(imgX - v.x, imgY - v.y);
+      if (d < hitDist) {
+        hitDist = d;
+        hitIdx = i;
+      }
+    });
+    if (hitIdx !== null && hitDist <= measureHitR) {
+      deleteMeasureVertex(hitIdx);
+      return;
+    }
+
+    let edgeIdx: number | null = null;
+    let edgeDist = Infinity;
+    measureEdges.forEach((edge, i) => {
+      const p = measureVertices[edge.a];
+      const q = measureVertices[edge.b];
+      if (!p || !q) return;
+      const d = distanceToSegment(imgX, imgY, p.x, p.y, q.x, q.y);
+      if (d < edgeDist) {
+        edgeDist = d;
+        edgeIdx = i;
+      }
+    });
+    if (edgeIdx !== null && edgeDist <= measureHitR) {
+      setMeasureEdges(prev => prev.filter((_, i) => i !== edgeIdx));
+    }
+  }
+
   function formatMeasureLabel(px: number): string {
     const ps = metadata?.pixel_size;
     if (typeof ps === "number" && ps > 0) {
@@ -944,6 +1020,56 @@ export default function Workspace() {
       setAnglePoints([]);
     } else {
       setAnglePoints(next);
+    }
+  }
+
+  function handleAngleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+
+    // In-progress points: right-click removes the point.
+    let pointIdx: number | null = null;
+    let pointDist = Infinity;
+    anglePoints.forEach((p, i) => {
+      const d = Math.hypot(imgX - p.x, imgY - p.y);
+      if (d < pointDist) {
+        pointDist = d;
+        pointIdx = i;
+      }
+    });
+    if (pointIdx !== null && pointDist <= measureHitR) {
+      setAnglePoints(prev => prev.filter((_, i) => i !== pointIdx));
+      return;
+    }
+
+    // Committed angles: right-clicking any of their points or arms deletes
+    // the whole angle measurement.
+    let angleIdx: number | null = null;
+    let angleDist = Infinity;
+    angleMeasurements.forEach((m, i) => {
+      [m.a, m.b, m.c].forEach(p => {
+        const d = Math.hypot(imgX - p.x, imgY - p.y);
+        if (d < angleDist) {
+          angleDist = d;
+          angleIdx = i;
+        }
+      });
+      const d1 = distanceToSegment(imgX, imgY, m.b.x, m.b.y, m.a.x, m.a.y);
+      if (d1 < angleDist) {
+        angleDist = d1;
+        angleIdx = i;
+      }
+      const d2 = distanceToSegment(imgX, imgY, m.b.x, m.b.y, m.c.x, m.c.y);
+      if (d2 < angleDist) {
+        angleDist = d2;
+        angleIdx = i;
+      }
+    });
+    if (angleIdx !== null && angleDist <= measureHitR) {
+      setAngleMeasurements(prev => prev.filter((_, i) => i !== angleIdx));
     }
   }
 
@@ -1963,6 +2089,7 @@ export default function Workspace() {
                 {measureMode && imgSize.width > 0 && (
                   <div
                     onClick={handleMeasureClick}
+                    onContextMenu={handleMeasureContextMenu}
                     style={{
                       position: "absolute", top: 0, left: 0,
                       width: "100%", height: "100%",
@@ -2075,6 +2202,7 @@ export default function Workspace() {
                 {angleMode && imgSize.width > 0 && (
                   <div
                     onClick={handleAngleClick}
+                    onContextMenu={handleAngleContextMenu}
                     style={{
                       position: "absolute", top: 0, left: 0,
                       width: "100%", height: "100%",
