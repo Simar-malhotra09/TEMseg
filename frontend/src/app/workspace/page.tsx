@@ -2175,16 +2175,29 @@ export default function Workspace() {
                       zIndex: 13,
                     }}
                   >
-                    {/* in-progress points (first and second clicks) */}
+                    {/* in-progress points (first arm endpoint + vertex) */}
                     {anglePoints.map((p, i) => (
-                      <circle
-                        key={`ap-${i}`}
-                        cx={p.x} cy={p.y}
-                        r={measureMarkerR}
-                        fill="#5ad1ff"
-                        stroke="#0d0d0d"
-                        strokeWidth={measureStroke}
-                      />
+                      <g key={`ap-${i}`}>
+                        <circle
+                          cx={p.x} cy={p.y}
+                          r={measureMarkerR}
+                          fill="#5ad1ff"
+                          stroke="#0d0d0d"
+                          strokeWidth={measureStroke}
+                        />
+                        <text
+                          x={p.x + measureMarkerR * 2.5}
+                          y={p.y - measureMarkerR * 2.5}
+                          fontSize={measureFontSize * 0.9}
+                          fill="#5ad1ff"
+                          stroke="#0d0d0d"
+                          strokeWidth={measureTextStroke}
+                          paintOrder="stroke"
+                          fontFamily="monospace"
+                        >
+                          {i === 1 ? "V" : "1"}
+                        </text>
+                      </g>
                     ))}
 
                     {/* live preview of the third point */}
