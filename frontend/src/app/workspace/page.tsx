@@ -849,6 +849,7 @@ export default function Workspace() {
     handleScaleBarCancel();
     setAngleMode(false);
     setAnglePoints([]);
+    setAngleMeasurements([]);
     setMeasureVertices([]);
     setMeasureEdges([]);
     setActiveMeasureVertex(null);
@@ -992,7 +993,10 @@ export default function Workspace() {
   function startAngle() {
     handleScaleBarCancel();
     setMeasureMode(false);
+    setMeasureVertices([]);
+    setMeasureEdges([]);
     setActiveMeasureVertex(null);
+    setLastMeasureVertex(null);
     setAnglePoints([]);
     setAngleMeasurements([]);
     setAngleMode(true);
