@@ -253,7 +253,12 @@ export default function Workspace() {
   const [angleMode, setAngleMode] = useState(false);
   const [anglePoints, setAnglePoints] = useState<{ x: number; y: number }[]>([]);
   const [angleMeasurements, setAngleMeasurements] = useState<
-    { a: { x: number; y: number }; b: { x: number; y: number }; c: { x: number; y: number } }[]
+    {
+      a: { x: number; y: number };
+      b: { x: number; y: number };
+      c: { x: number; y: number };
+      reflex: boolean;
+    }[]
   >([]);
   const [angleCursor, setAngleCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -1019,6 +1024,12 @@ export default function Workspace() {
     setAngleCursor(null);
   }
 
+  function toggleAngleReflex(index: number) {
+    setAngleMeasurements(prev =>
+      prev.map((m, i) => (i === index ? { ...m, reflex: !m.reflex } : m)),
+    );
+  }
+
   function handleAngleClick(e: React.MouseEvent<HTMLDivElement>) {
     if (imgSize.width === 0 || imgSize.height === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1027,7 +1038,7 @@ export default function Workspace() {
     const next = [...anglePoints, { x: imgX, y: imgY }];
     if (next.length === 3) {
       const [a, b, c] = next;
-      setAngleMeasurements(prev => [...prev, { a, b, c }]);
+      setAngleMeasurements(prev => [...prev, { a, b, c, reflex: false }]);
       setAnglePoints([]);
       setAngleCursor(null);
     } else {
@@ -1121,8 +1132,16 @@ export default function Workspace() {
     a: { x: number; y: number },
     b: { x: number; y: number },
     c: { x: number; y: number },
+    reflex = false,
   ) {
-    const { deg, startAngle, diff } = angleMetrics(a, b, c);
+    const metrics = angleMetrics(a, b, c);
+    const startAngle = metrics.startAngle;
+    const diff = reflex
+      ? metrics.diff >= 0
+        ? metrics.diff - 2 * Math.PI
+        : metrics.diff + 2 * Math.PI
+      : metrics.diff;
+    const deg = reflex ? 360 - metrics.deg : metrics.deg;
 
     // Scale the arc with the triangle, but never larger than the original
     // fixed size — we only scale downward.
@@ -1803,6 +1822,35 @@ export default function Workspace() {
                     Click three points. The angle is measured at the second point.
                   </p>
                 )}
+                {angleMeasurements.length > 0 && (
+                  <div className={styles.subWindow}>
+                    <p className={styles.subWindowTitle}>Angles</p>
+                    {angleMeasurements.map((m, i) => {
+                      const minor = angleMetrics(m.a, m.b, m.c).deg;
+                      const shown = m.reflex ? 360 - minor : minor;
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          <span className={styles.sidebarHint}>#{i + 1} {shown.toFixed(1)}°</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleAngleReflex(i)}
+                            style={{
+                              background: "none",
+                              border: "1px solid #2a2a2a",
+                              color: m.reflex ? "#7ee8a2" : "#555",
+                              cursor: "pointer",
+                              fontSize: 10,
+                              padding: "2px 6px",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            {m.reflex ? "Reflex" : "Minor"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {(measureVertices.length > 0 || measureEdges.length > 0) && (
                   <button type="button" className={styles.actionBtn} onClick={clearMeasurements}>
                     <Trash2 size={14} /> Clear Distance ({measureVertices.length})
@@ -2241,7 +2289,7 @@ export default function Workspace() {
 
                     {angleMeasurements.map((m, i) => {
                       const { a, b, c } = m;
-                      const g = angleArcGeometry(a, b, c);
+                      const g = angleArcGeometry(a, b, c, m.reflex);
 
                       return (
                         <g key={`am-${i}`}>
