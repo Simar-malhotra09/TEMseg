@@ -2002,16 +2002,17 @@ export default function Workspace() {
                       const { a, b, c } = m;
                       const { deg, startAngle, diff } = angleMetrics(a, b, c);
 
-                      // Scale the arc with the triangle so a fixed-size arc
-                      // doesn't dominate when the three points are close.
+                      // Scale the arc with the triangle, but never larger than
+                      // the original fixed size — we only scale downward.
+                      const defaultArcR = measureFontSize * 2.2;
                       const maxDist = Math.max(
                         Math.hypot(a.x - b.x, a.y - b.y),
                         Math.hypot(b.x - c.x, b.y - c.y),
                         Math.hypot(a.x - c.x, a.y - c.y),
                       );
                       const arcR = Math.max(
-                        measureFontSize * 0.75,
-                        Math.min(maxDist * 0.35, measureFontSize * 10),
+                        measureFontSize * 0.5,
+                        Math.min(defaultArcR, maxDist * 0.35),
                       );
                       const steps = 24;
                       let d = "";
@@ -2023,7 +2024,12 @@ export default function Workspace() {
                       }
 
                       const midAngle = startAngle + diff / 2;
-                      const labelR = arcR + measureFontSize;
+                      // Keep the label clear of the vertex/arms even when the
+                      // arc shrinks for a tight triplet.
+                      const labelR = Math.max(
+                        arcR + measureFontSize,
+                        measureFontSize * 2,
+                      );
                       const lx = b.x + labelR * Math.cos(midAngle);
                       const ly = b.y + labelR * Math.sin(midAngle);
 
