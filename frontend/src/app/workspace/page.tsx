@@ -10,7 +10,7 @@ import {
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
 import { nextFreeId } from "@/lib/utils";
-import { MousePointerClick, Sparkles, PenTool, BoxSelect } from "lucide-react";
+import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
 import  BlackoutCanvas  from "./components/BlackOutCanvas";
@@ -27,12 +27,17 @@ import ExpandableHint from "./components/ExpandableHint";
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
 
+// TODO(analysis): measure mode currently disables zoom/pan and uses the same
+// fit-to-viewport coordinate mapping as the scale-bar calibration. Reuse the
+// refine canvas' pan/zoom viewBox pattern so points can be placed precisely
+// while zoomed in.
+
 interface ImgSize{
   width: number;
   height: number;
 }
 
-type SidebarTab = "segment" | "refine" | "augment";
+type SidebarTab = "segment" | "refine" | "augment" | "analysis";
 type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
@@ -149,6 +154,16 @@ export default function Workspace() {
   const displayWidth = imgSize.width * displayScale;
   const displayHeight = imgSize.height * displayScale;
 
+  // Scale factor from screen px to image-space px for the measurement overlay.
+  // SVG text/line sizes are defined in image units, so convert fixed screen
+  // sizes through this to keep labels legible at any image resolution.
+  const measureScale = displayScale || 1;
+  const measureFontSize = 12 / measureScale;
+  const measureMarkerR = 4 / measureScale;
+  const measureStroke = 1.5 / measureScale;
+  const measureTextStroke = 3 / measureScale;
+  const measureHitR = 10 / measureScale;
+
   // Restore session from ?session=... on mount (e.g. after page refresh).
   // Validates by fetching metadata; on 404 we silently clear the query.
   // Also rehydrates seg state (mask + stats) so the UI shows what's on disk.
@@ -204,6 +219,25 @@ export default function Workspace() {
   const [scaleBarPixels, setScaleBarPixels] = useState<number | null>(null);
   const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
+
+  // analysis: point-to-point distance measurement. Vertices are image-space
+  // points; edges are created explicitly by activating a vertex and then
+  // clicking another vertex (or empty space to create a new one).
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measureVertices, setMeasureVertices] = useState<{ x: number; y: number }[]>([]);
+  const [measureEdges, setMeasureEdges] = useState<{ a: number; b: number }[]>([]);
+  const [activeMeasureVertex, setActiveMeasureVertex] = useState<number | null>(null);
+  const [lastMeasureVertex, setLastMeasureVertex] = useState<number | null>(null);
+
+  // analysis: angle measurement. Each committed measurement is a triple of
+  // image-space points (a, vertex, c); the angle is reported at the vertex.
+  const [angleMode, setAngleMode] = useState(false);
+  const [anglePoints, setAnglePoints] = useState<{ x: number; y: number }[]>([]);
+  const [angleMeasurements, setAngleMeasurements] = useState<
+    { a: { x: number; y: number }; b: { x: number; y: number }; c: { x: number; y: number } }[]
+  >([]);
+
+  const analysisMode = measureMode || angleMode;
 
   // blackout region refs. written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
@@ -330,6 +364,14 @@ export default function Workspace() {
     setRfBgMode(false);
     setRfBgScribbles([]);
     rfBgScribblesRef.current = [];
+    setMeasureMode(false);
+    setMeasureVertices([]);
+    setMeasureEdges([]);
+    setActiveMeasureVertex(null);
+    setLastMeasureVertex(null);
+    setAngleMode(false);
+    setAnglePoints([]);
+    setAngleMeasurements([]);
     try {
       const result = await uploadImage(file);
       if (result.error) {
@@ -628,6 +670,7 @@ export default function Workspace() {
   // css zoom/pan handlers. disabled when blackout or refine active
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
+    if (analysisMode || scaleBarMode) return;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     setZoom(z => {
       const next = Math.min(Math.max(z * delta, 0.5), 5);
@@ -638,7 +681,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode || analysisMode || scaleBarMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -733,6 +776,10 @@ export default function Workspace() {
     if (scaleBarMode) {
       handleScaleBarCancel();
     } else {
+      setMeasureMode(false);
+      setActiveMeasureVertex(null);
+      setAngleMode(false);
+      setAnglePoints([]);
       setScaleBarMode(true);
       setScaleBarPixels(null);
       setScaleBarLineSvg(null);
@@ -778,6 +825,148 @@ export default function Workspace() {
     setScaleBarPixels(pixels);
   }
 
+  // analysis: point-to-point distance measurement
+  function startMeasure() {
+    handleScaleBarCancel();
+    setAngleMode(false);
+    setAnglePoints([]);
+    setMeasureVertices([]);
+    setMeasureEdges([]);
+    setActiveMeasureVertex(null);
+    setLastMeasureVertex(null);
+    setMeasureMode(true);
+  }
+
+  function cancelMeasure() {
+    setMeasureMode(false);
+    setActiveMeasureVertex(null);
+  }
+
+  function clearMeasurements() {
+    setMeasureVertices([]);
+    setMeasureEdges([]);
+    setActiveMeasureVertex(null);
+    setLastMeasureVertex(null);
+  }
+
+  function handleMeasureClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+
+    // Hit-test existing vertices in screen-space so selection feels consistent
+    // regardless of image resolution.
+    let hitIdx: number | null = null;
+    let hitDist = Infinity;
+    measureVertices.forEach((v, i) => {
+      const d = Math.hypot(imgX - v.x, imgY - v.y);
+      if (d < hitDist) {
+        hitDist = d;
+        hitIdx = i;
+      }
+    });
+
+    if (hitIdx !== null && hitDist <= measureHitR) {
+      // A vertex exists here.
+      if (activeMeasureVertex === null) {
+        // Make its edge active.
+        setActiveMeasureVertex(hitIdx);
+      } else if (activeMeasureVertex === hitIdx) {
+        // Clicking the active vertex again deselects it.
+        setActiveMeasureVertex(null);
+      } else {
+        // Connect the active vertex to this existing vertex.
+        const a = activeMeasureVertex;
+        const b = hitIdx;
+        setMeasureEdges(prev => {
+          const exists = prev.some(
+            e => (e.a === a && e.b === b) || (e.a === b && e.b === a),
+          );
+          return exists ? prev : [...prev, { a, b }];
+        });
+        setActiveMeasureVertex(null);
+        setLastMeasureVertex(b);
+      }
+      return;
+    }
+
+    // No vertex here: draw one and (when possible) auto-chain it from the last
+    // vertex, unless an explicit edge is currently active.
+    const newIdx = measureVertices.length;
+    setMeasureVertices(prev => [...prev, { x: imgX, y: imgY }]);
+    if (activeMeasureVertex !== null) {
+      setMeasureEdges(prev => [...prev, { a: activeMeasureVertex, b: newIdx }]);
+      setActiveMeasureVertex(null);
+    } else if (lastMeasureVertex !== null) {
+      setMeasureEdges(prev => [...prev, { a: lastMeasureVertex, b: newIdx }]);
+    }
+    setLastMeasureVertex(newIdx);
+  }
+
+  function formatMeasureLabel(px: number): string {
+    const ps = metadata?.pixel_size;
+    if (typeof ps === "number" && ps > 0) {
+      return `${(px * ps).toFixed(2)} ${metadata?.pixel_unit ?? "nm"}`;
+    }
+    return `${px.toFixed(1)} px`;
+  }
+
+  // analysis: three-point angle measurement. The second click is the vertex.
+  function startAngle() {
+    handleScaleBarCancel();
+    setMeasureMode(false);
+    setActiveMeasureVertex(null);
+    setAnglePoints([]);
+    setAngleMeasurements([]);
+    setAngleMode(true);
+  }
+
+  function cancelAngle() {
+    setAngleMode(false);
+    setAnglePoints([]);
+  }
+
+  function clearAngleMeasurements() {
+    setAnglePoints([]);
+    setAngleMeasurements([]);
+  }
+
+  function handleAngleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (imgSize.width === 0 || imgSize.height === 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    const next = [...anglePoints, { x: imgX, y: imgY }];
+    if (next.length === 3) {
+      const [a, b, c] = next;
+      setAngleMeasurements(prev => [...prev, { a, b, c }]);
+      setAnglePoints([]);
+    } else {
+      setAnglePoints(next);
+    }
+  }
+
+  function angleMetrics(
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    c: { x: number; y: number },
+  ) {
+    const v1x = a.x - b.x;
+    const v1y = a.y - b.y;
+    const v2x = c.x - b.x;
+    const v2y = c.y - b.y;
+    const dot = v1x * v2x + v1y * v2y;
+    const cross = v1x * v2y - v1y * v2x;
+    const rad = Math.atan2(Math.abs(cross), dot);
+    const deg = (rad * 180) / Math.PI;
+    const startAngle = Math.atan2(v1y, v1x);
+    const endAngle = Math.atan2(v2y, v2x);
+    let diff = endAngle - startAngle;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    return { deg, startAngle, diff };
+  }
+
   // track which regions are to be used
   const activeRegions = seg.isInvBlackoutMode
     ? seg.invBlackoutRegions
@@ -795,6 +984,10 @@ export default function Workspace() {
     setBoxMode(false);
     setAnnotateMode(false);
     setRfBgMode(false);
+    setMeasureMode(false);
+    setActiveMeasureVertex(null);
+    setAngleMode(false);
+    setAnglePoints([]);
     seg.setIsBlackoutMode(false);
     setActiveTab(next);
   }
@@ -899,21 +1092,30 @@ export default function Workspace() {
 
             {/* tab bar. switchTab discards any in-progress work in the tab
                 being left (unsaved refine edits, pending augment proposals). */}
-            <div className={styles.tabBar}>
-              <button type="button"
-                className={`${styles.tabBtn} ${activeTab === "segment" ? styles.tabBtnActive : ""}`}
-                onClick={() => switchTab("segment")}
-              >Segment</button>
-              <button type="button"
-                className={`${styles.tabBtn} ${activeTab === "refine" ? styles.tabBtnActive : ""}`}
-                onClick={() => switchTab("refine")}
-                disabled={!seg.segDone}
-              >Refine</button>
-              <button type="button"
-                className={`${styles.tabBtn} ${activeTab === "augment" ? styles.tabBtnActive : ""}`}
-                onClick={() => switchTab("augment")}
-                disabled={!sessionId}
-              >Augment</button>
+            <div className={styles.tabRows}>
+              <div className={styles.tabBar}>
+                <button type="button"
+                  className={`${styles.tabBtn} ${activeTab === "segment" ? styles.tabBtnActive : ""}`}
+                  onClick={() => switchTab("segment")}
+                >Segment</button>
+                <button type="button"
+                  className={`${styles.tabBtn} ${activeTab === "refine" ? styles.tabBtnActive : ""}`}
+                  onClick={() => switchTab("refine")}
+                  disabled={!seg.segDone}
+                >Refine</button>
+                <button type="button"
+                  className={`${styles.tabBtn} ${activeTab === "augment" ? styles.tabBtnActive : ""}`}
+                  onClick={() => switchTab("augment")}
+                  disabled={!sessionId}
+                >Augment</button>
+              </div>
+              <div className={`${styles.tabBar} ${styles.tabBarCentered}`}>
+                <button type="button"
+                  className={`${styles.tabBtn} ${activeTab === "analysis" ? styles.tabBtnActive : ""}`}
+                  onClick={() => switchTab("analysis")}
+                  disabled={!image}
+                >Analysis</button>
+              </div>
             </div>
 
             {activeTab === "segment" && (
@@ -1386,6 +1588,46 @@ export default function Workspace() {
               </section>
             )}
 
+            {activeTab === "analysis" && (
+              <section className={styles.sidebarSection}>
+                <p className={styles.sidebarLabel}>Measurements</p>
+                <button type="button"
+                  className={`${styles.actionBtn} ${measureMode ? styles.actionBtnPrimary : ""}`}
+                  disabled={!image}
+                  onClick={() => (measureMode ? cancelMeasure() : startMeasure())}
+                >
+                  <Ruler size={14} /> {measureMode ? "Done" : "Measure Distance"}
+                </button>
+                {measureMode && (
+                  <p className={styles.sidebarHint}>
+                    Click empty space to chain a new vertex from the last one. Click an existing vertex to branch/connect from it instead.
+                  </p>
+                )}
+                <button type="button"
+                  className={`${styles.actionBtn} ${angleMode ? styles.actionBtnPrimary : ""}`}
+                  disabled={!image}
+                  onClick={() => (angleMode ? cancelAngle() : startAngle())}
+                >
+                  <Compass size={14} /> {angleMode ? "Done" : "Measure Angle"}
+                </button>
+                {angleMode && (
+                  <p className={styles.sidebarHint}>
+                    Click three points. The angle is measured at the second point.
+                  </p>
+                )}
+                {(measureVertices.length > 0 || measureEdges.length > 0) && (
+                  <button type="button" className={styles.actionBtn} onClick={clearMeasurements}>
+                    <Trash2 size={14} /> Clear Distance ({measureVertices.length})
+                  </button>
+                )}
+                {angleMeasurements.length > 0 && (
+                  <button type="button" className={styles.actionBtn} onClick={clearAngleMeasurements}>
+                    <Trash2 size={14} /> Clear Angles ({angleMeasurements.length})
+                  </button>
+                )}
+              </section>
+            )}
+
             <section>
               {sessionId && (
                 <ExportPanel
@@ -1426,12 +1668,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || analysisMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || analysisMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -1622,6 +1864,206 @@ export default function Workspace() {
                       width: "100%", height: "100%",
                       cursor: "crosshair",
                       background: "rgba(126, 232, 162, 0.04)",
+                      zIndex: 15,
+                    }}
+                  />
+                )}
+
+                {/* analysis measurement overlay. Vertices + explicit edges,
+                    each edge labeled with its distance; stays visible after Done. */}
+                {(measureVertices.length > 0 || measureEdges.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && (
+                  <svg
+                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      pointerEvents: "none",
+                      zIndex: 13,
+                    }}
+                  >
+                    {measureVertices.map((p, i) => {
+                      const active = i === activeMeasureVertex;
+                      return (
+                        <circle
+                          key={`mv-${i}`}
+                          cx={p.x} cy={p.y}
+                          r={active ? measureMarkerR * 1.5 : measureMarkerR}
+                          fill={active ? "#0d0d0d" : "#5ad1ff"}
+                          stroke={active ? "#5ad1ff" : "#0d0d0d"}
+                          strokeWidth={measureStroke}
+                        />
+                      );
+                    })}
+                    {measureEdges.map((edge, i) => {
+                      const p = measureVertices[edge.a];
+                      const q = measureVertices[edge.b];
+                      if (!p || !q) return null;
+
+                      const dx = q.x - p.x;
+                      const dy = q.y - p.y;
+                      const px = Math.hypot(dx, dy);
+                      const mx = (p.x + q.x) / 2;
+                      const my = (p.y + q.y) / 2;
+
+                      // Rotate the label to run parallel to the edge, then flip
+                      // it 180° when it would otherwise read upside down.
+                      let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+                      if (angle > 90) angle -= 180;
+                      else if (angle < -90) angle += 180;
+
+                      // Place the label on the outside of the edge: pick the
+                      // perpendicular side farther from the image center, i.e.
+                      // the side facing the image boundary.
+                      const len = px || 1;
+                      const nx = -dy / len;
+                      const ny = dx / len;
+                      const offset = measureFontSize * 0.9;
+                      const cx = imgSize.width / 2;
+                      const cy = imgSize.height / 2;
+                      const p1x = mx + nx * offset;
+                      const p1y = my + ny * offset;
+                      const p2x = mx - nx * offset;
+                      const p2y = my - ny * offset;
+                      const d1 = (p1x - cx) ** 2 + (p1y - cy) ** 2;
+                      const d2 = (p2x - cx) ** 2 + (p2y - cy) ** 2;
+                      const lx = d1 >= d2 ? p1x : p2x;
+                      const ly = d1 >= d2 ? p1y : p2y;
+
+                      return (
+                        <g key={`me-${i}`}>
+                          <line
+                            x1={p.x} y1={p.y}
+                            x2={q.x} y2={q.y}
+                            stroke="#5ad1ff"
+                            strokeWidth={measureStroke}
+                          />
+                          <text
+                            x={lx}
+                            y={ly}
+                            transform={`rotate(${angle} ${lx} ${ly})`}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill="#5ad1ff"
+                            stroke="#0d0d0d"
+                            strokeWidth={measureTextStroke}
+                            paintOrder="stroke"
+                            fontSize={measureFontSize}
+                            fontFamily="monospace"
+                          >
+                            {formatMeasureLabel(px)}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+
+                {/* analysis mouse capture to place measurement points */}
+                {measureMode && imgSize.width > 0 && (
+                  <div
+                    onClick={handleMeasureClick}
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      cursor: "crosshair",
+                      background: "rgba(90, 209, 255, 0.05)",
+                      zIndex: 15,
+                    }}
+                  />
+                )}
+
+                {/* angle measurement overlay. draws the two arms + standard arc
+                    and labels the angle in degrees (radians also computed). */}
+                {(angleMeasurements.length > 0 || anglePoints.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && (
+                  <svg
+                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      pointerEvents: "none",
+                      zIndex: 13,
+                    }}
+                  >
+                    {/* in-progress points (first and second clicks) */}
+                    {anglePoints.map((p, i) => (
+                      <circle
+                        key={`ap-${i}`}
+                        cx={p.x} cy={p.y}
+                        r={measureMarkerR}
+                        fill="#5ad1ff"
+                        stroke="#0d0d0d"
+                        strokeWidth={measureStroke}
+                      />
+                    ))}
+
+                    {angleMeasurements.map((m, i) => {
+                      const { a, b, c } = m;
+                      const { deg, startAngle, diff } = angleMetrics(a, b, c);
+
+                      const arcR = measureFontSize * 2.2;
+                      const steps = 24;
+                      let d = "";
+                      for (let s = 0; s <= steps; s++) {
+                        const t = startAngle + (diff * s) / steps;
+                        const x = b.x + arcR * Math.cos(t);
+                        const y = b.y + arcR * Math.sin(t);
+                        d += `${s === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)} `;
+                      }
+
+                      const midAngle = startAngle + diff / 2;
+                      const labelR = arcR + measureFontSize;
+                      const lx = b.x + labelR * Math.cos(midAngle);
+                      const ly = b.y + labelR * Math.sin(midAngle);
+
+                      return (
+                        <g key={`am-${i}`}>
+                          <line
+                            x1={b.x} y1={b.y} x2={a.x} y2={a.y}
+                            stroke="#5ad1ff"
+                            strokeWidth={measureStroke}
+                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                          />
+                          <line
+                            x1={b.x} y1={b.y} x2={c.x} y2={c.y}
+                            stroke="#5ad1ff"
+                            strokeWidth={measureStroke}
+                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                          />
+                          <circle cx={a.x} cy={a.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
+                          <circle cx={b.x} cy={b.y} r={measureMarkerR} fill="#0d0d0d" stroke="#5ad1ff" strokeWidth={measureStroke} />
+                          <circle cx={c.x} cy={c.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
+                          <path d={d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
+                          <text
+                            x={lx}
+                            y={ly}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill="#5ad1ff"
+                            stroke="#0d0d0d"
+                            strokeWidth={measureTextStroke}
+                            paintOrder="stroke"
+                            fontSize={measureFontSize}
+                            fontFamily="monospace"
+                          >
+                            {deg.toFixed(1)}°
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                )}
+
+                {/* angle mouse capture to place the three points */}
+                {angleMode && imgSize.width > 0 && (
+                  <div
+                    onClick={handleAngleClick}
+                    style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "100%", height: "100%",
+                      cursor: "crosshair",
+                      background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
                     }}
                   />

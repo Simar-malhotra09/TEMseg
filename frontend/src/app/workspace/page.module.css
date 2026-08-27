@@ -143,10 +143,18 @@ font-size: 12px;
 .dropdownItemActive { color: #7ee8a2; }
 
 /* Sidebar tab bar */
+.tabRows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .tabBar {
   display: flex;
   gap: 10px;
   padding-bottom: 4px;
+}
+.tabBarCentered {
+  justify-content: center;
 }
 .tabBtn {
   background: none;
