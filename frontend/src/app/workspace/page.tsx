@@ -2002,7 +2002,17 @@ export default function Workspace() {
                       const { a, b, c } = m;
                       const { deg, startAngle, diff } = angleMetrics(a, b, c);
 
-                      const arcR = measureFontSize * 2.2;
+                      // Scale the arc with the triangle so a fixed-size arc
+                      // doesn't dominate when the three points are close.
+                      const maxDist = Math.max(
+                        Math.hypot(a.x - b.x, a.y - b.y),
+                        Math.hypot(b.x - c.x, b.y - c.y),
+                        Math.hypot(a.x - c.x, a.y - c.y),
+                      );
+                      const arcR = Math.max(
+                        measureFontSize * 0.75,
+                        Math.min(maxDist * 0.35, measureFontSize * 10),
+                      );
                       const steps = 24;
                       let d = "";
                       for (let s = 0; s <= steps; s++) {
