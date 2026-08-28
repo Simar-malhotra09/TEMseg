@@ -28,7 +28,7 @@ ROOT = Path(SPECPATH)  # directory containing this .spec file
 IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform == "win32"
 
-# Platform-specific icon — .icns on mac, .ico on Windows
+# Platform-specific icons 
 if IS_MAC:
     ICON_PATH = str(ROOT / "assets" / "temseg_icon.icns")
 elif IS_WIN:
