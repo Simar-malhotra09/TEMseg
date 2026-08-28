@@ -46,3 +46,10 @@ experimental_cobalt/*.jpg
 experimental_cobalt/*.jpeg
 draft2.typ
 paper/
+
+
+.matilda/
+experimental_cobalt/
+model_scripts/
+scripts/test_rf_recovery.sh
+tools/
