@@ -35,9 +35,7 @@ if ($Clean) { Write-Host "  Mode: CLEAN" }
 if ($SkipFrontend) { Write-Host "  Skipping frontend rebuild" }
 Write-Host "========================================"
 
-# --------------------------------------------------
 # 1. Check files
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "[1/5] Checking files..."
@@ -56,9 +54,7 @@ if (-not (Test-Path "temseg_icon.ico")) {
 
 Write-Host "  Files OK"
 
-# --------------------------------------------------
 # 2. Check ONNX Runtime
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "[2/5] Checking onnxruntime..."
@@ -87,9 +83,7 @@ else {
     }
 }
 
-# --------------------------------------------------
 # 3. PyInstaller
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "[3/5] Checking PyInstaller..."
@@ -107,9 +101,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "  PyInstaller OK"
 
-# --------------------------------------------------
 # 4. Frontend
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "[4/5] Frontend..."
@@ -152,9 +144,7 @@ else {
     Write-Host "  Frontend OK"
 }
 
-# --------------------------------------------------
 # 5. PyInstaller
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "[5/5] Running PyInstaller..."
@@ -184,9 +174,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed"
 }
 
-# --------------------------------------------------
 # Rename output
-# --------------------------------------------------
 
 if (Test-Path "dist\$BaseDistName") {
     if (Test-Path "dist\$DistName") {
@@ -196,9 +184,7 @@ if (Test-Path "dist\$BaseDistName") {
     Rename-Item "dist\$BaseDistName" $DistName
 }
 
-# --------------------------------------------------
 # Fix rsciio
-# --------------------------------------------------
 
 Write-Host ""
 Write-Host "Fixing rsciio bundle..."
@@ -232,10 +218,7 @@ else {
     Write-Warning "Could not find rsciio"
 }
 
-# --------------------------------------------------
 # Done
-# --------------------------------------------------
-
 $Exe = "dist\$DistName\TEMseg.exe"
 
 if (-not (Test-Path $Exe)) {

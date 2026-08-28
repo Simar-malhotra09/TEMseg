@@ -1,4 +1,4 @@
-; TEMseg.iss — Inno Setup script for TEMseg Windows installer
+; TEMseg.iss. Inno Setup script for TEMseg Windows installer
 ;
 ;   Windows zip extraction propagates the Mark-of-the-Web (Zone.Identifier)
 ;   to every extracted file. .NET Framework refuses to load tagged DLLs,
