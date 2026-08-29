@@ -639,9 +639,12 @@ LOADING_HTML = """
 def main():
     log.info("Starting TEMseg...")
 
+    headless = os.environ.get("TEMSEG_HEADLESS") == "1"
+
     # --- Phase 0: Windows-only — ensure WebView2 runtime exists ---
-    # PyWebView's EdgeChromium backend silently fails without it on fresh Windows installs.
-    if not _ensure_webview2_runtime():
+    # PyWebView's EdgeChromium backend silently fails without it on fresh
+    # Windows installs. Skipped in headless mode (no GUI).
+    if not headless and not _ensure_webview2_runtime():
         _msgbox(
             "TEMseg cannot start without the Microsoft Edge WebView2 runtime.\n\n"
             "Please install it manually from:\n"
@@ -651,34 +654,27 @@ def main():
         )
         sys.exit(1)
 
-    # --- Phase 1: Loading window + weight check ---
-    loading_window = webview.create_window(
-        title="TEMseg — Loading",
-        html=LOADING_HTML,
-        width=480,
-        height=260,
-        resizable=False,
-    )
+    def _run_startup(ui_eval) -> bool:
+        """Start weights check + backend + frontend servers.
 
-    def startup():
-        """Runs after the loading window is visible."""
-        log.info("[STARTUP]")
+        ui_eval(js) updates the loading UI in GUI mode and is a no-op in
+        headless mode. Returns True once everything is ready.
+        """
+        log.info("Starting up: weights check, then backend + frontend servers")
         try:
             # Check / download weights
             def on_progress(filename, pct):
-                loading_window.evaluate_js(
+                ui_eval(
                     f'setStatus("Downloading {filename}… {pct}%"); setProgress({pct});'
                 )
 
             ok, msg = check_and_download_weights(progress_callback=on_progress)
             if not ok:
-                loading_window.evaluate_js(f"setError({json.dumps(msg)});")
-                loading_window.evaluate_js('setStatus("Setup incomplete");')
-                return  # keep window open so user can read error
+                log.error("Setup incomplete: %s", msg)
+                ui_eval(f"setError({json.dumps(msg)}); setStatus('Setup incomplete');")
+                return False
 
-            loading_window.evaluate_js(
-                'setStatus("Starting backend…"); setProgress(0);'
-            )
+            ui_eval('setStatus("Starting backend…"); setProgress(0);')
 
             # --- Phase 2: Start servers ---
             backend_thread = threading.Thread(target=start_backend_server, daemon=True)
@@ -690,39 +686,63 @@ def main():
             frontend_thread.start()
 
             # Wait for backend
-            loading_window.evaluate_js('setStatus("Loading models…");')
+            ui_eval('setStatus("Loading models…");')
             if not wait_for_server(BACKEND_PORT, timeout=120):
-                loading_window.evaluate_js(
-                    'setError("Backend failed to start. Check console for errors.");'
-                )
-                return
+                log.error("Backend failed to start.")
+                ui_eval('setError("Backend failed to start. Check console for errors.");')
+                return False
 
-            loading_window.evaluate_js('setStatus("Almost ready…"); setProgress(80);')
+            ui_eval('setStatus("Almost ready…"); setProgress(80);')
             if not wait_for_server(FRONTEND_PORT, timeout=15):
-                loading_window.evaluate_js(
-                    'setError("Frontend server failed to start.");'
-                )
-                return
+                log.error("Frontend server failed to start.")
+                ui_eval('setError("Frontend server failed to start.");')
+                return False
 
-            loading_window.evaluate_js('setProgress(100); setStatus("Ready!");')
+            ui_eval('setProgress(100); setStatus("Ready!");')
             time.sleep(0.3)
-
-            # --- Phase 3: Open main window, close loader ---
-            main_window = webview.create_window(
-                title="TEMseg",
-                url=f"http://localhost:{FRONTEND_PORT}/workspace",
-                width=1400,
-                height=900,
-                min_size=(900, 600),
-            )
-            main_window.expose(Api(main_window).export_zip)
-
-            # Close loading window after main is created
-            loading_window.destroy()
+            return True
 
         except Exception as e:
             log.exception("Startup failed")
-            loading_window.evaluate_js(f"setError({json.dumps(str(e))});")
+            ui_eval(f"setError({json.dumps(str(e))});")
+            return False
+
+    if headless:
+        # No GUI: run the same startup sequence and keep serving. Used by the
+        # API smoke test (scripts/mac/test_api.sh) and CI/nightly cron, which
+        # have no WindowServer/Aqua session to create a pywebview window.
+        log.info("Headless mode (TEMSEG_HEADLESS=1) — skipping GUI")
+        _run_startup(lambda js: log.debug("ui: %s", js))
+        while True:
+            time.sleep(3600)
+        return
+
+    # --- GUI mode: loading window + weight check ---
+    loading_window = webview.create_window(
+        title="TEMseg — Loading",
+        html=LOADING_HTML,
+        width=480,
+        height=260,
+        resizable=False,
+    )
+
+    def startup():
+        """Runs after the loading window is visible."""
+        if not _run_startup(loading_window.evaluate_js):
+            return  # keep loading window open so the user can read the error
+
+        # --- Phase 3: Open main window, close loader ---
+        main_window = webview.create_window(
+            title="TEMseg",
+            url=f"http://localhost:{FRONTEND_PORT}/workspace",
+            width=1400,
+            height=900,
+            min_size=(900, 600),
+        )
+        main_window.expose(Api(main_window).export_zip)
+
+        # Close loading window after main is created
+        loading_window.destroy()
 
     # Run startup after window is shown
     webview.start(startup, debug=False)
