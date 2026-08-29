@@ -1,6 +1,5 @@
 import io
 import json
-import logging
 import zipfile
 from pathlib import Path
 
@@ -10,7 +9,9 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
-logger = logging.getLogger("routes.export")
+from app.logutils import Timer, get_logger
+
+logger = get_logger("export")
 router = APIRouter(prefix="/export", tags=["export"])
 
 SESSIONS_DIR = Path("sessions")
@@ -162,7 +163,8 @@ async def export_session(session_id: str, body: ExportRequest):
       instances_json    — instances.json
       stats_csv         — currently does not account for client side modifications, specifically refinements
     """
-    logger.info(f"[EXPORT] POST export | session={session_id} | items={body.items}")
+    t = Timer(logger, "export")
+    logger.info(f"export | session={session_id} | items={body.items}")
 
     # validate requested items
     unknown = set(body.items) - VALID_ITEMS
@@ -183,67 +185,67 @@ async def export_session(session_id: str, body: ExportRequest):
             path = _find_original_image(session_dir)
             if path is None:
                 logger.warning(
-                    f"[EXPORT] original_image not found | session={session_id}"
+                    f"original_image not found | session={session_id}"
                 )
                 continue
             entries.append(("original_image.png", path))
-            logger.info(f"[EXPORT] Adding original_image | {path.name}")
+            logger.info(f"Adding original_image | {path.name}")
 
         elif item == "seg_mask_png":
             path = session_dir / "mask.png"
             if not path.exists():
-                logger.warning(f"[EXPORT] mask.png not found | session={session_id}")
+                logger.warning(f"mask.png not found | session={session_id}")
                 continue
             entries.append(("seg_mask.png", path))
-            logger.info("[EXPORT] Adding seg_mask_png")
+            logger.info("Adding seg_mask_png")
 
         elif item == "seg_mask_npy":
             path = session_dir / "instances.npy"
             if not path.exists():
                 logger.warning(
-                    f"[EXPORT] instances.npy not found for seg_mask_npy | session={session_id}"
+                    f"instances.npy not found for seg_mask_npy | session={session_id}"
                 )
                 continue
             entries.append(("seg_mask.npy", path))
-            logger.info("[EXPORT] Adding seg_mask_npy")
+            logger.info("Adding seg_mask_npy")
 
         elif item == "refined_mask_png":
             # refined mask overwrites mask.png after save — same file
             path = session_dir / "mask.png"
             if not path.exists():
                 logger.warning(
-                    f"[EXPORT] mask.png not found for refined_mask_png | session={session_id}"
+                    f"mask.png not found for refined_mask_png | session={session_id}"
                 )
                 continue
             entries.append(("refined_mask.png", path))
-            logger.info("[EXPORT] Adding refined_mask_png")
+            logger.info("Adding refined_mask_png")
 
         elif item == "refined_mask_npy":
             path = session_dir / "instances.npy"
             if not path.exists():
                 logger.warning(
-                    f"[EXPORT] instances.npy not found for refined_mask_npy | session={session_id}"
+                    f"instances.npy not found for refined_mask_npy | session={session_id}"
                 )
                 continue
             entries.append(("refined_mask.npy", path))
-            logger.info("[EXPORT] Adding refined_mask_npy")
+            logger.info("Adding refined_mask_npy")
 
         elif item == "instances_json":
             path = session_dir / "instances.json"
             if not path.exists():
                 logger.warning(
-                    f"[EXPORT] instances.json not found | session={session_id}"
+                    f"instances.json not found | session={session_id}"
                 )
                 continue
             entries.append(("instances.json", path))
-            logger.info("[EXPORT] Adding instances_json")
+            logger.info("Adding instances_json")
 
         elif item == "coco_json":
             try:
                 coco_bytes = _build_coco_json(session_dir)
             except HTTPException:
                 logger.warning(
-                    f"[EXPORT] coco_json skipped — instances.json missing | session={session_id}"
+                    f"coco_json skipped — instances.json missing | session={session_id}"
                 )
                 continue
             image_path = _find_original_image(session_dir)
@@ -252,13 +254,13 @@ async def export_session(session_id: str, body: ExportRequest):
             entries.append(("annotations.coco.json", coco_bytes))
             entries.append(("IMPORT_INSTRUCTIONS.txt", _CVAT_IMPORT_README))
             logger.info(
-                f"[EXPORT] Adding coco_json | {len(json.loads(coco_bytes)['annotations'])} annotations"
+                f"Adding coco_json | {len(json.loads(coco_bytes)['annotations'])} annotations"
             )
 
         elif item == "stats_csv":
             stats_path = session_dir / "stats.json"
             if not stats_path.exists():
-                logger.warning(f"[EXPORT] stats.json not found | session={session_id}")
+                logger.warning(f"stats.json not found | session={session_id}")
                 continue
 
             with open(stats_path) as f:
@@ -291,16 +293,15 @@ async def export_session(session_id: str, body: ExportRequest):
 
             csv_bytes = (header + "".join(rows)).encode("utf-8")
             entries.append(("stats.csv", csv_bytes))
-            logger.info(f"[EXPORT] Adding stats_csv | {len(particles)} particles")
+            logger.info(f"Adding stats_csv | {len(particles)} particles")
 
     if not entries:
-        logger.warning(f"[EXPORT] No files found to export | session={session_id}")
+        logger.warning(f"No files found to export | session={session_id}")
         raise HTTPException(
             status_code=404, detail="None of the requested items exist for this session"
         )
 
     # build zip in memory
-    logger.info(f"[EXPORT] Building ZIP | {len(entries)} files")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for zip_name, source in entries:
@@ -310,8 +311,9 @@ async def export_session(session_id: str, body: ExportRequest):
                 zf.write(source, arcname=zip_name)
 
     buf.seek(0)
-    zip_size_kb = buf.getbuffer().nbytes / 1024
-    logger.info(f"[EXPORT] ZIP ready | {zip_size_kb:.1f} KB | session={session_id}")
+    t.field("files", len(entries))
+    t.field("zip_kb", round(buf.getbuffer().nbytes / 1024, 1))
+    t.stop()
 
     return StreamingResponse(
         buf,
@@ -338,13 +340,13 @@ async def export_histogram_csv(session_id: str, metric: str = "diameter"):
         )
 
     logger.info(
-        f"[EXPORT] POST export histogram csv | session={session_id} | metric={metric}"
+        f"POST export histogram csv | session={session_id} | metric={metric}"
     )
 
     session_dir = _session_dir(session_id)
     stats_path = session_dir / "stats.json"
     if not stats_path.exists():
-        logger.warning(f"[EXPORT] stats.json not found | session={session_id}")
+        logger.warning(f"stats.json not found | session={session_id}")
         raise HTTPException(status_code=404, detail="stats.json not found")
 
     with open(stats_path) as f:
@@ -384,7 +386,7 @@ async def export_histogram_csv(session_id: str, metric: str = "diameter"):
 
     csv_bytes = (header + "\n".join(rows)).encode("utf-8")
     logger.info(
-        f"[EXPORT] histogram CSV ready | {len(particles)} particles | metric={metric}"
+        f"histogram CSV ready | {len(particles)} particles | metric={metric}"
     )
 
     return StreamingResponse(

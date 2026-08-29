@@ -1,5 +1,3 @@
-import logging
-
 from app.models.helpers.compute_stats import (
     SHAPE_METRICS,
     SHAPE_OPERATORS,
@@ -19,8 +17,10 @@ from app.models.helpers.settings import (
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.logutils import get_logger
+
 router = APIRouter(prefix="/config")
-logger = logging.getLogger("routes.config")
+logger = get_logger("config")
 
 
 class ShapeConditionIn(BaseModel):

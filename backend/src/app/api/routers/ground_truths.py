@@ -7,12 +7,11 @@ import numpy as np
 import cv2 as cv
 from app.api.utils import Box, blackout_regions, inverse_blackout_regions
 from app.scripts.compare_gt import normalize_mask, compute_metrics
-import logging
+from app.logutils import get_logger
 
 router = APIRouter(prefix="/gt")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("routes.gt")
+logger = get_logger("gt")
 
 SESSIONS_DIR = Path("sessions")
 
@@ -48,7 +47,7 @@ async def upload_gt(session_id: str, file: UploadFile = File(...)):
             orig = cv.imread(str(orig_path), cv.IMREAD_GRAYSCALE)
         
         if orig is None:
-            logger.warning(f"[GT] Could not read original image: {orig_path}")
+            logger.warning(f"Could not read original image: {orig_path}")
         elif orig.shape[:2] != gt_mask.shape[:2]:  # compare H,W only, ignore channels
             warnings.append(f"GT dimensions {gt_mask.shape} don't match image {orig.shape}")
 
@@ -64,10 +63,10 @@ async def compute_gt(session_id: str, req: ComputeRequest):
     inverse_blackout = req.inverse_blackout
     regions = req.regions
 
-    logger.info(f"[GT] Request received for session: {session_id}")
-    logger.info(f"[GT] Regions selected : {len(req.regions)}")
+    logger.info(f"Request received for session: {session_id}")
+    logger.info(f"Regions selected : {len(req.regions)}")
     mode = "blacked_out" if req.blackout else "kept"
-    logger.info(f"[GT] Regions are being {mode}")
+    logger.info(f"Regions are being {mode}")
 
     if blackout and inverse_blackout:
         raise ValueError("Only one of blackout_regions or inverse_blackout_regions may be True.")

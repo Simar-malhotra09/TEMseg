@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from typing import List, Tuple
 import numpy as np
 import cv2 as cv
-import logging
 import time
 from app.api.live_models import AvailableModels
 from app.api.utils import mask_iou
@@ -20,10 +19,11 @@ from app.api.instances import (
 )
 
 import json
+from app.logutils import Timer, fmt_duration, get_logger
 from app.models.helpers.compute_stats import compute_stats_from_instances
 
 router = APIRouter(prefix="/masks")
-logger = logging.getLogger("routes.masks")
+logger = get_logger("masks")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -119,7 +119,6 @@ async def get_stats(session_id: str):
 
 @router.post("/{session_id}/instances")
 async def get_instances(session_id: str):
-    t_start = time.time()
     session_dir = _session_dir(session_id)
 
     # fast path — already on disk
@@ -141,19 +140,17 @@ async def get_instances(session_id: str):
     if mask_bgr is None:
         raise HTTPException(status_code=500, detail="Failed to read mask.png")
 
+    t = Timer(logger, "recompute particles")
     binary = (cv.cvtColor(mask_bgr, cv.COLOR_BGR2GRAY) > 0).astype(np.uint8)
     instances, labeled = extract_instances(binary, session_dir, save=True)
-
-    elapsed_ms = (time.time() - t_start) * 1000
-    logger.info(
-        f"Recomputed and saved {len(instances)} particles in {elapsed_ms:.1f}ms"
-    )
+    t.field("particles", len(instances))
+    t.stop()
     return {"instances": instances}
 
 
 @router.put("/{session_id}/instances")
 async def api_save_instances(session_id: str, req: SaveInstancesRequest):
-    t_start = time.time()
+    t = Timer(logger, "save instances")
     session_dir = _session_dir(session_id)
 
     cached = load_instances(session_dir)
@@ -217,11 +214,9 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     with open(stats_path, "w") as f:
         json.dump(stats, f)
 
-    elapsed_ms = (time.time() - t_start) * 1000
-    logger.info(
-        f"Saved {len(req.instances)} particles and updated statistics "
-        f"({stats['particle_count']} total) in {elapsed_ms:.1f}ms"
-    )
+    t.field("particles", len(req.instances))
+    t.field("total", stats["particle_count"])
+    t.stop()
 
     return {"mask_url": f"/images/{session_id}/mask", "stats": stats}
 
@@ -241,7 +236,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
       6. Assign new IDs, update instances list, save to disk
       7. Regenerate mask.png
     """
-    t_start = time.time()
+    t = Timer(logger, "split")
     logger.info(
         f"Splitting particle {body.instance_id} into {len(body.points)} parts for session {session_id}"
     )
@@ -297,7 +292,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     # ── 3. run SAM for each point ─────────────────────────────────────────────
     new_masks = []
     for i, (px, py) in enumerate(body.points):
-        t_pred = time.time()
+        t_pred = time.perf_counter()
 
         point_coords = np.array([[px, py]])
         point_labels = np.array([1])  # 1 = foreground
@@ -312,7 +307,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         best_idx = int(np.argmax(scores))
         raw_mask = masks[best_idx].astype(np.uint8)
 
-        pred_ms = (time.time() - t_pred) * 1000
+        pred_dt = time.perf_counter() - t_pred
 
         # ── 4. constrain to original blob ────────────────────────────────────
         constrained = cv.bitwise_and(raw_mask, blob_mask)
@@ -324,8 +319,8 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
             )
             continue
 
-        logger.info(
-            f"Split point {i + 1}/{len(body.points)} predicted mask in {pred_ms:.1f}ms "
+        logger.debug(
+            f"split point {i + 1}/{len(body.points)} predicted={fmt_duration(pred_dt)} "
             f"({pixel_count}px after constraint)"
         )
         new_masks.append(constrained)
@@ -350,7 +345,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         used_ids.add(new_id)
         contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         if not contours:
-            logger.warning(f"[SPLIT] No contour found for mask {i + 1}, skipping")
+            logger.warning(f"No contour found for split mask {i + 1}, skipping")
             continue
 
         largest = max(contours, key=cv.contourArea)
@@ -401,11 +396,8 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     mask_path = session_dir / "mask.png"
     cv.imwrite(str(mask_path), colored)
 
-    t_total = time.time() - t_start
-    logger.info(
-        f"Split complete: created {len(new_instances)} new particles "
-        f"in {t_total * 1000:.1f}ms"
-    )
+    t.field("created", len(new_instances))
+    t.stop()
 
     return {
         "instances": new_instances,
@@ -425,7 +417,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
 
 @router.post("/{session_id}/from-boxes")
 async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
-    t_start = time.time()
+    t = Timer(logger, "from-boxes")
     logger.info(
         f"Box-prompt segmentation for session {session_id}: {len(body.boxes)} box(es)"
     )
@@ -575,16 +567,14 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
             detail=f"All {len(body.boxes)} boxes rejected: {rejected}",
         )
 
-    t_total = time.time() - t_start
-    logger.info(
-        f"Box prompts done: {len(proposals)} proposals from {len(body.boxes)} boxes "
-        f"({len(rejected)} rejected) in {t_total * 1000:.1f}ms"
-    )
+    t.field("proposals", f"{len(proposals)}/{len(body.boxes)}")
+    t.field("rejected", len(rejected))
+    t.stop()
 
     return {
         "proposals": proposals,
         "rejected": rejected,
-        "elapsed": round(t_total, 3),
+        "elapsed": round(t.elapsed, 3),
     }
 
 
@@ -619,7 +609,7 @@ def _pick_smallest_safe_mask(
 
 @router.post("/{session_id}/from-points")
 async def from_points(session_id: str, body: FromPointsRequest, request: Request):
-    t_start = time.time()
+    t = Timer(logger, "from-points")
     logger.info(
         f"Point-prompt segmentation for session {session_id}: {len(body.points)} click(s)"
     )
@@ -842,16 +832,14 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
             detail=f"All {len(body.points)} clicks rejected: {rejected}",
         )
 
-    t_total = time.time() - t_start
-    logger.info(
-        f"Point prompts done: {len(proposals)} proposals from {len(body.points)} clicks "
-        f"({len(rejected)} rejected) in {t_total * 1000:.1f}ms"
-    )
+    t.field("proposals", f"{len(proposals)}/{len(body.points)}")
+    t.field("rejected", len(rejected))
+    t.stop()
 
     return {
         "proposals": proposals,
         "rejected": rejected,
-        "elapsed": round(t_total, 3),
+        "elapsed": round(t.elapsed, 3),
     }
 
 
@@ -1014,7 +1002,7 @@ def _ncc_score_map(
 async def propose_similar(
     session_id: str, body: ProposeSimilarRequest, request: Request
 ):
-    t_start = time.time()
+    t = Timer(logger, "propose-similar")
     logger.info(
         f"Finding similar particles for session {session_id}: "
         f"threshold={body.sim_threshold}, max={body.max_proposals}, "
@@ -1309,11 +1297,9 @@ async def propose_similar(
         except Exception as e:
             logger.warning(f"Could not save proposal debug overlay: {e}")
 
-    t_total = time.time() - t_start
-    logger.info(
-        f"Similar-particle search complete: {len(proposals)} proposals from "
-        f"{len(peaks)} candidates in {t_total * 1000:.1f}ms"
-    )
+    t.field("proposals", len(proposals))
+    t.field("candidates", len(peaks))
+    t.stop()
 
     return {
         "proposals": proposals,
@@ -1325,5 +1311,5 @@ async def propose_similar(
         if debug_url
         else None,
         "debug_overlay_url": debug_url,
-        "elapsed": round(t_total, 3),
+        "elapsed": round(t.elapsed, 3),
     }

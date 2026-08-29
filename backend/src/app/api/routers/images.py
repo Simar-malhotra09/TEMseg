@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, Request
 from fastapi.responses import FileResponse
-import logging
 import numpy as np
 import cv2 as cv
 from concurrent.futures import ThreadPoolExecutor
@@ -12,10 +11,14 @@ import asyncio
 import sys
 import os
 from app.api.live_models import AvailableModels
+from app.logutils import get_logger
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/images")
-logger = logging.getLogger("routes.images")
+logger = get_logger("images")
+logger_rsciio = get_logger("images", sub="rsciio")
+logger_meta = get_logger("images", sub="meta")
+logger_upload = get_logger("images", sub="upload")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -42,13 +45,11 @@ def _ensure_rsciio_plugins():
     if len(getattr(hyperspy.io, "IO_PLUGINS", [])) > 5:
         return
 
-    logger.info(
-        "[RSCIIO] Plugin registry incomplete — scanning for specifications.yaml"
-    )
+    logger_rsciio.info("Plugin registry incomplete — scanning for specifications.yaml")
 
     # Find the rsciio package directory (works inside _MEIPASS too)
     rsciio_dir = Path(rsciio.__file__).parent
-    logger.info(f"[RSCIIO] rsciio dir: {rsciio_dir}")
+    logger_rsciio.info(f"rsciio dir: {rsciio_dir}")
 
     # Also check _MEIPASS paths in case rsciio.__file__ doesn't point there
     search_dirs = [rsciio_dir]
@@ -80,14 +81,14 @@ def _ensure_rsciio_plugins():
                     plugins.append(specs)
                     seen_names.add(name)
             except Exception as e:
-                logger.warning(f"[RSCIIO] Failed to load {spec_file}: {e}")
+                logger_rsciio.warning(f"Failed to load {spec_file}: {e}")
 
-    logger.info(f"[RSCIIO] Found {len(plugins)} plugins from specifications.yaml")
+    logger_rsciio.info(f"Found {len(plugins)} plugins from specifications.yaml")
 
     # Log which formats we found (especially check for emd)
     for p in plugins:
         exts = p.get("file_extensions", [])
-        logger.info(f"[RSCIIO]   {p.get('name', '?')}: {exts}")
+        logger_rsciio.info(f"  {p.get('name', '?')}: {exts}")
 
     # Inject into BOTH registries
     rsciio.IO_PLUGINS.clear()
@@ -102,11 +103,11 @@ def _ensure_rsciio_plugins():
         for p in hyperspy.io.IO_PLUGINS
     )
     if emd_found:
-        logger.info(
-            f"[RSCIIO] EMD reader registered successfully ({len(plugins)} total plugins)"
+        logger_rsciio.info(
+            f"EMD reader registered successfully ({len(plugins)} total plugins)"
         )
     else:
-        logger.error("[RSCIIO] EMD reader NOT found after registration!")
+        logger_rsciio.error("EMD reader NOT found after registration!")
 
 
 def _extract_metadata(filepath: Path, filename: str) -> dict:
@@ -154,8 +155,8 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
             if "metadata" in s:
                 meta["hyperspy_metadata"] = s["metadata"]
 
-            logger.info(
-                f"[META] EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}"
+            logger_meta.info(
+                f"EMD: pixel_size={meta.get('pixel_size')} {meta.get('pixel_unit')}"
             )
 
         elif fname.endswith((".tif", ".tiff")):
@@ -165,7 +166,7 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
             try:
                 tif = tifffile.TiffFile(str(filepath))
             except TiffFileError as e:
-                logger.info(f"[ERROR] {e} ")
+                logger_meta.warning(f"Not a valid TIFF file: {e}")
             else:
                 page = tif.pages[0]
                 meta["image_shape"] = [int(page.shape[0]), int(page.shape[1])]
@@ -194,12 +195,12 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
                 meta["image_shape"] = [img.shape[0], img.shape[1]]
 
     except Exception as e:
-        logger.warning(f"[META] Metadata extraction failed (non-fatal): {e}")
+        logger_meta.warning(f"Metadata extraction failed (non-fatal): {e}")
 
     if not meta.__contains__("pixel_size"):
         meta["pixel_size"] = "-"
     if not meta.__contains__("pixel_unit"):
-        meta["pixel_size"] = "-"
+        meta["pixel_unit"] = "-"
 
     return meta
 
@@ -261,13 +262,13 @@ async def update_metadata(session_id: str, req: UpdateMetadataRequest):
                 )
                 with open(stats_path, "w") as f:
                     json.dump(stats, f)
-                logger.info(
-                    f"[META] Recomputed stats after pixel_size update | session={session_id}"
+                logger_meta.info(
+                    f"Recomputed stats after pixel_size update | session={session_id}"
                 )
                 return {"metadata": meta, "stats": stats}
         except Exception as e:
-            logger.warning(
-                f"[META] Stats recompute failed after pixel_size update: {e}"
+            logger_meta.warning(
+                f"Stats recompute failed after pixel_size update: {e}"
             )
 
     return {"metadata": meta}
@@ -283,21 +284,21 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    logger.info("[IMG] Upload session: %s, filename: %s", session_id, file.filename)
+    logger.info("Upload session: %s, filename: %s", session_id, file.filename)
 
     metadata = _extract_metadata(dest, file.filename)
     meta_path = session_dir / "metadata.json"
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     logger.info(
-        f"[IMG] Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}"
+        f"Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}"
     )
 
     fname = file.filename.lower()
     arr = None
     preview_url = f"/images/{session_id}/file"
 
-    logger.info(f"[IMG] preview url : {preview_url}")
+    logger.info(f"preview url: {preview_url}")
 
     if fname.endswith(".npy"):
         arr = np.load(str(dest))
@@ -308,7 +309,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         try:
             arr = tifffile.imread(str(dest))
         except TiffFileError as e:
-            logger.warning(f"[TIFF ERROR] {e} ")
+            logger.warning(f"Invalid TIFF/TIF file: {e}")
             return {"error": "Not a valid TIFF/TIF file!"}
     elif fname.endswith(".emd"):
         try:
@@ -319,7 +320,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             s = signals[0]
             arr = s["data"]
         except ImportError:
-            logger.warning("[IMG] HyperSpy not available — cannot load EMD files")
+            logger.warning("HyperSpy not available — cannot load EMD files")
             return {
                 "error": "EMD format requires HyperSpy which is not available in this build"
             }
@@ -331,7 +332,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             cv.imwrite(str(preview_path), img)
             preview_url = f"/images/{session_id}/preview"
     if arr is not None:
-        logger.info(f"[IMG] img shape: {arr.shape}")
+        logger.info(f"img shape: {arr.shape}")
 
         arr_min, arr_max = arr.min(), arr.max()
         display = (
@@ -350,7 +351,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             return
         try:
             img = yolosam.load_image(dest)
-            logger.info(f"[UPLOAD] Warming YOLO for shape: {img.shape}")
+            logger_upload.info(f"Warming YOLO for shape: {img.shape}")
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as pool:
                 await loop.run_in_executor(
@@ -362,9 +363,9 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
                         device=yolosam.device,
                     ),
                 )
-            logger.info("[UPLOAD] YOLO warmup complete")
+            logger_upload.info("YOLO warmup complete")
         except Exception as e:
-            logger.warning(f"[UPLOAD] Warmup failed (non-fatal): {e}")
+            logger_upload.warning(f"Warmup failed (non-fatal): {e}")
 
     asyncio.create_task(warm_for_shape())
 

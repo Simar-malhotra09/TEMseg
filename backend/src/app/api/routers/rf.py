@@ -1,5 +1,3 @@
-import logging
-import time
 from pathlib import Path
 
 import cv2 as cv
@@ -10,10 +8,11 @@ from pydantic import BaseModel
 from app.api.instances import extract_instances, load_instances
 from app.api.live_models import AvailableModels
 from app.api.utils import Stroke, mask_iou, strokes_to_mask
+from app.logutils import Timer, get_logger
 from app.models.helpers import rf_cache
 
 router = APIRouter(prefix="/rf")
-logger = logging.getLogger("routes.rf")
+logger = get_logger("rf")
 SESSIONS_DIR = Path("sessions")
 
 # A user-marked bg scribble that's too small gives the RF almost no sense of
@@ -72,7 +71,7 @@ async def rf_propose(req: ProposeRequest, request: Request):
     """
     Run RF pixel classifier and return missed regions as proposals directly.
     """
-    t0 = time.perf_counter()
+    t = Timer(logger, "rf propose")
 
     session_dir = SESSIONS_DIR / req.session_id
     if not session_dir.exists():
@@ -123,7 +122,7 @@ async def rf_propose(req: ProposeRequest, request: Request):
         return {
             "proposals": [],
             "message": "RF found no missed regions",
-            "elapsed": time.perf_counter() - t0,
+            "elapsed": t.elapsed,
         }
 
     instances, _ = extract_instances(missed, session_dir, save=False)
@@ -168,11 +167,9 @@ async def rf_propose(req: ProposeRequest, request: Request):
     for inst in instances:
         inst["source"] = "rf"
 
-    elapsed = time.perf_counter() - t0
-    logger.info(
-        f"RF recovery found {len(instances)} proposals in {elapsed * 1000:.1f}ms"
-    )
-    return {"proposals": instances, "elapsed": elapsed}
+    t.field("proposals", len(instances))
+    t.stop()
+    return {"proposals": instances, "elapsed": t.elapsed}
 
 
 @router.delete("/cache/{session_key}")
