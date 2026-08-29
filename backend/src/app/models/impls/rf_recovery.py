@@ -13,9 +13,7 @@ Critical design choices (vs naive approach):
   sigma values (1, 2, 4, 8) correspond to real particle scales.
 """
 
-import logging
 import pickle
-import time
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +37,9 @@ from skimage.morphology import (
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils import shuffle
 
-logger = logging.getLogger(__name__)
+from app.logutils import Timer, get_logger
+
+logger = get_logger("RFRecovery")
 
 MAX_TRAIN_PIXELS = 500_000
 _DEFAULT_MIN_AREA = 200  # px² at full resolution; below this → noise
@@ -180,7 +180,7 @@ class RFRecovery:
         )
         self._rf.fit(X_all, y_all)
         logger.info(
-            f"[RFRecovery] fitted {len(X_all)} px "
+            f"fitted {len(X_all)} px "
             f"({int(y_all.sum())} fg / {int((y_all == 0).sum())} bg)"
         )
 
@@ -210,23 +210,20 @@ class RFRecovery:
         if self._rf is None:
             raise RuntimeError("RFRecovery: call train() first")
 
-        t0 = time.perf_counter()
-        h, w = image.shape[:2]
+        with Timer(logger, "predict_missed_mask") as t:
+            h, w = image.shape[:2]
 
-        features = _extract_features(image)
-        t_feat = time.perf_counter()
+            with t.step("feat"):
+                features = _extract_features(image)
 
-        probs = self._rf.predict_proba(features)[:, 1].reshape(h, w)
-        t_pred = time.perf_counter()
+            with t.step("predict"):
+                probs = self._rf.predict_proba(features)[:, 1].reshape(h, w)
 
-        missed = (probs > threshold) & ~(mask > 0)
-        missed = remove_small_objects(missed, max_size=self.min_area)
-        missed = remove_small_holes(missed, max_size=self.min_area)
+            missed = (probs > threshold) & ~(mask > 0)
+            missed = remove_small_objects(missed, max_size=self.min_area)
+            missed = remove_small_holes(missed, max_size=self.min_area)
 
-        logger.info(
-            f"[RFRecovery] feat={t_feat - t0:.2f}s predict={t_pred - t_feat:.2f}s "
-            f"missed_px={int(missed.sum())}"
-        )
+            t.field("missed_px", int(missed.sum()))
         return missed.astype(np.uint8)
 
     def get_prompts(
@@ -235,25 +232,22 @@ class RFRecovery:
         if self._rf is None:
             raise RuntimeError("RFRecovery: call train() first")
 
-        t0 = time.perf_counter()
-        h, w = image.shape[:2]
+        with Timer(logger, "get_prompts") as t:
+            h, w = image.shape[:2]
 
-        features = _extract_features(image)
-        t_feat = time.perf_counter()
+            with t.step("feat"):
+                features = _extract_features(image)
 
-        probs = self._rf.predict_proba(features)[:, 1].reshape(h, w)
-        t_pred = time.perf_counter()
+            with t.step("predict"):
+                probs = self._rf.predict_proba(features)[:, 1].reshape(h, w)
 
-        missed = (probs > 0.6) & ~(mask > 0)
-        missed = remove_small_objects(missed, max_size=self.min_area)
+            missed = (probs > 0.6) & ~(mask > 0)
+            missed = remove_small_objects(missed, max_size=self.min_area)
 
-        labeled, n = ndimage.label(missed)
-        t_label = time.perf_counter()
+            with t.step("label"):
+                labeled, n = ndimage.label(missed)
 
-        logger.info(
-            f"[RFRecovery] feat={t_feat - t0:.2f}s predict={t_pred - t_feat:.2f}s "
-            f"label={t_label - t_pred:.2f}s components={n}"
-        )
+            t.field("components", n)
 
         prompts: list[dict] = []
         for comp_id in range(1, n + 1):

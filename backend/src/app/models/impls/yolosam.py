@@ -1,4 +1,3 @@
-import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,10 +11,12 @@ from segment_anything import SamPredictor, sam_model_registry
 from ultralytics import YOLO
 
 from app.api.live_models import AvailableModels
+from app.logutils import Timer, fmt_duration, get_logger
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
-logger = logging.getLogger("routes.models.yolosam")
+logger = get_logger("YoloSAM")
+log_batch = get_logger("YoloSAM", sub="Batch")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -34,7 +35,7 @@ class YoloSAMSegmentationResult(SegmentationResult):
 
 class YoloSam(Model):
     def __init__(self, config: ModelConfig, device: str = "cpu"):
-        logger.info("[YoloSAM] Initializing YoloSam")
+        logger.info("Initializing YoloSam")
         self.device = device
         super().__init__(config)  # calls self._load_components()
 
@@ -145,7 +146,7 @@ class YoloSam(Model):
     def segment(
         self, image: np.ndarray, embedding_cache: SAMEmbedding | None = None, **kwargs
     ) -> YoloSAMSegmentationResult:
-        logger.info(f"[YoloSAM] input image shape: {image.shape}, dtype: {image.dtype}")
+        logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
 
         # ensure predictor exists for reuse
         if not hasattr(self, "_predictor"):
@@ -153,115 +154,99 @@ class YoloSam(Model):
         predictor = self._predictor
 
         # --- YOLO Detection ---
-        t0 = time.perf_counter()
-        results = self.components["yolo"].predict(
-            source=image,
-            conf=0.25,
-            iou=0.5,
-            max_det=4000,
-            verbose=False,
-            device=self.device,
-        )
-        t1 = time.perf_counter()
         # we want to return these boxes
         # and overlay on the image
         # we can see point of failure,
-        boxes = results[0].boxes.xyxy
-        logger.info(f"[YoloSAM-Yolo] predict={t1 - t0:.3f}s | boxes={len(boxes)}")
+        with Timer(logger, "yolo") as t_yolo:
+            with t_yolo.step("predict"):
+                results = self.components["yolo"].predict(
+                    source=image,
+                    conf=0.25,
+                    iou=0.5,
+                    max_det=4000,
+                    verbose=False,
+                    device=self.device,
+                )
+                boxes = results[0].boxes.xyxy
 
-        t2 = time.perf_counter()
-        input_boxes = boxes.to(predictor.device)
-        transformed_boxes = predictor.transform.apply_boxes_torch(
-            input_boxes, image.shape[:2]
-        )
-        t3 = time.perf_counter()
-        logger.info(f"[YoloSAM-Yolo] box_transfer={t3 - t2:.3f}s")
+            with t_yolo.step("box_transfer"):
+                input_boxes = boxes.to(predictor.device)
+                transformed_boxes = predictor.transform.apply_boxes_torch(
+                    input_boxes, image.shape[:2]
+                )
 
-        yolo_time_elapsed = t3 - t0
-        logger.info(f"[YoloSAM-Yolo] detected {len(boxes)} boxes")
+            t_yolo.field("boxes", len(boxes))
 
         # Always prime SAM with the image so the embedding is available for
         # downstream point-prompt endpoints (/split, /from-points, /propose-similar)
         # even when YOLO found nothing. Without this, zero-detection images leave
         # the user with no way to manually bootstrap segmentation.
-        sam_start = time.perf_counter()
-        if embedding_cache:
-            predictor.features = embedding_cache.features
-            predictor.original_size = embedding_cache.original_size
-            predictor.input_size = embedding_cache.input_size
-            predictor.is_image_set = True
-            logger.info("[YoloSAM-SAM] encode=SKIPPED (cached)")
-        else:
-            predictor.set_image(image)
-            t_encode = time.perf_counter() - sam_start
-            logger.info(f"[YoloSAM-SAM] encode={t_encode:.3f}s")
+        with Timer(logger, "sam") as t_sam:
+            if embedding_cache:
+                predictor.features = embedding_cache.features
+                predictor.original_size = embedding_cache.original_size
+                predictor.input_size = embedding_cache.input_size
+                predictor.is_image_set = True
+                t_sam.field("encode", "cached")
+            else:
+                with t_sam.step("encode"):
+                    predictor.set_image(image)
 
-        if boxes is None or len(boxes) == 0:
-            sam_encode_elapsed = time.perf_counter() - sam_start
-            logger.info(
-                f"[YoloSAM] YOLO found 0 boxes — returning empty mask with SAM "
-                f"embedding cached (encode={sam_encode_elapsed:.3f}s)"
-            )
-            self._empty_device_cache()
-            return YoloSAMSegmentationResult(
-                segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                metadata={"detections": 0, "sam_embedding_cached": True},
-                model=AvailableModels.yolosam,
-                detection_boxes=np.array([]).reshape(0, 4),
-                embedding=SAMEmbedding(
-                    features=predictor.features,
-                    original_size=predictor.original_size,
-                    input_size=predictor.input_size,
-                ),
-            )
-
-        # Batch boxes to avoid RAM spike on images with many detections.
-        # predict_torch allocates (N, 1, H, W) masks; thousands of boxes
-        # can exhaust system RAM. We chunk and reduce incrementally.
-        box_batch_size = kwargs.get("box_batch_size", 64)
-        n_boxes = len(transformed_boxes)
-
-        if n_boxes <= box_batch_size:
-            masks, _, _ = predictor.predict_torch(
-                point_coords=None,
-                point_labels=None,
-                boxes=transformed_boxes,
-                multimask_output=False,
-            )
-            # mmasks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")masks_np = masks.cpu().numpy().astype("uint8")asks_np = masks.cpu().numpy().astype("uint8")
-            masks_np = masks.cpu().numpy().astype("uint8")
-            combined_mask = np.max(masks_np, axis=0)
-        else:
-            logger.info(
-                f"[YoloSAM-SAM] Batching {n_boxes} boxes in chunks of {box_batch_size}"
-            )
-            combined_mask = np.zeros(image.shape[:2], dtype="uint8")
-            for i in range(0, n_boxes, box_batch_size):
-                batch = transformed_boxes[i : i + box_batch_size]
-                masks, _, _ = predictor.predict_torch(
-                    point_coords=None,
-                    point_labels=None,
-                    boxes=batch,
-                    multimask_output=False,
+            if boxes is None or len(boxes) == 0:
+                logger.info(
+                    "YOLO found 0 boxes — returning empty mask with SAM embedding cached"
                 )
-                batch_np = masks.cpu().numpy().astype("uint8")
-                batch_max = np.max(batch_np, axis=0)
-                combined_mask = np.maximum(combined_mask, batch_max)
-                del masks, batch_np, batch_max
                 self._empty_device_cache()
+                return YoloSAMSegmentationResult(
+                    segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
+                    metadata={"detections": 0, "sam_embedding_cached": True},
+                    model=AvailableModels.yolosam,
+                    detection_boxes=np.array([]).reshape(0, 4),
+                    embedding=SAMEmbedding(
+                        features=predictor.features,
+                        original_size=predictor.original_size,
+                        input_size=predictor.input_size,
+                    ),
+                )
+
+            # Batch boxes to avoid RAM spike on images with many detections.
+            # predict_torch allocates (N, 1, H, W) masks; thousands of boxes
+            # can exhaust system RAM. We chunk and reduce incrementally.
+            box_batch_size = kwargs.get("box_batch_size", 64)
+            n_boxes = len(transformed_boxes)
+
+            with t_sam.step("decode"):
+                if n_boxes <= box_batch_size:
+                    masks, _, _ = predictor.predict_torch(
+                        point_coords=None,
+                        point_labels=None,
+                        boxes=transformed_boxes,
+                        multimask_output=False,
+                    )
+                    masks_np = masks.cpu().numpy().astype("uint8")
+                    combined_mask = np.max(masks_np, axis=0)
+                else:
+                    logger.info(
+                        f"Batching {n_boxes} boxes in chunks of {box_batch_size}"
+                    )
+                    combined_mask = np.zeros(image.shape[:2], dtype="uint8")
+                    for i in range(0, n_boxes, box_batch_size):
+                        batch = transformed_boxes[i : i + box_batch_size]
+                        masks, _, _ = predictor.predict_torch(
+                            point_coords=None,
+                            point_labels=None,
+                            boxes=batch,
+                            multimask_output=False,
+                        )
+                        batch_np = masks.cpu().numpy().astype("uint8")
+                        batch_max = np.max(batch_np, axis=0)
+                        combined_mask = np.maximum(combined_mask, batch_max)
+                        del masks, batch_np, batch_max
+                        self._empty_device_cache()
+
+            t_sam.field("mask_px", int(np.count_nonzero(combined_mask)))
 
         self._empty_device_cache()
-        sam_time_elapsed = time.perf_counter() - sam_start
-
-        logger.info(
-            f"""
-
-            [yolosam] Output mask: {np.info(combined_mask)}, Input was: {np.info(image)}. 
-
-            """
-        )
-        logger.info(f"[YoloSAM] Yolo took {yolo_time_elapsed:.4f}s")
-        logger.info(f"[YoloSAM] SAM took {sam_time_elapsed:.4f}s")
 
         return YoloSAMSegmentationResult(
             segmentation_mask=combined_mask,
@@ -324,12 +309,9 @@ class YoloSam(Model):
         h_full, w_full = img_shape
         combined = np.zeros((h_full, w_full), dtype="uint8")
 
-        logger.info(
-            f"[YoloSAM-Batch] Starting: {len(patches)} patches, output size {img_shape}"
-        )
+        log_batch.info(f"segment_batch: {len(patches)} patches, output {img_shape}")
 
         # --- Batch YOLO detection ---
-        t0 = time.perf_counter()
         yolo_model = self.components["yolo"]
 
         if not hasattr(self, "_predictor"):
@@ -337,75 +319,73 @@ class YoloSam(Model):
         predictor = self._predictor
 
         total_detections = 0
-        t_yolo_total = 0
-        t_sam_total = 0
+        t_yolo_total = 0.0
+        t_sam_total = 0.0
         all_boxes: list[np.ndarray] = []
 
-        for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
-            # YOLO per patch (ONNX model is batch=1)
-            t_yolo_start = time.perf_counter()
-            results = yolo_model.predict(
-                source=patch,
-                conf=0.25,
-                iou=0.5,
-                max_det=4000,
-                verbose=False,
-                device=self.device,
-            )
-            t_yolo_patch = time.perf_counter() - t_yolo_start
-            t_yolo_total += t_yolo_patch
+        with Timer(log_batch, "segment_batch") as t_batch:
+            for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
+                # YOLO per patch (ONNX model is batch=1)
+                t_yolo_start = time.perf_counter()
+                results = yolo_model.predict(
+                    source=patch,
+                    conf=0.25,
+                    iou=0.5,
+                    max_det=4000,
+                    verbose=False,
+                    device=self.device,
+                )
+                t_yolo_patch = time.perf_counter() - t_yolo_start
+                t_yolo_total += t_yolo_patch
 
-            boxes = results[0].boxes.xyxy
+                boxes = results[0].boxes.xyxy
 
-            if boxes is None or len(boxes) == 0:
-                logger.info(f"[YoloSAM-Batch] Patch {i}: no detections, skipping")
-                continue
+                if boxes is None or len(boxes) == 0:
+                    log_batch.debug(f"patch {i}: no detections, skipping")
+                    continue
 
-            logger.info(
-                f"[YoloSAM-Batch] Patch {i}: {len(boxes)} detections, YOLO={t_yolo_patch:.3f}s"
-            )
+                log_batch.debug(
+                    f"patch {i}: {len(boxes)} detections, yolo={fmt_duration(t_yolo_patch)}"
+                )
 
-            # SAM per patch
-            t_sam_start = time.perf_counter()
-            predictor.set_image(patch)
-            input_boxes = boxes.to(predictor.device)
-            transformed_boxes = predictor.transform.apply_boxes_torch(
-                input_boxes, patch.shape[:2]
-            )
+                # SAM per patch
+                t_sam_start = time.perf_counter()
+                predictor.set_image(patch)
+                input_boxes = boxes.to(predictor.device)
+                transformed_boxes = predictor.transform.apply_boxes_torch(
+                    input_boxes, patch.shape[:2]
+                )
 
-            masks, _, _ = predictor.predict_torch(
-                point_coords=None,
-                point_labels=None,
-                boxes=transformed_boxes,
-                multimask_output=False,
-            )
-            t_sam_patch = time.perf_counter() - t_sam_start
-            t_sam_total += t_sam_patch
-            logger.info(f"[YoloSAM-Batch] Patch {i}: SAM={t_sam_patch:.3f}s")
+                masks, _, _ = predictor.predict_torch(
+                    point_coords=None,
+                    point_labels=None,
+                    boxes=transformed_boxes,
+                    multimask_output=False,
+                )
+                t_sam_patch = time.perf_counter() - t_sam_start
+                t_sam_total += t_sam_patch
+                log_batch.debug(f"patch {i}: sam={fmt_duration(t_sam_patch)}")
 
-            patch_mask = masks.cpu().numpy().astype("uint8")
-            patch_mask = np.max(patch_mask, axis=0).squeeze()
+                patch_mask = masks.cpu().numpy().astype("uint8")
+                patch_mask = np.max(patch_mask, axis=0).squeeze()
 
-            x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
-            combined[y1:y2, x1:x2] = np.maximum(
-                combined[y1:y2, x1:x2], (patch_mask > 0).astype("uint8") * 255
-            )
+                x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
+                combined[y1:y2, x1:x2] = np.maximum(
+                    combined[y1:y2, x1:x2], (patch_mask > 0).astype("uint8") * 255
+                )
 
-            # Offset boxes to full-image coordinates
-            boxes_np = boxes.cpu().numpy()
-            boxes_np[:, [0, 2]] += x1
-            boxes_np[:, [1, 3]] += y1
-            all_boxes.append(boxes_np)
+                # Offset boxes to full-image coordinates
+                boxes_np = boxes.cpu().numpy()
+                boxes_np[:, [0, 2]] += x1
+                boxes_np[:, [1, 3]] += y1
+                all_boxes.append(boxes_np)
 
-            total_detections += len(boxes)
-            self._empty_device_cache()
+                total_detections += len(boxes)
+                self._empty_device_cache()
 
-        t_total = time.perf_counter() - t0
-        logger.info(
-            f"[YoloSAM-Batch] TOTAL={t_total:.3f}s "
-            f"(yolo={t_yolo_total:.3f} | sam={t_sam_total:.3f}) | "
-            f"detections={total_detections}"
-        )
+            t_batch.field("yolo", fmt_duration(t_yolo_total))
+            t_batch.field("sam", fmt_duration(t_sam_total))
+            t_batch.field("detections", total_detections)
 
         detection_boxes = (
             np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)

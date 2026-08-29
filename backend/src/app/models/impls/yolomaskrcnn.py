@@ -1,4 +1,3 @@
-import logging
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict
@@ -21,7 +20,6 @@ from app.api.live_models import AvailableModels
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolomaskrcnn")
-logger = logging.getLogger("routes.models.yolomaskrcnn")
 
 
 class YoloMaskRCNN(Model):

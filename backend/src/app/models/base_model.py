@@ -7,9 +7,10 @@ from typing import Optional
 
 from app.models.helpers.compute_stats import compute_stats_from_instances
 import numpy as np
-import logging
 
-logger = logging.getLogger(__name__)
+from app.logutils import get_logger
+
+logger = get_logger("model")
 
 # from app.models.helpers.compute_stats import (
 #     compute_avg_circularity,

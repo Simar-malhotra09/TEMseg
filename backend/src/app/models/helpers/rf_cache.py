@@ -1,12 +1,12 @@
-import logging
 from pathlib import Path
 
 import numpy as np
 
 from app.api.instances import MIN_INSTANCE_AREA, load_instances
+from app.logutils import get_logger
 from app.models.impls.rf_recovery import RFRecovery
 
-logger = logging.getLogger(__name__)
+logger = get_logger("RFRecovery", sub="cache")
 
 SESSIONS_DIR = Path("sessions")
 
@@ -50,7 +50,7 @@ def get_or_train(
         else:
             resolved_min_area, min_area_source = _derive_min_area(session_key)
         logger.info(
-            f"[RF-Cache] Training new RFRecovery for session={session_key} "
+            f"Training new RFRecovery for session={session_key} "
             f"min_area={resolved_min_area} min_area_source={min_area_source}"
         )
         rf = RFRecovery(min_area=resolved_min_area)
@@ -62,7 +62,7 @@ def get_or_train(
 def update(session_key: str, image: np.ndarray, mask: np.ndarray) -> None:
     if session_key not in _cache:
         logger.warning(
-            f"[RF-Cache] No entry for session={session_key}, skipping update"
+            f"No entry for session={session_key}, skipping update"
         )
         return
     _cache[session_key].update(image, mask)
@@ -71,6 +71,6 @@ def update(session_key: str, image: np.ndarray, mask: np.ndarray) -> None:
 def evict(session_key: str) -> None:
     removed = _cache.pop(session_key, None)
     if removed is not None:
-        logger.info(f"[RF-Cache] Evicted session={session_key}")
+        logger.info(f"Evicted session={session_key}")
     else:
-        logger.debug(f"[RF-Cache] Evict called for unknown session={session_key}")
+        logger.debug(f"Evict called for unknown session={session_key}")
