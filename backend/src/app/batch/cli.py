@@ -15,6 +15,7 @@ import time  # noqa: E402
 
 from app.batch.pipeline import run_batch  # noqa: E402
 from app.batch.summary import build_summary_csv  # noqa: E402
+from app.logutils import init_logging  # noqa: E402
 from app.batch.types import (  # noqa: E402
     VALID_IMAGE_EXTENSIONS,
     BatchConfig,
@@ -27,6 +28,7 @@ from app.batch.types import (  # noqa: E402
 
 
 def main() -> None:
+    init_logging()
     parser = argparse.ArgumentParser(
         prog="temseg-batch",
         description=(

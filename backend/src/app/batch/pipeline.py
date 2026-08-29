@@ -1,6 +1,5 @@
 import gc
 import json
-import logging
 import shutil
 import sys
 import time
@@ -32,8 +31,9 @@ from app.models.helpers.config import (
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
+from app.logutils import get_logger
 
-logger = logging.getLogger("batch.pipeline")
+logger = get_logger("batch")
 
 _CVAT_IMPORT_README: bytes = b"""\
 Importing into CVAT

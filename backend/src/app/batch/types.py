@@ -1,11 +1,11 @@
-import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from app.api.live_models import AvailableModels
+from app.logutils import get_logger
 
-logger = logging.getLogger("batch.types")
+logger = get_logger("batch")
 
 VALID_IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".npy", ".emd"}
 
