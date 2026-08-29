@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ============================================================================
-# build_mac.sh — Build TEMseg.app for macOS Apple Silicon
+# build_mac.sh:  Build TEMseg.app for macOS Apple Silicon
 #
 # Prerequisites:
 #   - Python 3.11+ with the backend venv set up (uv sync / install.py done)
@@ -18,12 +17,9 @@ set -euo pipefail
 #   ./build_mac.sh --clean --skip-frontend
 #
 # Output:
-#   dist/TEMseg.app
-# ============================================================================
+#   dist/TEMseg-<branch>.app
 
-# -------------------------------------------
 # Parse flags
-# -------------------------------------------
 CLEAN=0
 SKIP_FRONTEND=0
 for arg in "$@"; do
@@ -43,7 +39,8 @@ for arg in "$@"; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
 
 # Embed the current git branch in the output name so builds are traceable.
 # Sanitise: replace any non-alphanumeric char with '-', strip leading/trailing dashes.
@@ -58,9 +55,7 @@ echo "  Output: dist/$APP_NAME"
 [ "$SKIP_FRONTEND" -eq 1 ] && echo "  Skipping frontend rebuild"
 echo "========================================"
 
-# -------------------------------------------
-# Step 1: Check weight manifest (cheap)
-# -------------------------------------------
+# Step 1: Check weight manifest
 echo ""
 echo "[1/4] Checking weight manifest..."
 
@@ -77,21 +72,19 @@ if [ ! -f "assets/temseg_icon.icns" ]; then
 fi
 echo "  Icon found: assets/temseg_icon.icns"
 
-# -------------------------------------------
-# Step 2: Ensure PyInstaller is installed (cheap)
-# -------------------------------------------
+# Step 2: Ensure PyInstaller is installed 
 echo ""
 echo "[2/4] Checking PyInstaller..."
 
-if ! uv run python -c "import PyInstaller" 2>/dev/null; then
+# Use the venv directly: 'uv run' performs a project sync first, which prunes
+# packages installed outside uv.lock (PyInstaller, filterpy, ...) from .venv.
+if [ ! -x ".venv/bin/pyinstaller" ]; then
     echo "  Installing PyInstaller..."
-    uv pip install pyinstaller
+    uv pip install "pyinstaller==6.21.0"
 fi
-echo "  PyInstaller OK"
+echo "  PyInstaller OK (.venv/bin/pyinstaller)"
 
-# -------------------------------------------
 # Step 3: Build frontend static export
-# -------------------------------------------
 echo ""
 if [ "$SKIP_FRONTEND" -eq 0 ]; then
     echo "[3/4] Building frontend..."
@@ -117,9 +110,7 @@ else
     fi
 fi
 
-# -------------------------------------------
 # Step 4: Run PyInstaller
-# -------------------------------------------
 echo ""
 echo "[4/4] Running PyInstaller..."
 
@@ -132,7 +123,7 @@ else
     echo "  (Pass --clean for a full rebuild if spec/deps changed)"
 fi
 
-uv run pyinstaller temseg.spec --noconfirm
+.venv/bin/pyinstaller temseg.spec --noconfirm
 
 # Rename the default output to include branch name.
 # Remove any previous build with the same name first; otherwise macOS mv
@@ -142,10 +133,8 @@ if [ -d "dist/TEMseg.app" ]; then
     mv "dist/TEMseg.app" "dist/${APP_NAME}"
 fi
 
-# -------------------------------------------
-# Step 4b: Fix rsciio - PyInstaller fails to bundle its subdirectories
-# -------------------------------------------
-RSCIIO_SRC=$(uv run python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)")
+# Step 4b: Fix rsciio since PyInstaller sometimes fails to bundle its subdirectories
+RSCIIO_SRC=$(.venv/bin/python -c "import rsciio; from pathlib import Path; print(Path(rsciio.__file__).parent)")
 RSCIIO_DEST="dist/${APP_NAME}/Contents/Frameworks/rsciio"
 
 if [ -d "$RSCIIO_SRC" ]; then
@@ -161,9 +150,6 @@ else
     echo "  WARNING: Could not find rsciio source at $RSCIIO_SRC"
 fi
 
-# -------------------------------------------
-# Done
-# -------------------------------------------
 if [ -d "dist/${APP_NAME}" ]; then
     echo ""
     echo "========================================"
