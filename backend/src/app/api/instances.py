@@ -1,13 +1,13 @@
-import logging
 import json
 import math
-import time
 import numpy as np
 import cv2 as cv
 from pathlib import Path
 from scipy import ndimage
 
-logger = logging.getLogger(__name__)
+from app.logutils import Timer, get_logger
+
+logger = get_logger("instances")
 
 MIN_INSTANCE_AREA = 50
 
@@ -48,7 +48,7 @@ def extract_instances(
     simplification. SAM masks are typically high quality, so YOLO-SAM uses a
     smaller scale to retain more vertices.
     """
-    t_start = time.perf_counter()
+    t = Timer(logger, "extract instances")
 
     # ensure binary uint8
     binary = (mask > 0).astype(np.uint8)
@@ -101,11 +101,9 @@ def extract_instances(
             }
         )
 
-    elapsed_ms = (time.perf_counter() - t_start) * 1000
-    logger.info(
-        f"Extracted {len(instances)} particles from mask "
-        f"({skipped} skipped) in {elapsed_ms:.1f}ms"
-    )
+    t.field("particles", len(instances))
+    t.field("skipped", skipped)
+    t.stop()
 
     if save:
         npy_path = session_dir / "instances.npy"
@@ -124,7 +122,7 @@ def load_instances(session_dir: Path) -> tuple[list[dict], np.ndarray] | None:
     """
     Load instances from disk. Returns (instances, labeled_mask) or None if not found.
     """
-    t_start = time.perf_counter()
+    t = Timer(logger, "load instances")
     npy_path = session_dir / "instances.npy"
     json_path = session_dir / "instances.json"
 
@@ -135,11 +133,9 @@ def load_instances(session_dir: Path) -> tuple[list[dict], np.ndarray] | None:
     with open(json_path) as f:
         instances = json.load(f)
 
-    elapsed_ms = (time.perf_counter() - t_start) * 1000
-    logger.info(
-        f"Loaded {len(instances)} saved particles for {session_dir.name} "
-        f"in {elapsed_ms:.1f}ms"
-    )
+    t.field("particles", len(instances))
+    t.field("session", session_dir.name)
+    t.stop()
     return instances, labeled
 
 
@@ -147,7 +143,7 @@ def save_instances(
     session_dir: Path, instances: list[dict], labeled: np.ndarray
 ) -> None:
     """Persist updated instances and labeled mask back to disk."""
-    t_start = time.perf_counter()
+    t = Timer(logger, "save instances")
     npy_path = session_dir / "instances.npy"
     json_path = session_dir / "instances.json"
 
@@ -155,10 +151,9 @@ def save_instances(
     with open(json_path, "w") as f:
         json.dump(instances, f)
 
-    elapsed_ms = (time.perf_counter() - t_start) * 1000
-    logger.info(
-        f"Saved {len(instances)} particles for {session_dir.name} in {elapsed_ms:.1f}ms"
-    )
+    t.field("particles", len(instances))
+    t.field("session", session_dir.name)
+    t.stop()
 
 
 def rasterize_instances(instances: list[dict], shape: tuple[int, int]) -> np.ndarray:

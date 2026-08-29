@@ -10,44 +10,11 @@ from app.api.live_models import AvailableModels
 from app.api.model_registry import get_or_load_model
 
 from typing import List
-import logging
 
-import os
-import platform
+from app.logutils import get_logger, init_logging
 
-
-LOG_FORMAT = "%(asctime)s.%(msecs)03d - %(name)s - %(levelname)s - %(message)s"
-DATEFMT = "%Y-%m-%d %H:%M:%S"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format=LOG_FORMAT,
-    datefmt=DATEFMT,
-)
-
-# resolve a writable, per-user log dir (never inside the app bundle)
-system = platform.system()
-if system == "Windows":
-    base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-    log_dir = os.path.join(base, "TEMseg", "logs")
-elif system == "Darwin":
-    log_dir = os.path.expanduser("~/Library/Logs/TEMseg")
-else:  # Linux
-    log_dir = os.path.expanduser("~/.local/state/TEMseg/logs")
-
-os.makedirs(log_dir, exist_ok=True)
-log_path = os.path.join(log_dir, "routes.log")
-
-# parent logger for all routes
-routes_logger = logging.getLogger("routes")
-routes_logger.setLevel(logging.INFO)
-formatter = logging.Formatter(LOG_FORMAT, datefmt=DATEFMT)
-
-# file handler for routes
-if not routes_logger.handlers:
-    file_handler = logging.FileHandler(log_path)
-    file_handler.setFormatter(formatter)
-    routes_logger.addHandler(file_handler)
+init_logging()
+log = get_logger("api")
 
 
 @asynccontextmanager
@@ -105,4 +72,4 @@ def cleanup_old_sessions(max_age_hours: int = 24, force=False):
         age = now - session.stat().st_mtime
         if age > max_age_hours * 3600:
             shutil.rmtree(session)
-            routes_logger.info(f"Cleaned up old session: {session.name}")
+            log.info(f"Cleaned up old session: {session.name}")

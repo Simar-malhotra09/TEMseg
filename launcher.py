@@ -8,7 +8,6 @@ os.environ["YOLO_AUTOINSTALL"] = "False"
 
 import json
 import hashlib
-import logging
 import os
 import platform
 import sys
@@ -21,11 +20,16 @@ from pathlib import Path
 import webview
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="[launcher] %(message)s",
-)
-log = logging.getLogger("launcher")
+try:
+    # frozen build: app.logutils is bundled into the PYZ directly
+    from app.logutils import get_logger, init_logging
+except ModuleNotFoundError:
+    # dev checkout: backend/src isn't on sys.path yet
+    sys.path.insert(0, str(Path(__file__).parent / "backend" / "src"))
+    from app.logutils import get_logger, init_logging
+
+init_logging()
+log = get_logger("launcher")
 
 if getattr(sys, "frozen", False):
     import ssl

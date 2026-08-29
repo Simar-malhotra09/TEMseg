@@ -3,13 +3,13 @@ from pydantic import BaseModel
 import cv2 as cv
 from typing import List
 from pathlib import Path
-import logging
 from fastapi import APIRouter
 
+from app.logutils import get_logger
 from app.models.base_model import SegmentationResult
 
 router = APIRouter(prefix="/utils")
-logger = logging.getLogger("routes.utils")
+logger = get_logger("utils")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -188,7 +188,7 @@ def batch_seg_patches(
         y2 = max(0, min(int(box.y + box.height), h))
 
         if x2 <= x1 or y2 <= y1:
-            logger.warning(f"[BATCH] Degenerate patch skipped: {box}")
+            logger.warning(f"Degenerate batch patch skipped: {box}")
 
         patches.append(img[y1:y2, x1:x2])
         offsets.append((x1, y1))
