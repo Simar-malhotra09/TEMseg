@@ -92,7 +92,7 @@ async def segment(req: SegmentRequest, request: Request):
             if req.inverse_blackout:
                 # inverese blackout reqs to keep only the selected regions
                 # and ignore all else. Suitable for batch segmentation
-                if req.model == AvailableModels.yolosam:
+                if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
                     logger.info(
                         f"Running batch segmentation on {len(req.regions)} patches"
                     )
@@ -121,7 +121,7 @@ async def segment(req: SegmentRequest, request: Request):
                         req.regions,
                         save_path=f"sessions/{req.session_id}/blackout_check.png",
                     )
-                if req.model == AvailableModels.yolosam:
+                if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
                     result = model_inst.segment(img, embedding)
                 else:
                     result = model_inst.segment(img)
@@ -209,7 +209,12 @@ async def segment(req: SegmentRequest, request: Request):
         labeled = None
         try:
             binary = (mask > 0).astype(np.uint8)
-            sam_epsilon_scale = 0.75 if result.model == AvailableModels.yolosam else 1.0
+            sam_epsilon_scale = (
+                0.75
+                if result.model
+                in (AvailableModels.yolosam, AvailableModels.fastyolosam)
+                else 1.0
+            )
             instances, labeled = extract_instances(
                 binary, session_dir, save=True, epsilon_scale=sam_epsilon_scale
             )

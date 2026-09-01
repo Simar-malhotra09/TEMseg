@@ -7,6 +7,7 @@ from app.models.helpers.config import (
     nano_config,
     yolomaskrcnn_config,
 )
+from app.models.impls.fastyolosam import FastYoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
@@ -15,6 +16,9 @@ logger = get_logger("registry")
 
 _MODEL_BUILDERS = {
     AvailableModels.yolosam: lambda device: YoloSam(nano_config, device=device),
+    AvailableModels.fastyolosam: lambda device: FastYoloSam(
+        nano_config, device=device
+    ),
     AvailableModels.yolomaskrcnn: lambda device: YoloMaskRCNN(
         yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
     ),
