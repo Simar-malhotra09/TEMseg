@@ -28,6 +28,7 @@ from app.models.helpers.config import (
     nano_config,
     yolomaskrcnn_config,
 )
+from app.models.impls.fastyolosam import FastYoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
@@ -60,6 +61,8 @@ def build_model(model_id: AvailableModels) -> Model:
     device = get_device()
     if model_id == AvailableModels.yolosam:
         return YoloSam(nano_config, device=device)
+    elif model_id == AvailableModels.fastyolosam:
+        return FastYoloSam(nano_config, device=device)
     elif model_id == AvailableModels.yolomaskrcnn:
         return YoloMaskRCNN(
             yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
@@ -209,7 +212,11 @@ def process_image(
     mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
 
     binary = (mask > 0).astype(np.uint8)
-    epsilon_scale = 0.75 if model_id == AvailableModels.yolosam else 1.0
+    epsilon_scale = (
+        0.75
+        if model_id in (AvailableModels.yolosam, AvailableModels.fastyolosam)
+        else 1.0
+    )
     instances, labeled = extract_instances(
         binary, image_output_dir, save=True, epsilon_scale=epsilon_scale
     )
