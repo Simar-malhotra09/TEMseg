@@ -47,7 +47,7 @@ experimental_cobalt/*.jpeg
 draft2.typ
 paper/
 
-
+segment_anything/
 .matilda/
 experimental_cobalt/
 model_scripts/
