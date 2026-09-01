@@ -153,7 +153,7 @@ class YoloSam(Model):
             self._predictor = SamPredictor(self.components["sam"])
         predictor = self._predictor
 
-        # --- YOLO Detection ---
+        # YOLO Detection
         # we want to return these boxes
         # and overlay on the image
         # we can see point of failure,
