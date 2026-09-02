@@ -7,7 +7,7 @@ from app.models.helpers.config import (
     nano_config,
     yolomaskrcnn_config,
 )
-from app.models.impls.fastyolosam import FastYoloSam
+from app.models.impls.fasteryolosam import FasterYoloSam
 from app.models.impls.maskrcnn import MaskRCNN
 from app.models.impls.yolomaskrcnn import YoloMaskRCNN
 from app.models.impls.yolosam import YoloSam
@@ -15,8 +15,8 @@ from app.models.impls.yolosam import YoloSam
 logger = get_logger("registry")
 
 
-def _build_fastyolosam(models: dict, device: str) -> FastYoloSam:
-    """Build FastYoloSam on stock YoloSam's components when available.
+def _build_fasteryolosam(models: dict, device: str) -> FasterYoloSam:
+    """Build FasterYoloSam on stock YoloSam's components when available.
 
     Both pipelines use the same weight files (nano_config), so reusing the
     loaded dict means one YOLO ONNX session (one ~5.7s CoreML compile) and one
@@ -25,9 +25,9 @@ def _build_fastyolosam(models: dict, device: str) -> FastYoloSam:
     """
     base = models.get(AvailableModels.yolosam)
     if base is not None:
-        logger.info("FastYoloSam reusing YoloSam components (shared load)")
-        return FastYoloSam(nano_config, device=device, components=base.components)
-    return FastYoloSam(nano_config, device=device)
+        logger.info("FasterYoloSam reusing YoloSam components (shared load)")
+        return FasterYoloSam(nano_config, device=device, components=base.components)
+    return FasterYoloSam(nano_config, device=device)
 
 
 _MODEL_BUILDERS = {
@@ -57,8 +57,8 @@ def get_or_load_model(models: dict, model: AvailableModels):
     """Return the cached model instance, lazily instantiating it on first use."""
     if model not in models:
         device = get_device()
-        if model is AvailableModels.fastyolosam:
-            models[model] = _build_fastyolosam(models, device)
+        if model is AvailableModels.fasteryolosam:
+            models[model] = _build_fasteryolosam(models, device)
         else:
             builder = _MODEL_BUILDERS.get(model)
             if builder is None:

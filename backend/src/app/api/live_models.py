@@ -3,6 +3,6 @@ from enum import Enum
 
 class AvailableModels(str, Enum):
     yolosam = "YoloSAM"
-    fastyolosam = "FastYoloSAM"
+    fasteryolosam = "FasterYoloSAM"
     yolomaskrcnn = "YoloMaskRCNN"
     maskrcnn_synthetic = "MaskRCNN-Synthetic"
