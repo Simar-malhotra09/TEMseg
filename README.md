@@ -2,10 +2,10 @@
 One entry per week (dated by the Monday) or in case of majorish additions. Weeks with nothing worth noting are skipped.
 
 ### 2026-09-02
-- New variant: FasterYoloSAM : same output as YoloSAM with a faster SAM decode (fused mask union, faster attention), available in the model list and the batch API. It shares its YOLO session and SAM weights with YoloSAM, so loading both costs one set of weights.
-- SAM encoder depth option: Full (12 layers) or Truncation (first 8 layers) for a faster encode (upto 1.4x over 42 images). [Fixed: See edit]Some quality degradation, mostly seem in terms of instance level seperation. Available with both YoloSAM and FasterYoloSAM.
+- New variant: FasterYoloSAM: same output as YoloSAM with a faster SAM decode (fused mask union, faster attention), available in the model list and the batch API. It shares its YOLO session and SAM weights with YoloSAM, so loading both costs one set of weights.
+- SAM encoder depth option: Full (12 layers) or Truncation (first 8 layers) for a faster encode (up to 1.4x over 42 images). [Fixed: see edit] Some quality degradation, mostly seen in terms of instance-level separation. Available with both YoloSAM and FasterYoloSAM.
 - Backend warms YOLO up while the server starts, so the first segmentation after launch skips the one-time ~6 s model compile on MPS (replaces warming on image upload).
-- Edit on quality degradation: It turn out, for n < 12 (truncation), some of the pixel that exist at particle boundry were assigned high logits (logit > 0 : foreground, logits < 0: background), which 'connected' 2, otherwise, independent instance of particles when we used our connected components algorithm to extract instaces. Rather embarrassingly, up until now, I never though of using the Yolo bounding boxes as 'hints', as to which instance a pixel belongs to. Having implemented that has improved general instance segmentation quality by quite a bit, and it suffers no quality degradation between full vs truncated encoder depths either,just makes time-to-mask going brr.
+- Edit on quality degradation: It turns out that for n < 12 (truncation), some of the pixels that exist at particle boundaries were assigned high logits (logit > 0: foreground, logits < 0: background), which 'connected' two otherwise-independent instances of particles when we used our connected-components algorithm to extract instances. Rather embarrassingly, up until now I never thought of using the YOLO bounding boxes as 'hints' as to which instance a pixel belongs to. Having implemented that has improved general instance segmentation quality by quite a bit, and it suffers no quality degradation between full vs truncated encoder depths either — it just makes time-to-mask go brr.
 
 ### 2026-08-24
 - Analysis tab to measure distances and angles directly on the image.
@@ -35,7 +35,7 @@ One entry per week (dated by the Monday) or in case of majorish additions. Weeks
 - Freehand scribble tool to mark background pixels for the RF recovery pass, replacing the distance guess.
 - Shape labels moved into a user-editable config file.
 - Sidebar rebuilt into tabs.
-- Enable on demand lazy loading models.  
+- Enable on-demand lazy loading of models.  
 - Refine-mode hover tooltip with user-picked metrics.
 
 ### 2026-06-29
@@ -64,7 +64,7 @@ One entry per week (dated by the Monday) or in case of majorish additions. Weeks
 - SAM box predictions batched to stop RAM crashes on particle-dense images.
 - Warning on high particle counts.
 - Mask overlays aligned correctly in the desktop build.
-- Reduce app bundles size. 
+- Reduce app bundle size. 
 
 ### 2026-04-13
 - Stats exportable to CSV.
