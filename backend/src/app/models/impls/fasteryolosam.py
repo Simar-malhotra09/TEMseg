@@ -1,5 +1,5 @@
 """
-FastYoloSAM optimizations.
+FasterYoloSAM optimizations.
 
 The goal is to reduce SAM decoding time and memory usage while keeping
 the output identical to the original YoloSAM implementation whenever
@@ -11,13 +11,13 @@ possible.
    the CPU and combines them there. This creates roughly 0.5 GB of
    intermediate CPU transfers.
 
-   FastYoloSAM instead upsamples each chunk on the device and keeps a
+   FasterYoloSAM instead upsamples each chunk on the device and keeps a
    running pixel-wise maximum at full resolution. Only the final result
    is copied to the CPU and thresholded.
 
    This produces the same binary mask as the original implementation:
    the original takes the union of individually thresholded masks,
-   while FastYoloSAM takes the maximum logit first and thresholds once.
+   while FasterYoloSAM takes the maximum logit first and thresholds once.
    Since thresholding at zero is monotonic, these produce the same set
    of pixels.
 
@@ -28,7 +28,9 @@ possible.
    scaled_dot_product_attention() instead of manually computing
    attention with q @ k.T, softmax, and @ v.
 
-   The change is scoped to FastYoloSAM and restored afterward, so a
+   See https://docs.pytorch.org/tutorials/intermediate/scaled_dot_product_attention_tutorial.html for more information.
+
+   The change is scoped to FasterYoloSAM and restored afterward, so a
    normal YoloSAM running in the same process keeps its original
    attention implementation.
 
@@ -36,14 +38,12 @@ possible.
 
    6.82s -> 6.24s
 
+   The improvement seems to be modest since our token length is pretty small
+   shouldn't have any side effects.
 
-   This is not bit-exact with the original implementation. The fused
-   attention kernel can produce slightly different floating-point
+   The fused attention kernel can produce slightly different floating-point
    rounding, which can change pixels whose logits are extremely close
    to the threshold.
-
-   In testing, this changed 1 pixel out of 131,256. All 13 particles
-   were unaffected.
 
    Set TEMSEG_FASTSAM_DECODER_SDPA=0 to disable this optimization and
    restore bit-exact output.
@@ -55,22 +55,9 @@ possible.
    or prompts.
 
    The original implementation recomputes it for every prediction.
-   FastYoloSAM caches it instead.
+   FasterYoloSAM caches it instead.
 
    This saves about 17-19 ms per image.
-
-4. Keep the MPS allocator warm
-
-   The original implementation calls torch.mps.empty_cache() after
-   every segment() call. This releases roughly 750 MB back to the OS,
-   which then has to be allocated again on the next call.
-
-   That can add 1-2 seconds to the next call and makes cold/warm timing
-   comparisons misleading.
-
-   FastYoloSAM leaves the allocator warm between segment() calls.
-   segment_batch() still clears the cache between patches where doing
-   so is useful.
 
 Optimizations tested and rejected:
 
@@ -99,8 +86,8 @@ Optimizations tested and rejected:
   The remaining cost is the per-chunk upsampling, which takes about
   0.26s total.
 
-Use model_scripts/yolosam_fastyolosam_ab.py to benchmark YoloSAM and
-FastYoloSAM on the same image and compare runtime, masks, and extracted
+Use model_scripts/ to benchmark YoloSAM and
+FasterYoloSAM on the same image(s) and compare runtime, masks, and extracted
 instance counts.
 """
 
@@ -123,8 +110,8 @@ from app.models.impls.yolosam import (
     YoloSam,
 )
 
-logger = get_logger("FastYoloSAM")
-log_batch = get_logger("FastYoloSAM", sub="Batch")
+logger = get_logger("FasterYoloSAM")
+log_batch = get_logger("FasterYoloSAM", sub="Batch")
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -134,9 +121,6 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-# Kill-switches so a client-side A/B surprise can be bisected without a
-# code change: TEMSEG_FASTSAM_FUSED_UNION=0 etc. All default ON — these are
-# the recommended, measured settings.
 USE_FUSED_UNION = _env_flag("TEMSEG_FASTSAM_FUSED_UNION", True)
 USE_DECODER_SDPA = _env_flag("TEMSEG_FASTSAM_DECODER_SDPA", True)
 USE_DENSE_PE_CACHE = _env_flag("TEMSEG_FASTSAM_DENSE_PE_CACHE", True)
@@ -145,10 +129,9 @@ USE_DENSE_PE_CACHE = _env_flag("TEMSEG_FASTSAM_DENSE_PE_CACHE", True)
 def _decoder_sdpa_attention_forward(self, q, k, v):
     """transformer.Attention.forward with the manual softmax fused into SDPA.
 
-    Upstream computes softmax(q @ k^T / sqrt(head_dim)) @ v as separate ops;
-    F.scaled_dot_product_attention computes the identical expression (default
-    scale = 1/sqrt(head_dim)) with fused kernels. Applies ONLY to the mask
-    decoder's TwoWayTransformer — the ViT encoder's Attention is a different
+    Replace manual softmax(q @ k^T / sqrt(head_dim)) @ v with
+    F.scaled_dot_product_attention which uses kernels. Applies ONLY to the mask
+    decoder's TwoWayTransformer since the ViT encoder's Attention is a different
     class (relative-position bias) and measured SLOWER with SDPA on MPS.
     """
     q = self.q_proj(q)
@@ -166,10 +149,8 @@ def _decoder_sdpa_attention_forward(self, q, k, v):
 
 @contextmanager
 def _decoder_sdpa_scope():
-    """Patch sam_transformer.Attention.forward to SDPA for the decode only.
-
-    Scoped (and restored) so a stock YoloSam running in the SAME process keeps
-    the pristine upstream kernels — the A/B comparison stays clean.
+    """
+    Patch sam_transformer.Attention.forward to SDPA for the decode only.
     """
     original = sam_transformer.Attention.forward
     sam_transformer.Attention.forward = _decoder_sdpa_attention_forward
@@ -179,12 +160,12 @@ def _decoder_sdpa_scope():
         sam_transformer.Attention.forward = original
 
 
-class FastYoloSam(YoloSam):
-    """YoloSam with the measured SAM-decode optimisations. See module docstring.
+class FasterYoloSam(YoloSam):
+    """
+    YoloSam with the measured SAM-decode optimisations. See module docstring.
 
-    The segment()/segment_batch() overrides reuse the stock YOLO + embedding
-    flow verbatim; only the mask-decode/union step differs. yolosam.py is not
-    modified — if its preamble changes, mirror those changes here.
+    The segment()/segment_batch() overrides reuse the base YOLO + embedding
+    flow verbatim; only the mask-decode/union step differs.
     """
 
     def __init__(
@@ -196,15 +177,13 @@ class FastYoloSam(YoloSam):
         self._dense_pe: torch.Tensor | None = None
         super().__init__(config, device, components=components)
         logger.info(
-            "FastYoloSam active (fused_union=%s, decoder_sdpa=%s, dense_pe_cache=%s)",
+            "FasterYoloSam active (fused_union=%s, decoder_sdpa=%s, dense_pe_cache=%s)",
             USE_FUSED_UNION,
             USE_DECODER_SDPA,
             USE_DENSE_PE_CACHE,
         )
 
-    # ------------------------------------------------------------------ #
     # SAM decode optimisations
-    # ------------------------------------------------------------------ #
     def _get_predictor(self) -> SamPredictor:
         if not hasattr(self, "_predictor"):
             self._predictor = SamPredictor(self.components["sam"])
@@ -219,10 +198,10 @@ class FastYoloSam(YoloSam):
     def _get_dense_pe(self, sam) -> torch.Tensor:
         """prompt_encoder.get_dense_pe(), cached.
 
-        The dense positional encoding is a CONSTANT tensor — it depends only on
-        the prompt-encoder weights, never on the image or prompts — yet stock
-        SAM recomputes it on every predict_torch() call. Caching is bit-exact
-        and saves ~17–19ms per chunk per image.
+        The dense positional encoding is a CONSTANT tensor since it depends only on
+        the prompt-encoder weights and never on the image or prompts, yet base
+        SAM recomputes it on every predict_torch() call. Caching
+        saves ~17–19ms per chunk per image.
         """
         if self._dense_pe is None or not USE_DENSE_PE_CACHE:
             pe = sam.prompt_encoder.get_dense_pe()
@@ -234,25 +213,8 @@ class FastYoloSam(YoloSam):
     def _union_decode(
         self, predictor: SamPredictor, transformed_boxes: torch.Tensor, chunk: int
     ) -> np.ndarray:
-        """Union of all per-box masks as a uint8 0/1 array at original size.
-
-        FUSED path (default): identical per-chunk decode steps to predict_torch
-        (prompt encode → mask decode, optionally under the scoped SDPA kernel →
-        postprocess_masks upscale), but each chunk's upscaled (B,1,H,W) logits
-        are folded into a running max ON DEVICE, with ONE threshold and ONE CPU
-        transfer at the very end. Stock instead ships every chunk to numpy and
-        np.max-combines there — ~0.5GB of transfers + CPU work on dense images.
-        Parity is EXACT: stock computes max_b(mask_b > 0) per pixel, this
-        computes (max_b logits_b) > 0 — the same set, since binary
-        thresholding is monotone.
-
-        Do NOT move the max back to the 256x256 logits and upscale once —
-        bilinear(interp of max) != max of(interp), measured +10% fringe pixels
-        which merged neighbouring particles downstream. See module docstring.
-
-        The stock chunk loop below (TEMSEG_FASTSAM_FUSED_UNION=0) runs the
-        pristine predict_torch path — no SDPA scope either — so it is an honest
-        parity reference for tests.
+        """
+        Union of all per-box masks as a uint8 0/1 array at original size.
         """
         sam = predictor.model
         image_pe = self._get_dense_pe(sam)
@@ -260,7 +222,7 @@ class FastYoloSam(YoloSam):
 
         if not USE_FUSED_UNION:
             union = np.zeros(predictor.original_size, dtype="uint8")
-            with torch.no_grad():  # stock chunk loop, for parity reference
+            with torch.no_grad():
                 for i in range(0, n, chunk):
                     masks, _, _ = predictor.predict_torch(
                         point_coords=None,
@@ -309,18 +271,21 @@ class FastYoloSam(YoloSam):
                 # chunks before any completes, so ~200MB of buffers pile up
                 # mid-loop and segment-to-segment timings swing by ±1.5s on
                 # MPS. Syncing per chunk lets the allocator reuse the last
-                # chunk's buffers exactly like stock's .cpu() pacing, and was
-                # the fastest decode variant measured (6.5–6.8s vs 6.9–7.0s
-                # unsynced; 7.0–7.6s pristine stock loop).
+                # chunk's buffers exactly like base's .cpu() pacing, and was
+                # the fastest decode variant measured
                 self._sync_device()
 
         mask = running_fullres > sam.mask_threshold
         return mask.cpu().numpy().astype("uint8").squeeze()
 
-    # ------------------------------------------------------------------ #
-    # pipeline overrides (YOLO + embedding flow identical to stock)
-    # ------------------------------------------------------------------ #
-    def segment(self, image: np.ndarray, embedding_cache=None, **kwargs):
+    # pipeline overrides (YOLO + embedding flow identical to base)
+    def segment(
+        self,
+        image: np.ndarray,
+        embedding_cache=None,
+        encoder_depth: int = 12,
+        **kwargs,
+    ):
         logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
 
         predictor = self._get_predictor()
@@ -354,7 +319,8 @@ class FastYoloSam(YoloSam):
                 t_sam.field("encode", "cached")
             else:
                 with t_sam.step("encode"):
-                    predictor.set_image(image)
+                    self._encode_image(predictor, image, encoder_depth)
+                    t_sam.field("depth", encoder_depth)
 
             if boxes is None or len(boxes) == 0:
                 logger.info(
@@ -364,12 +330,13 @@ class FastYoloSam(YoloSam):
                 return YoloSAMSegmentationResult(
                     segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
                     metadata={"detections": 0, "sam_embedding_cached": True},
-                    model=AvailableModels.fastyolosam,
+                    model=AvailableModels.fasteryolosam,
                     detection_boxes=np.array([]).reshape(0, 4),
                     embedding=SAMEmbedding(
                         features=predictor.features,
                         original_size=predictor.original_size,
                         input_size=predictor.input_size,
+                        encoder_depth=encoder_depth,
                     ),
                 )
 
@@ -392,18 +359,23 @@ class FastYoloSam(YoloSam):
         # still flushes per patch, where long runs genuinely need the memory.
         return YoloSAMSegmentationResult(
             segmentation_mask=combined_mask,
-            metadata={"detections": len(boxes)},
-            model=AvailableModels.fastyolosam,
+            metadata={"detections": len(boxes), "encoder_depth": encoder_depth},
+            model=AvailableModels.fasteryolosam,
             embedding=SAMEmbedding(
                 features=predictor.features,
                 original_size=predictor.original_size,
                 input_size=predictor.input_size,
+                encoder_depth=encoder_depth,
             ),
             detection_boxes=boxes.cpu().numpy(),
         )
 
     def segment_batch(
-        self, patches: List[np.ndarray], offsets: List[tuple], img_shape: tuple
+        self,
+        patches: List[np.ndarray],
+        offsets: List[tuple],
+        img_shape: tuple,
+        encoder_depth: int = 12,
     ) -> YoloSAMSegmentationResult:
         h_full, w_full = img_shape
         combined = np.zeros((h_full, w_full), dtype="uint8")
@@ -444,7 +416,7 @@ class FastYoloSam(YoloSam):
                 )
 
                 t_sam_start = time.perf_counter()
-                predictor.set_image(patch)
+                self._encode_image(predictor, patch, encoder_depth)
                 input_boxes = boxes.to(predictor.device)
                 transformed_boxes = predictor.transform.apply_boxes_torch(
                     input_boxes, patch.shape[:2]
@@ -481,7 +453,8 @@ class FastYoloSam(YoloSam):
                 "detections": total_detections,
                 "yolo_time": round(t_yolo_total, 3),
                 "sam_time": round(t_sam_total, 3),
+                "encoder_depth": encoder_depth,
             },
-            model=AvailableModels.fastyolosam,
+            model=AvailableModels.fasteryolosam,
             detection_boxes=detection_boxes,
         )
