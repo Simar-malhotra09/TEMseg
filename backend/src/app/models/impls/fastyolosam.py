@@ -107,7 +107,7 @@ instance counts.
 import os
 import time
 from contextlib import contextmanager
-from typing import List
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -187,9 +187,14 @@ class FastYoloSam(YoloSam):
     modified — if its preamble changes, mirror those changes here.
     """
 
-    def __init__(self, config: ModelConfig, device: str = "cpu"):
+    def __init__(
+        self,
+        config: ModelConfig,
+        device: str = "cpu",
+        components: Dict[str, Any] | None = None,
+    ):
         self._dense_pe: torch.Tensor | None = None
-        super().__init__(config, device)
+        super().__init__(config, device, components=components)
         logger.info(
             "FastYoloSam active (fused_union=%s, decoder_sdpa=%s, dense_pe_cache=%s)",
             USE_FUSED_UNION,

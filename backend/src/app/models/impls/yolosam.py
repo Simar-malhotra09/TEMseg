@@ -34,12 +34,25 @@ class YoloSAMSegmentationResult(SegmentationResult):
 
 
 class YoloSam(Model):
-    def __init__(self, config: ModelConfig, device: str = "cpu"):
+    def __init__(
+        self,
+        config: ModelConfig,
+        device: str = "cpu",
+        components: Dict[str, Any] | None = None,
+    ):
         logger.info("Initializing YoloSam")
         self.device = device
+        self._shared_components = components
         super().__init__(config)  # calls self._load_components()
 
     def _load_components(self) -> Dict[str, Any]:
+        # Reuse components already loaded by another pipeline instance
+        # (e.g. FastYoloSam shares YoloSam's YOLO session: one CoreML compile,
+        # one set of weights, instead of a duplicated ~5.7s cold start).
+        if self._shared_components is not None:
+            logger.info("Reusing shared model components")
+            return self._shared_components
+
         if not hasattr(self, "config") or not hasattr(self.config, "components"):
             raise ValueError("Invalid config: missing 'components'")
 
