@@ -6,9 +6,10 @@ import { BlackoutRect } from "../components/BlackOutCanvas"
 interface Options {
   sessionId: string | null;
   selectedModel: string | null;
+  encoderDepth: number;
 }
 
-export function useSegmentationState({ sessionId, selectedModel }: Options) {
+export function useSegmentationState({ sessionId, selectedModel, encoderDepth }: Options) {
 
   // segmentation
   const [segDone, setSegDone] = useState(false);
@@ -53,7 +54,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
     setIsSegmenting(true);
     try {
       const result = await segmentImage(
-        sessionId, selectedModel, activeRegions, blackout, inverse
+        sessionId, selectedModel, activeRegions, blackout, inverse, true, encoderDepth
       );
       if ('error' in result) {
         return "Segmentation returned no results.";
@@ -81,7 +82,7 @@ export function useSegmentationState({ sessionId, selectedModel }: Options) {
     } finally {
       setIsSegmenting(false);
     }
-  }, [sessionId, selectedModel]);
+  }, [sessionId, selectedModel, encoderDepth]);
 
   // compute GT score 
   // called after seg or after GT upload

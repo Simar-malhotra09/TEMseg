@@ -101,6 +101,9 @@ export default function Workspace() {
   const { data: models = [] } = useQuery({ queryKey: ["models"], queryFn: getModels });
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
+  const [encoderDepth, setEncoderDepth] = useState<number>(12);
+  const [depthDropdownOpen, setDepthDropdownOpen] = useState(false);
   useEffect(() => { if (models.length > 0) setSelectedModel(models[0]); }, [models]); // by def load YoloSAM 
 
   // session 
@@ -314,7 +317,7 @@ export default function Workspace() {
 
 
   // segmentation hook
-  const seg = useSegmentationState({ sessionId, selectedModel });
+  const seg = useSegmentationState({ sessionId, selectedModel, encoderDepth });
 
   // global polygon fill opacity
   const [polygonOpacity, setPolygonOpacity] = useState(0.2);
@@ -1296,6 +1299,30 @@ export default function Workspace() {
                 )}
               </div>
             </section>
+
+            {/* SAM encoder depth. 12 = full (default), 8 = early-exit
+                (faster, slightly fewer detections on tough images).
+                Only YoloSAM/FasterYoloSAM support it — hidden for MaskRCNN. */}
+            {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
+              <section className={styles.sidebarSection}>
+                <p className={styles.sidebarLabel}>SAM layers</p>
+                <div className={styles.dropdownWrap}>
+                  <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
+                    n={encoderDepth} <ChevronDown size={14} />
+                  </button>
+                  {depthDropdownOpen && (
+                    <ul className={styles.dropdownList}>
+                      {([12, 8] as const).map(d => (
+                        <li key={d}
+                          className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
+                          onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
+                        >{`n=${d}`} {d === 8 ? "(faster)" : "(full)"}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* tab bar. switchTab discards any in-progress work in the tab
                 being left (unsaved refine edits, pending augment proposals). */}

@@ -459,11 +459,13 @@ export async function segmentImage(
   blackout: boolean = false,
   inverseBlackout: boolean = false,
   colorize: boolean = true,
+  encoderDepth: number = 12,
 ): Promise<SegmentResponse> {
   console.log(
     "Calling [segmentImage]",
     sessionId,
     model,
+    encoderDepth,
     blackout,
     inverseBlackout,
     regions,
@@ -475,6 +477,7 @@ export async function segmentImage(
     body: JSON.stringify({
       session_id: sessionId,
       model: model,
+      encoder_depth: encoderDepth,
       blackout: blackout,
       inverse_blackout: inverseBlackout,
       regions: regions,
