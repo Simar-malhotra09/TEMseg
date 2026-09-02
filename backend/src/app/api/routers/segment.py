@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 from pathlib import Path
 from fastapi import APIRouter, Request
 import time
@@ -26,6 +26,9 @@ from pydantic import BaseModel
 class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
+    # SAM ViT-B encoder depth (12 = full, 8 = early-exit). YoloSAM/FasterYoloSAM
+    # only; ignored by MaskRCNN variants.
+    encoder_depth: Literal[8, 12] = 12
     regions: List[Box] = None
     blackout: bool = False
     inverse_blackout: bool = False
@@ -54,7 +57,7 @@ async def segment(req: SegmentRequest, request: Request):
     # startup warmup is still compiling its CoreML session, wait for it
     # rather than racing it with a duplicate compile (ultralytics builds the
     # predictor lazily on first predict() with no locking).
-    if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
+    if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
         warm_event = getattr(request.app.state, "yolo_warm", None)
         if warm_event is not None and not warm_event.is_set():
             logger.info("Awaiting startup YOLO warmup before segment")
@@ -63,6 +66,17 @@ async def segment(req: SegmentRequest, request: Request):
     model_inst = get_or_load_model(request.app.state.models, req.model)
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)
+    # A cached embedding serves exactly one encoder depth: features computed
+    # at d12 cannot be decoded into d8 results. Re-encode on depth switch.
+    if (
+        embedding is not None
+        and getattr(embedding, "encoder_depth", None) != req.encoder_depth
+    ):
+        logger.info(
+            f"Cached embedding depth mismatches request "
+            f"(requested {req.encoder_depth}) — re-encoding"
+        )
+        embedding = None
 
     if req.blackout and req.inverse_blackout:
         raise ValueError(
@@ -78,7 +92,7 @@ async def segment(req: SegmentRequest, request: Request):
     )
     logger.info(
         f"segment request: session={req.session_id}, model={req.model.value}, "
-        f"regions={len(req.regions)}, mode={action}"
+        f"depth={req.encoder_depth}, regions={len(req.regions)}, mode={action}"
     )
 
     session_dir = SESSIONS_DIR / req.session_id
@@ -102,11 +116,16 @@ async def segment(req: SegmentRequest, request: Request):
             if req.inverse_blackout:
                 # inverese blackout reqs to keep only the selected regions
                 # and ignore all else. Suitable for batch segmentation
-                if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
+                if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
                     logger.info(
                         f"Running batch segmentation on {len(req.regions)} patches"
                     )
-                    result = batch_seg_patches(img, req.regions, model_inst)
+                    result = batch_seg_patches(
+                        img,
+                        req.regions,
+                        model_inst,
+                        encoder_depth=req.encoder_depth,
+                    )
                 # yolomaskrcnn and maskrcnn_synthetic do not support batch segmentation
                 elif req.model in (
                     AvailableModels.yolomaskrcnn,
@@ -131,8 +150,10 @@ async def segment(req: SegmentRequest, request: Request):
                         req.regions,
                         save_path=f"sessions/{req.session_id}/blackout_check.png",
                     )
-                if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
-                    result = model_inst.segment(img, embedding)
+                if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
+                    result = model_inst.segment(
+                        img, embedding, encoder_depth=req.encoder_depth
+                    )
                 else:
                     result = model_inst.segment(img)
 
@@ -222,7 +243,7 @@ async def segment(req: SegmentRequest, request: Request):
             sam_epsilon_scale = (
                 0.75
                 if result.model
-                in (AvailableModels.yolosam, AvailableModels.fastyolosam)
+                in (AvailableModels.yolosam, AvailableModels.fasteryolosam)
                 else 1.0
             )
             instances, labeled = extract_instances(

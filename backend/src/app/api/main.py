@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     # Warm YOLO at startup instead of on image upload. The ONNX graph has a
     # static [1,3,640,640] input, so any dummy image triggers the one-time
     # ~5.7s CoreML compile and the result covers every uploaded shape.
-    # FastYoloSam shares this YOLO session via the registry, so one warm
+    # FasterYoloSam shares this YOLO session via the registry, so one warm
     # serves both pipelines. Runs on a thread so lifespan isn't blocked;
     # segment requests await the event rather than racing the compile.
     app.state.yolo_warm = asyncio.Event()

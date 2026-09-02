@@ -166,6 +166,7 @@ def batch_seg_patches(
     img: np.ndarray,
     regions: List[Box],
     model,  # pre loaded model instance
+    encoder_depth: int = 12,  # SAM ViT-B blocks to run (encoder early-exit)
 ) -> SegmentationResult:
     """
     The function blackout_regions and inverse_blackout_regions take one image
@@ -193,4 +194,4 @@ def batch_seg_patches(
         patches.append(img[y1:y2, x1:x2])
         offsets.append((x1, y1))
 
-    return model.segment_batch(patches, offsets, (h, w))
+    return model.segment_batch(patches, offsets, (h, w), encoder_depth=encoder_depth)
