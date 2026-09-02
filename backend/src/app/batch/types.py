@@ -48,7 +48,7 @@ VALID_EXPORT_ITEMS = {
 
 MODEL_NAME_MAP: dict[str, AvailableModels] = {
     "yolosam": AvailableModels.yolosam,
-    "fastyolosam": AvailableModels.fastyolosam,
+    "fasteryolosam": AvailableModels.fasteryolosam,
     "yolomaskrcnn": AvailableModels.yolomaskrcnn,
     "maskrcnn-synthetic": AvailableModels.maskrcnn_synthetic,
 }
