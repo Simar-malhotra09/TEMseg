@@ -35,10 +35,19 @@ def extract_instances(
     session_dir: Path,
     save: bool = True,
     epsilon_scale: float = 1.0,
+    labels: np.ndarray | None = None,
 ) -> tuple[list[dict], np.ndarray]:
     """
-    Run connected-component labeling on a binary mask.
+    Instance extraction from a binary mask.
     Returns (instances, labeled_mask).
+
+    labels: optional pre-labeled ownership map (pixel value = instance id,
+    0 = background). YoloSAM-family supplies one, since every SAM mask is
+    decoded from a specific YOLO box — keeping that identity prevents two
+    touching particles from collapsing into one connected component. Pixels
+    present in the binary mask keep their label; pixels outside it are zeroed
+    out (e.g. threads removed by morphological cleanup stay removed). When
+    omitted, falls back to connected-component labeling.
 
     If save=True, writes:
       - instances.npy  : labeled integer mask (uint16), pixel value = instance ID
@@ -53,7 +62,10 @@ def extract_instances(
     # ensure binary uint8
     binary = (mask > 0).astype(np.uint8)
 
-    labeled, n_components = ndimage.label(binary)
+    if labels is not None:
+        labeled = np.where(binary > 0, labels.astype(np.int32), 0)
+    else:
+        labeled, n_components = ndimage.label(binary)
     image_area = binary.shape[0] * binary.shape[1]
 
     # bounding-box slice per label, so each component is scanned/compared

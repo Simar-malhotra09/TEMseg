@@ -3,7 +3,9 @@ FasterYoloSAM optimizations.
 
 The goal is to reduce SAM decoding time and memory usage while keeping
 the output identical to the original YoloSAM implementation whenever
-possible.
+possible. Since the per-box-instance-identity change, both models share the
+chunked max-logit decode loop in YoloSam._decode_union_with_ownership;
+this subclass only hooks in the measured decode optimisations below.
 
 1. Fused mask union
 
@@ -20,6 +22,10 @@ possible.
    while FasterYoloSAM takes the maximum logit first and thresholds once.
    Since thresholding at zero is monotonic, these produce the same set
    of pixels.
+
+   (Since the ownership change this fused form is also what the base
+   YoloSam uses, because the running max is where the owner labels are
+   computed.)
 
 
 2. Fused attention in the mask decoder
@@ -86,15 +92,18 @@ Optimizations tested and rejected:
   The remaining cost is the per-chunk upsampling, which takes about
   0.26s total.
 
+Set TEMSEG_FASTSAM_FUSED_UNION=0 for the legacy per-chunk CPU union (debug;
+in that mode per-box ownership labels are not produced and instance
+extraction falls back to connected components).
+
 Use model_scripts/ to benchmark YoloSAM and
 FasterYoloSAM on the same image(s) and compare runtime, masks, and extracted
 instance counts.
 """
 
 import os
-import time
 from contextlib import contextmanager
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import numpy as np
 import torch
@@ -102,13 +111,9 @@ from segment_anything import SamPredictor
 from segment_anything.modeling import transformer as sam_transformer
 
 from app.api.live_models import AvailableModels
-from app.logutils import Timer, fmt_duration, get_logger
+from app.logutils import get_logger
 from app.models.base_model import ModelConfig
-from app.models.impls.yolosam import (
-    SAMEmbedding,
-    YoloSAMSegmentationResult,
-    YoloSam,
-)
+from app.models.impls.yolosam import YoloSam
 
 logger = get_logger("FasterYoloSAM")
 log_batch = get_logger("FasterYoloSAM", sub="Batch")
@@ -164,9 +169,11 @@ class FasterYoloSam(YoloSam):
     """
     YoloSam with the measured SAM-decode optimisations. See module docstring.
 
-    The segment()/segment_batch() overrides reuse the base YOLO + embedding
-    flow verbatim; only the mask-decode/union step differs.
+    Segment flow (YOLO, embeddings, stitching) is inherited from YoloSam;
+    only the decode loop and the per-chunk pacing hook differ.
     """
+
+    MODEL_ENUM = AvailableModels.fasteryolosam
 
     def __init__(
         self,
@@ -183,24 +190,33 @@ class FasterYoloSam(YoloSam):
             USE_DENSE_PE_CACHE,
         )
 
-    # SAM decode optimisations
-    def _get_predictor(self) -> SamPredictor:
-        if not hasattr(self, "_predictor"):
-            self._predictor = SamPredictor(self.components["sam"])
-        return self._predictor
-
     def _sync_device(self) -> None:
         if self.device == "cuda":
             torch.cuda.synchronize()
         elif self.device == "mps":
             torch.mps.synchronize()
 
+    # Deliberately NOT empty_cache (unlike the base hook). Flushing the
+    # allocator after every chunk keeps idle RSS low but forces the next call
+    # to re-claim ~750MB from the OS — a 1–2s tax that hides the decode gains
+    # between client calls. The caching allocator is not a leak: the high-water
+    # mark is the steady-state cost of density like this image, and holding it
+    # makes every subsequent segment in the client cheaper. The batch pipeline
+    # still flushes per patch, where long runs genuinely need the memory.
+    def _after_decode_chunk(self) -> None:
+        # Pacing sync per chunk: without it the driver queues all chunks
+        # before any completes, so ~200MB of buffers pile up mid-loop and
+        # segment-to-segment timings swing by ±1.5s on MPS. Syncing per chunk
+        # lets the allocator reuse the last chunk's buffers exactly like
+        # base's .cpu() pacing, and was the fastest decode variant measured.
+        self._sync_device()
+
     def _get_dense_pe(self, sam) -> torch.Tensor:
         """prompt_encoder.get_dense_pe(), cached.
 
         The dense positional encoding is a CONSTANT tensor since it depends only on
         the prompt-encoder weights and never on the image or prompts, yet base
-        SAM recomputes it on every predict_torch() call. Caching
+        SAM recomputes it on every prediction. Caching
         saves ~17–19ms per chunk per image.
         """
         if self._dense_pe is None or not USE_DENSE_PE_CACHE:
@@ -210,17 +226,19 @@ class FasterYoloSam(YoloSam):
             return pe
         return self._dense_pe
 
-    def _union_decode(
-        self, predictor: SamPredictor, transformed_boxes: torch.Tensor, chunk: int
-    ) -> np.ndarray:
-        """
-        Union of all per-box masks as a uint8 0/1 array at original size.
-        """
+    def _decode_union_with_ownership(
+        self,
+        predictor: SamPredictor,
+        transformed_boxes: torch.Tensor,
+        chunk: int,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         sam = predictor.model
-        image_pe = self._get_dense_pe(sam)
         n = len(transformed_boxes)
 
         if not USE_FUSED_UNION:
+            # Legacy debug path: per-chunk CPU union of thresholded masks.
+            # No running max-logit, so ownership labels are unavailable and
+            # callers fall back to connected-component extraction.
             union = np.zeros(predictor.original_size, dtype="uint8")
             with torch.no_grad():
                 for i in range(0, n, chunk):
@@ -232,9 +250,11 @@ class FasterYoloSam(YoloSam):
                     )
                     batch = masks.cpu().numpy().astype("uint8")
                     union = np.maximum(union, batch[:, 0].max(axis=0))
-            return union
+            return union, None
 
-        running_fullres = None
+        image_pe = self._get_dense_pe(sam)
+        running_max: torch.Tensor | None = None
+        running_owner: torch.Tensor | None = None
         with torch.no_grad():
             for i in range(0, n, chunk):
                 boxes_chunk = transformed_boxes[i : i + chunk]
@@ -261,200 +281,21 @@ class FasterYoloSam(YoloSam):
                 full = sam.postprocess_masks(
                     low_res, predictor.input_size, predictor.original_size
                 )
-                chunk_max = full.amax(dim=(0, 1), keepdim=True)  # (1,1,H,W)
-                running_fullres = (
-                    chunk_max
-                    if running_fullres is None
-                    else torch.maximum(running_fullres, chunk_max)
-                )
-                # Pacing sync per chunk: without it the driver queues all
-                # chunks before any completes, so ~200MB of buffers pile up
-                # mid-loop and segment-to-segment timings swing by ±1.5s on
-                # MPS. Syncing per chunk lets the allocator reuse the last
-                # chunk's buffers exactly like base's .cpu() pacing, and was
-                # the fastest decode variant measured
-                self._sync_device()
+                chunk_max, chunk_owner = full.squeeze(1).max(dim=0)
+                if running_max is None:
+                    running_max = chunk_max
+                    running_owner = chunk_owner + i + 1
+                else:
+                    update = chunk_max > running_max
+                    running_max = torch.maximum(running_max, chunk_max)
+                    running_owner = torch.where(
+                        update, chunk_owner + i + 1, running_owner
+                    )
+                self._after_decode_chunk()
 
-        mask = running_fullres > sam.mask_threshold
-        return mask.cpu().numpy().astype("uint8").squeeze()
-
-    # pipeline overrides (YOLO + embedding flow identical to base)
-    def segment(
-        self,
-        image: np.ndarray,
-        embedding_cache=None,
-        encoder_depth: int = 12,
-        **kwargs,
-    ):
-        logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
-
-        predictor = self._get_predictor()
-
-        with Timer(logger, "yolo") as t_yolo:
-            with t_yolo.step("predict"):
-                results = self.components["yolo"].predict(
-                    source=image,
-                    conf=0.25,
-                    iou=0.5,
-                    max_det=4000,
-                    verbose=False,
-                    device=self.device,
-                )
-                boxes = results[0].boxes.xyxy
-
-            with t_yolo.step("box_transfer"):
-                input_boxes = boxes.to(predictor.device)
-                transformed_boxes = predictor.transform.apply_boxes_torch(
-                    input_boxes, image.shape[:2]
-                )
-
-            t_yolo.field("boxes", len(boxes))
-
-        with Timer(logger, "sam") as t_sam:
-            if embedding_cache:
-                predictor.features = embedding_cache.features
-                predictor.original_size = embedding_cache.original_size
-                predictor.input_size = embedding_cache.input_size
-                predictor.is_image_set = True
-                t_sam.field("encode", "cached")
-            else:
-                with t_sam.step("encode"):
-                    self._encode_image(predictor, image, encoder_depth)
-                    t_sam.field("depth", encoder_depth)
-
-            if boxes is None or len(boxes) == 0:
-                logger.info(
-                    "YOLO found 0 boxes — returning empty mask with SAM "
-                    "embedding cached"
-                )
-                return YoloSAMSegmentationResult(
-                    segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                    metadata={"detections": 0, "sam_embedding_cached": True},
-                    model=AvailableModels.fasteryolosam,
-                    detection_boxes=np.array([]).reshape(0, 4),
-                    embedding=SAMEmbedding(
-                        features=predictor.features,
-                        original_size=predictor.original_size,
-                        input_size=predictor.input_size,
-                        encoder_depth=encoder_depth,
-                    ),
-                )
-
-            box_batch_size = kwargs.get("box_batch_size", 64)
-
-            with t_sam.step("decode"):
-                combined_mask = self._union_decode(
-                    predictor, transformed_boxes, box_batch_size
-                )
-
-            t_sam.field("mask_px", int(np.count_nonzero(combined_mask)))
-
-        # Deliberately NO torch.mps.empty_cache() here. Stock flushes the
-        # allocator after every segment (and per chunk), which keeps idle RSS
-        # low but forces the next call to re-claim ~750MB from the OS — a
-        # 1–2s tax that hides the decode gains between client calls. The
-        # caching allocator is not a leak: the ~750MB high-water mark is the
-        # steady-state cost of density like this image, and holding it makes
-        # every subsequent segment in the client cheaper. segment_batch()
-        # still flushes per patch, where long runs genuinely need the memory.
-        return YoloSAMSegmentationResult(
-            segmentation_mask=combined_mask,
-            metadata={"detections": len(boxes), "encoder_depth": encoder_depth},
-            model=AvailableModels.fasteryolosam,
-            embedding=SAMEmbedding(
-                features=predictor.features,
-                original_size=predictor.original_size,
-                input_size=predictor.input_size,
-                encoder_depth=encoder_depth,
-            ),
-            detection_boxes=boxes.cpu().numpy(),
-        )
-
-    def segment_batch(
-        self,
-        patches: List[np.ndarray],
-        offsets: List[tuple],
-        img_shape: tuple,
-        encoder_depth: int = 12,
-    ) -> YoloSAMSegmentationResult:
-        h_full, w_full = img_shape
-        combined = np.zeros((h_full, w_full), dtype="uint8")
-
-        log_batch.info(f"segment_batch: {len(patches)} patches, output {img_shape}")
-
-        yolo_model = self.components["yolo"]
-        predictor = self._get_predictor()
-
-        total_detections = 0
-        t_yolo_total = 0.0
-        t_sam_total = 0.0
-        all_boxes: List[np.ndarray] = []
-
-        with Timer(log_batch, "segment_batch") as t_batch:
-            for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
-                t_yolo_start = time.perf_counter()
-                results = yolo_model.predict(
-                    source=patch,
-                    conf=0.25,
-                    iou=0.5,
-                    max_det=4000,
-                    verbose=False,
-                    device=self.device,
-                )
-                t_yolo_patch = time.perf_counter() - t_yolo_start
-                t_yolo_total += t_yolo_patch
-
-                boxes = results[0].boxes.xyxy
-
-                if boxes is None or len(boxes) == 0:
-                    log_batch.debug(f"patch {i}: no detections, skipping")
-                    continue
-
-                log_batch.debug(
-                    f"patch {i}: {len(boxes)} detections, "
-                    f"yolo={fmt_duration(t_yolo_patch)}"
-                )
-
-                t_sam_start = time.perf_counter()
-                self._encode_image(predictor, patch, encoder_depth)
-                input_boxes = boxes.to(predictor.device)
-                transformed_boxes = predictor.transform.apply_boxes_torch(
-                    input_boxes, patch.shape[:2]
-                )
-                patch_union = self._union_decode(predictor, transformed_boxes, 64)
-                t_sam_patch = time.perf_counter() - t_sam_start
-                t_sam_total += t_sam_patch
-                log_batch.debug(f"patch {i}: sam={fmt_duration(t_sam_patch)}")
-
-                x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
-                combined[y1:y2, x1:x2] = np.maximum(
-                    combined[y1:y2, x1:x2], (patch_union > 0).astype("uint8") * 255
-                )
-
-                boxes_np = boxes.cpu().numpy()
-                boxes_np[:, [0, 2]] += x1
-                boxes_np[:, [1, 3]] += y1
-                all_boxes.append(boxes_np)
-
-                total_detections += len(boxes)
-                self._empty_device_cache()
-
-            t_batch.field("yolo", fmt_duration(t_yolo_total))
-            t_batch.field("sam", fmt_duration(t_sam_total))
-            t_batch.field("detections", total_detections)
-
-        detection_boxes = (
-            np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)
-        )
-
-        return YoloSAMSegmentationResult(
-            segmentation_mask=combined,
-            metadata={
-                "detections": total_detections,
-                "yolo_time": round(t_yolo_total, 3),
-                "sam_time": round(t_sam_total, 3),
-                "encoder_depth": encoder_depth,
-            },
-            model=AvailableModels.fasteryolosam,
-            detection_boxes=detection_boxes,
+        union_t = running_max > sam.mask_threshold
+        owner_t = torch.where(union_t, running_owner, torch.zeros_like(running_owner))
+        return (
+            union_t.cpu().numpy().astype("uint8"),
+            owner_t.cpu().numpy().astype(np.uint16),
         )

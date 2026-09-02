@@ -218,7 +218,11 @@ def process_image(
         else 1.0
     )
     instances, labeled = extract_instances(
-        binary, image_output_dir, save=True, epsilon_scale=epsilon_scale
+        binary,
+        image_output_dir,
+        save=True,
+        epsilon_scale=epsilon_scale,
+        labels=getattr(result, "instance_labels", None),
     )
 
     stats = compute_stats_from_instances(

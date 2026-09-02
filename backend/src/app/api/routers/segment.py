@@ -247,7 +247,13 @@ async def segment(req: SegmentRequest, request: Request):
                 else 1.0
             )
             instances, labeled = extract_instances(
-                binary, session_dir, save=True, epsilon_scale=sam_epsilon_scale
+                binary,
+                session_dir,
+                save=True,
+                epsilon_scale=sam_epsilon_scale,
+                # YoloSAM-family: per-box ownership map prevents touching
+                # particles from merging into one connected component.
+                labels=getattr(result, "instance_labels", None),
             )
             logger.info(f"Extracted and saved {len(instances)} particles")
         except Exception as e:
