@@ -50,6 +50,16 @@ SESSIONS_DIR = Path("sessions")
 async def segment(req: SegmentRequest, request: Request):
     t_req_start = time.perf_counter()
 
+    # YOLO-family models share one YOLO session (see model_registry). If the
+    # startup warmup is still compiling its CoreML session, wait for it
+    # rather than racing it with a duplicate compile (ultralytics builds the
+    # predictor lazily on first predict() with no locking).
+    if req.model in (AvailableModels.yolosam, AvailableModels.fastyolosam):
+        warm_event = getattr(request.app.state, "yolo_warm", None)
+        if warm_event is not None and not warm_event.is_set():
+            logger.info("Awaiting startup YOLO warmup before segment")
+            await warm_event.wait()
+
     model_inst = get_or_load_model(request.app.state.models, req.model)
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)

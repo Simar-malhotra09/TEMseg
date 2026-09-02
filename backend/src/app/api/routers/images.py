@@ -6,11 +6,8 @@ from fastapi import APIRouter, File, UploadFile, Request
 from fastapi.responses import FileResponse
 import numpy as np
 import cv2 as cv
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
 import sys
 import os
-from app.api.live_models import AvailableModels
 from app.logutils import get_logger
 from pydantic import BaseModel
 
@@ -18,7 +15,6 @@ router = APIRouter(prefix="/images")
 logger = get_logger("images")
 logger_rsciio = get_logger("images", sub="rsciio")
 logger_meta = get_logger("images", sub="meta")
-logger_upload = get_logger("images", sub="upload")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -345,29 +341,8 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         cv.imwrite(str(preview_path), display)
         preview_url = f"/images/{session_id}/preview"
 
-    async def warm_for_shape():
-        yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-        if not yolosam:
-            return
-        try:
-            img = yolosam.load_image(dest)
-            logger_upload.info(f"Warming YOLO for shape: {img.shape}")
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor() as pool:
-                await loop.run_in_executor(
-                    pool,
-                    lambda: yolosam.components["yolo"].predict(
-                        source=img,
-                        verbose=False,
-                        conf=0.25,
-                        device=yolosam.device,
-                    ),
-                )
-            logger_upload.info("YOLO warmup complete")
-        except Exception as e:
-            logger_upload.warning(f"Warmup failed (non-fatal): {e}")
-
-    asyncio.create_task(warm_for_shape())
+    # YOLO is warmed at backend startup (see api/main.py lifespan) — the ONNX
+    # graph is static-shape so warming against the uploaded image buys nothing.
 
     return {
         "session_id": session_id,

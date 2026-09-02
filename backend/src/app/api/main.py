@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import asyncio
 import time
 import shutil
 from pathlib import Path
 from typing import Dict
 from fastapi.middleware.cors import CORSMiddleware
+import numpy as np
 from app.api.routers import images, segment, ground_truths, masks, export, rf, config
 from app.api.live_models import AvailableModels
 from app.api.model_registry import get_or_load_model
@@ -27,7 +29,33 @@ async def lifespan(app: FastAPI):
     app.state.models = {}
     get_or_load_model(app.state.models, AvailableModels.yolosam)
     app.state.embedding_cache: Dict[str, Dict] = {}
-    app.state.warmed_up = False
+
+    # Warm YOLO at startup instead of on image upload. The ONNX graph has a
+    # static [1,3,640,640] input, so any dummy image triggers the one-time
+    # ~5.7s CoreML compile and the result covers every uploaded shape.
+    # FastYoloSam shares this YOLO session via the registry, so one warm
+    # serves both pipelines. Runs on a thread so lifespan isn't blocked;
+    # segment requests await the event rather than racing the compile.
+    app.state.yolo_warm = asyncio.Event()
+
+    def _warm_yolo():
+        try:
+            yolosam = app.state.models[AvailableModels.yolosam]
+            dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+            yolosam.components["yolo"].predict(
+                source=dummy, verbose=False, conf=0.25, device=yolosam.device
+            )
+            log.info("YOLO startup warmup complete")
+        except Exception as e:
+            log.warning(f"YOLO warmup failed (non-fatal): {e}")
+
+    async def _background_warmup():
+        try:
+            await asyncio.to_thread(_warm_yolo)
+        finally:
+            app.state.yolo_warm.set()
+
+    asyncio.create_task(_background_warmup())
     yield
 
 
