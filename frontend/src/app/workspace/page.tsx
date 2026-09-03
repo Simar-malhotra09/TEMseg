@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
-  Target, Pencil, CirclePlus, BarChart2, Settings,
+  Slice, Pencil, CirclePlus, BarChart2, Settings,
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
@@ -1315,7 +1315,7 @@ export default function Workspace() {
               onClick={() => switchTab("segment")}
               title="Segment"
             >
-              <Target size={16} /><span className={styles.railLabel}>Segment</span>
+              <Slice size={16} /><span className={styles.railLabel}>Segment</span>
             </button>
             <button type="button"
               className={`${styles.railBtn} ${activeTab === "refine" ? styles.railBtnActive : ""}`}
