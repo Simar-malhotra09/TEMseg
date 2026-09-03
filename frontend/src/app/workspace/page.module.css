@@ -20,6 +20,14 @@ background: #0d0d0d;
 flex-shrink: 0;
 }
 .topbarLeft { display: flex; align-items: center; gap: 16px; }
+.topbarCenter {
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.topbarCenter .dropdownBtn { width: auto; min-width: 140px; }
+.topbarRight { display: flex; align-items: center; gap: 10px; }
 .logo { font-size: 16px; font-weight: 700; letter-spacing: -0.5px; color: #e8e6e1; }
 .logoAccent { color: #7ee8a2; }
 .sessionTag { color: #555; font-size: 11px; }
@@ -142,20 +150,56 @@ font-size: 12px;
 .dropdownItem:hover { background: #1e1e1e; }
 .dropdownItemActive { color: #7ee8a2; }
 
-/* Sidebar tab bar */
-.tabRows {
+/* Mode rail: icon column replacing the old button tabs. Active mode reads as
+   the "open" tab via the accent left edge. */
+.rail {
+  width: 54px;
+  flex-shrink: 0;
+  border-right: 1px solid #1e1e1e;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 0;
 }
-.tabBar {
+.railBtn {
   display: flex;
-  gap: 10px;
-  padding-bottom: 4px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 2px;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  color: #555;
+  font-family: inherit;
+  cursor: pointer;
 }
-.tabBarCentered {
-  justify-content: center;
+.railBtn:hover:not(:disabled) { color: #aaa; }
+.railBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.railBtnActive {
+  color: #7ee8a2;
+  border-left-color: #7ee8a2;
+  background: #0f140f;
 }
+.railBtnActive:hover:not(:disabled) { color: #7ee8a2; }
+.railLabel {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.railSpacer { flex: 1; }
+
+/* Mode title at the top of the sidebar pane */
+.paneHead {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7ee8a2;
+  border-bottom: 1px solid #1e1e1e;
+  padding-bottom: 6px;
+}
+
 .tabBtn {
   background: none;
   border: none;

@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
+  Target, Pencil, CirclePlus, BarChart2, Settings,
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
@@ -1243,6 +1244,44 @@ export default function Workspace() {
               session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
             </span>
           </div>
+
+          {/* model + SAM encoder depth are global pipeline settings, so they
+              live in the top bar rather than the mode sidebar. Depth only
+              applies to YoloSAM variants — hidden for MaskRCNN. */}
+          <div className={styles.topbarCenter}>
+            <div className={styles.dropdownWrap}>
+              <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
+                {selectedModel} <ChevronDown size={14} />
+              </button>
+              {modelDropdownOpen && (
+                <ul className={styles.dropdownList}>
+                  {models.map(m => (
+                    <li key={m}
+                      className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
+                      onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
+                    >{m}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
+              <div className={styles.dropdownWrap}>
+                <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
+                  n={encoderDepth} <ChevronDown size={14} />
+                </button>
+                {depthDropdownOpen && (
+                  <ul className={styles.dropdownList}>
+                    {([12, 8] as const).map(d => (
+                      <li key={d}
+                        className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
+                        onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
+                      >{`n=${d}`} {d === 8 ? "(faster)" : "(full)"}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <div className={styles.topbarRight}>
             {seg.regionsOutOfSync && (
               <span className={styles.warnPill}>
@@ -1268,89 +1307,57 @@ export default function Workspace() {
         {/* Main workspace */}
         <div className={styles.workspaceBody}>
 
-          {/* 
-              left sidebar, handles 
-                a. model selection dropdown 
-                b. run seg button 
+          {/* mode rail. switching mode discards any in-progress work in the
+              mode being left (unsaved refine edits, pending augment proposals). */}
+          <nav className={styles.rail} aria-label="Workspace modes">
+            <button type="button"
+              className={`${styles.railBtn} ${activeTab === "segment" ? styles.railBtnActive : ""}`}
+              onClick={() => switchTab("segment")}
+              title="Segment"
+            >
+              <Target size={16} /><span className={styles.railLabel}>Segment</span>
+            </button>
+            <button type="button"
+              className={`${styles.railBtn} ${activeTab === "refine" ? styles.railBtnActive : ""}`}
+              onClick={() => switchTab("refine")}
+              disabled={!seg.segDone}
+              title="Refine"
+            >
+              <Pencil size={16} /><span className={styles.railLabel}>Refine</span>
+            </button>
+            <button type="button"
+              className={`${styles.railBtn} ${activeTab === "augment" ? styles.railBtnActive : ""}`}
+              onClick={() => switchTab("augment")}
+              disabled={!sessionId}
+              title="Augment"
+            >
+              <CirclePlus size={16} /><span className={styles.railLabel}>Augment</span>
+            </button>
+            <button type="button"
+              className={`${styles.railBtn} ${activeTab === "analysis" ? styles.railBtnActive : ""}`}
+              onClick={() => switchTab("analysis")}
+              disabled={!image}
+              title="Analysis"
+            >
+              <BarChart2 size={16} /><span className={styles.railLabel}>Analyze</span>
+            </button>
+          </nav>
+
+          {/*
+              left sidebar, handles
+                a. model selection dropdown
+                b. run seg button
                 c. hide/show masks
                 d. enter/exit refine mode
-                e. exclude/isolate regions 
+                e. exclude/isolate regions
                 f. upload/compute gt
                 g. export (modified) masks
             */}
           <aside className={styles.sidebar}>
 
-            {/* model selector */}
-            <section className={styles.sidebarSection}>
-              <p className={styles.sidebarLabel}>Model</p>
-              <div className={styles.dropdownWrap}>
-                <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
-                  {selectedModel} <ChevronDown size={14} />
-                </button>
-                {modelDropdownOpen && (
-                  <ul className={styles.dropdownList}>
-                    {models.map(m => (
-                      <li key={m}
-                        className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
-                        onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
-                      >{m}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </section>
-
-            {/* SAM encoder depth. 12 = full (default), 8 = early-exit
-                (faster, slightly fewer detections on tough images).
-                Only YoloSAM/FasterYoloSAM support it — hidden for MaskRCNN. */}
-            {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
-              <section className={styles.sidebarSection}>
-                <p className={styles.sidebarLabel}>SAM layers</p>
-                <div className={styles.dropdownWrap}>
-                  <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
-                    n={encoderDepth} <ChevronDown size={14} />
-                  </button>
-                  {depthDropdownOpen && (
-                    <ul className={styles.dropdownList}>
-                      {([12, 8] as const).map(d => (
-                        <li key={d}
-                          className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
-                          onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
-                        >{`n=${d}`} {d === 8 ? "(faster)" : "(full)"}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {/* tab bar. switchTab discards any in-progress work in the tab
-                being left (unsaved refine edits, pending augment proposals). */}
-            <div className={styles.tabRows}>
-              <div className={styles.tabBar}>
-                <button type="button"
-                  className={`${styles.tabBtn} ${activeTab === "segment" ? styles.tabBtnActive : ""}`}
-                  onClick={() => switchTab("segment")}
-                >Segment</button>
-                <button type="button"
-                  className={`${styles.tabBtn} ${activeTab === "refine" ? styles.tabBtnActive : ""}`}
-                  onClick={() => switchTab("refine")}
-                  disabled={!seg.segDone}
-                >Refine</button>
-                <button type="button"
-                  className={`${styles.tabBtn} ${activeTab === "augment" ? styles.tabBtnActive : ""}`}
-                  onClick={() => switchTab("augment")}
-                  disabled={!sessionId}
-                >Augment</button>
-              </div>
-              <div className={`${styles.tabBar} ${styles.tabBarCentered}`}>
-                <button type="button"
-                  className={`${styles.tabBtn} ${activeTab === "analysis" ? styles.tabBtnActive : ""}`}
-                  onClick={() => switchTab("analysis")}
-                  disabled={!image}
-                >Analysis</button>
-              </div>
-            </div>
+            <p className={styles.paneHead}>
+              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis" }[activeTab]}
+            </p>
 
             {activeTab === "segment" && (
               <>
