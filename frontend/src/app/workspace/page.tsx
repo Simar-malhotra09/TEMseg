@@ -1244,44 +1244,6 @@ export default function Workspace() {
               session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
             </span>
           </div>
-
-          {/* model + SAM encoder depth are global pipeline settings, so they
-              live in the top bar rather than the mode sidebar. Depth only
-              applies to YoloSAM variants — hidden for MaskRCNN. */}
-          <div className={styles.topbarCenter}>
-            <div className={styles.dropdownWrap}>
-              <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
-                {selectedModel} <ChevronDown size={14} />
-              </button>
-              {modelDropdownOpen && (
-                <ul className={styles.dropdownList}>
-                  {models.map(m => (
-                    <li key={m}
-                      className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
-                      onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
-                    >{m}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
-              <div className={styles.dropdownWrap}>
-                <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
-                  n={encoderDepth} <ChevronDown size={14} />
-                </button>
-                {depthDropdownOpen && (
-                  <ul className={styles.dropdownList}>
-                    {([12, 8] as const).map(d => (
-                      <li key={d}
-                        className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
-                        onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
-                      >{`n=${d}`} {d === 8 ? "(faster)" : "(full)"}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </div>
           <div className={styles.topbarRight}>
             {seg.regionsOutOfSync && (
               <span className={styles.warnPill}>
@@ -1352,7 +1314,7 @@ export default function Workspace() {
           </nav>
 
           {/* left sidebar — per-mode control pane. The mode rail switches
-              between them; model/depth live in the topbar. */}
+              between them. */}
           <aside className={styles.sidebar}>
 
             <p className={styles.paneHead}>
@@ -1361,6 +1323,50 @@ export default function Workspace() {
 
             {activeTab === "segment" && (
               <>
+                {/* model selector */}
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Model</p>
+                  <div className={styles.dropdownWrap}>
+                    <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
+                      {selectedModel} <ChevronDown size={14} />
+                    </button>
+                    {modelDropdownOpen && (
+                      <ul className={styles.dropdownList}>
+                        {models.map(m => (
+                          <li key={m}
+                            className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
+                            onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
+                          >{m}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </section>
+
+                {/* SAM encoder depth. 12 = full (default), 8 = early-exit
+                    (faster, slightly fewer detections on tough images).
+                    Only YoloSAM/FasterYoloSAM support it — hidden for MaskRCNN. */}
+                {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
+                  <section className={styles.sidebarSection}>
+                    <p className={styles.sidebarLabel}>SAM layers</p>
+                    <div className={styles.dropdownWrap}>
+                      <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
+                        n={encoderDepth} <ChevronDown size={14} />
+                      </button>
+                      {depthDropdownOpen && (
+                        <ul className={styles.dropdownList}>
+                          {([12, 8] as const).map(d => (
+                            <li key={d}
+                              className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
+                              onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
+                            >{`n=${d}`} {d === 8 ? "(faster)" : "(full)"}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </section>
+                )}
+
                 <section className={styles.sidebarSection}>
                   <p className={styles.sidebarLabel}>Actions</p>
 
