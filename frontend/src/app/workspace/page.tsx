@@ -38,7 +38,7 @@ interface ImgSize{
   height: number;
 }
 
-type SidebarTab = "segment" | "refine" | "augment" | "analysis";
+type SidebarTab = "segment" | "refine" | "augment" | "analysis" | "settings";
 type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
@@ -1341,22 +1341,22 @@ export default function Workspace() {
             >
               <BarChart2 size={16} /><span className={styles.railLabel}>Analyze</span>
             </button>
+            <div className={styles.railSpacer} />
+            <button type="button"
+              className={`${styles.railBtn} ${activeTab === "settings" ? styles.railBtnActive : ""}`}
+              onClick={() => switchTab("settings")}
+              title="Settings"
+            >
+              <Settings size={16} /><span className={styles.railLabel}>Settings</span>
+            </button>
           </nav>
 
-          {/*
-              left sidebar, handles
-                a. model selection dropdown
-                b. run seg button
-                c. hide/show masks
-                d. enter/exit refine mode
-                e. exclude/isolate regions
-                f. upload/compute gt
-                g. export (modified) masks
-            */}
+          {/* left sidebar — per-mode control pane. The mode rail switches
+              between them; model/depth live in the topbar. */}
           <aside className={styles.sidebar}>
 
             <p className={styles.paneHead}>
-              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis" }[activeTab]}
+              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis", settings: "Settings" }[activeTab]}
             </p>
 
             {activeTab === "segment" && (
@@ -1437,26 +1437,8 @@ export default function Workspace() {
                   </p>
                 </section>
 
-                {/* [ACTION] ground truth */}
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>Ground Truth</p>
-                  <button type="button" className={styles.actionBtn}
-                    onClick={() => gtFileRef.current?.click()}
-                    disabled={!sessionId}>
-                    <Upload size={14} /> Upload GT
-                  </button>
-                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-                    hidden onChange={onGroundTruthFileChange} />
-                  <p className={styles.sidebarHint}>
-                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
-                  </p>
-                  {seg.gtUrl && (
-                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
-                      {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                      {seg.gtVisible ? "Hide GT" : "Show GT"}
-                    </button>
-                  )}
-                </section>
+                {/* ground truth + export live in the Settings pane (rail,
+                    bottom) since they're session-level, not per-run actions. */}
               </>
             )}
 
@@ -1898,16 +1880,40 @@ export default function Workspace() {
               </section>
             )}
 
-            <section>
-              {sessionId && (
-                <ExportPanel
-                  sessionId={sessionId}
-                  segDone={seg.segDone}
-                  refineDone={refineDone}
-                  hasStats={!!seg.stats}
-                />
-              )}
-            </section>
+            {activeTab === "settings" && (
+              <>
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Ground Truth</p>
+                  <button type="button" className={styles.actionBtn}
+                    onClick={() => gtFileRef.current?.click()}
+                    disabled={!sessionId}>
+                    <Upload size={14} /> Upload GT
+                  </button>
+                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
+                    hidden onChange={onGroundTruthFileChange} />
+                  <p className={styles.sidebarHint}>
+                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+                  </p>
+                  {seg.gtUrl && (
+                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                      {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {seg.gtVisible ? "Hide GT" : "Show GT"}
+                    </button>
+                  )}
+                </section>
+
+                <section>
+                  {sessionId && (
+                    <ExportPanel
+                      sessionId={sessionId}
+                      segDone={seg.segDone}
+                      refineDone={refineDone}
+                      hasStats={!!seg.stats}
+                    />
+                  )}
+                </section>
+              </>
+            )}
 
           </aside>
 
