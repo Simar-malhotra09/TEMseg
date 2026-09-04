@@ -39,7 +39,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from uuid import uuid4
 
 _NAMESPACE = "temseg"
 _LOG_FILE_NAME = "temseg.log"

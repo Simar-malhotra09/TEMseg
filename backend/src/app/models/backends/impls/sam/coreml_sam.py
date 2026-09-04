@@ -9,7 +9,6 @@ per-chunk max/argmax reduce staying on MPS. Point prompts unsupported.
 
 import time
 
-import cv2 as cv
 import numpy as np
 import torch
 from PIL import Image
@@ -62,9 +61,6 @@ class CoreMLSamBackend(SamBackend):
     def encode(self, image_rgb: np.ndarray, encoder_depth: int = 12) -> SamEmbedding:
         x = preprocess_1024(image_rgb)
         emb = self._enc.predict({"image": x})["image_embeddings"]
-        scale = IMG_SIZE / max(image_rgb.shape[:2])
-        new_w = int(image_rgb.shape[1] * scale + 0.5)
-        new_h = int(image_rgb.shape[0] * scale + 0.5)
         return SamEmbedding(
             features=np.ascontiguousarray(emb, dtype=np.float32),
             original_size=image_rgb.shape[:2],
