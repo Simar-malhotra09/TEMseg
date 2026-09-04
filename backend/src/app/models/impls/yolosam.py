@@ -1,4 +1,10 @@
-import time
+"""YoloSam: YOLO detection + SAM segmentation, wired through model backends.
+
+The pipeline logic lives here; the inference stacks (torch vs CoreML,
+platform selection) live in app.models.backends. This class consumes the
+YoloBackend/SamBackend interfaces only.
+"""
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -7,11 +13,12 @@ import cv2 as cv
 import numpy as np
 import torch
 from fastapi import APIRouter
-from segment_anything import SamPredictor, sam_model_registry
-from ultralytics import YOLO
 
 from app.api.live_models import AvailableModels
-from app.logutils import Timer, fmt_duration, get_logger
+from app.logutils import Timer, get_logger
+from app.models.backends.base import SamBackend, SamEmbedding, YoloBackend
+from app.models.backends.impls.sam.torch_sam import TorchSamBackend
+from app.models.backends.impls.yolo.ort_yolo import OrtYoloBackend
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
@@ -20,42 +27,12 @@ log_batch = get_logger("YoloSAM", sub="Batch")
 SESSIONS_DIR = Path("sessions")
 
 
-def encode_block_subset(
-    sam: torch.nn.Module, image_tensor: torch.Tensor, block_indices: List[int]
-) -> torch.Tensor:
-    """Preprocessed image tensor -> SAM neck, over an explicit ordered block
-    subset.
-
-    Same forward path as ImageEncoderViT.forward but runs `block_indices`
-    (0-based) instead of all 12 transformer blocks. Used for the
-    encoder-early-exit segment path (e.g. depth 8 = first 8 blocks); the
-    output shape equals the full-depth path so the decoder is unaffected.
-    """
-    enc = sam.image_encoder
-    h = enc.patch_embed(image_tensor)  # (B, 64, 64, 768)
-    if enc.pos_embed is not None:
-        h = h + enc.pos_embed
-    for i in block_indices:
-        h = enc.blocks[i](h)  # stays (B, 64, 64, 768)
-    return enc.neck(h.permute(0, 3, 1, 2))  # (B, 256, 64, 64)
-
-
-@dataclass
-class SAMEmbedding:
-    features: torch.Tensor
-    original_size: tuple[int, int]
-    input_size: tuple[int, int]
-    encoder_depth: int = 12
-
-
 @dataclass
 class YoloSAMSegmentationResult(SegmentationResult):
-    embedding: SAMEmbedding | None = None
+    embedding: SamEmbedding | None = None
     detection_boxes: np.ndarray | None = None
     # uint16 ownership map: pixel value = 1-based index of the YOLO box whose
-    # decode won that pixel (highest full-res logit), 0 = background. Let's
-    # instance extraction keep box identity instead of re-deriving instances
-    # from connected components, so touching particles can't merge.
+    # decode won that pixel (highest full-res logit), 0 = background.
     instance_labels: np.ndarray | None = None
 
 
@@ -74,6 +51,19 @@ class YoloSam(Model):
         self.device = device
         self._shared_components = components
         super().__init__(config)  # calls self._load_components()
+        self._yolo: YoloBackend = OrtYoloBackend(self.components["yolo"], device)
+        self._sam: SamBackend = self._make_sam_backend()
+
+    def _make_sam_backend(self) -> SamBackend:
+        return TorchSamBackend(self.components["sam"], self.device)
+
+    @property
+    def _predictor(self):
+        """SamPredictor of the torch SAM backend, if one is loaded.
+
+        Kept for the point-prompt endpoints in masks.py; None when the
+        selected SAM backend has no torch predictor."""
+        return getattr(self._sam, "predictor", None)
 
     def _load_components(self) -> Dict[str, Any]:
         # Reuse components already loaded by another pipeline instance
@@ -107,6 +97,8 @@ class YoloSam(Model):
                 raise ValueError(f"Model path is not a file: {model_path}")
 
             if name == "yolo":
+                from ultralytics import YOLO
+
                 try:
                     model = YOLO(str(model_path))
                     logger.info(f"Loading YOLO model from {model_path.name}")
@@ -115,6 +107,8 @@ class YoloSam(Model):
                 components["yolo"] = model
 
             elif name == "sam":
+                from segment_anything import sam_model_registry
+
                 if "vit_b" not in sam_model_registry:
                     raise ValueError("SAM registry missing 'vit_b'")
 
@@ -138,123 +132,6 @@ class YoloSam(Model):
                 raise ValueError(f"Unknown component: {comp.name}")
 
         return components
-
-    def _after_decode_chunk(self) -> None:
-        """Pacing/allocator hook run after each decode chunk; overridden by
-        subclasses with different memory policies."""
-        self._empty_device_cache()
-
-    def _decode_union_with_ownership(
-        self,
-        predictor: SamPredictor,
-        transformed_boxes: torch.Tensor,
-        chunk: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Decode all boxes -> (union uint8 0/1, owner_labels uint16).
-
-        Running full-res max logit over chunks; union = max_logit > threshold.
-        Thresholding is monotone, so this union equals the union of per-box
-        thresholded masks (the previous implementation) bit-for-bit with the
-        same decode chain. owner_labels[p] = 1-based index of the box with the
-        highest logit at pixel p, so instance identity survives mask merging.
-        """
-        sam = predictor.model
-        image_pe = sam.prompt_encoder.get_dense_pe()
-        n = len(transformed_boxes)
-
-        running_max: torch.Tensor | None = None
-        running_owner: torch.Tensor | None = None
-        with torch.no_grad():
-            for i in range(0, n, chunk):
-                sparse, dense = sam.prompt_encoder(
-                    points=None, boxes=transformed_boxes[i : i + chunk], masks=None
-                )
-                low_res, _ = sam.mask_decoder(
-                    image_embeddings=predictor.features,
-                    image_pe=image_pe,
-                    sparse_prompt_embeddings=sparse,
-                    dense_prompt_embeddings=dense,
-                    multimask_output=False,
-                )
-                full = sam.postprocess_masks(
-                    low_res, predictor.input_size, predictor.original_size
-                )
-                chunk_max, chunk_owner = full.squeeze(1).max(dim=0)
-                if running_max is None:
-                    running_max = chunk_max
-                    running_owner = chunk_owner + i + 1
-                else:
-                    update = chunk_max > running_max
-                    running_max = torch.maximum(running_max, chunk_max)
-                    running_owner = torch.where(
-                        update, chunk_owner + i + 1, running_owner
-                    )
-                self._after_decode_chunk()
-
-        union_t = running_max > sam.mask_threshold
-        owner_t = torch.where(union_t, running_owner, torch.zeros_like(running_owner))
-        return (
-            union_t.cpu().numpy().astype("uint8"),
-            owner_t.cpu().numpy().astype(np.uint16),
-        )
-
-    def _empty_device_cache(self) -> None:
-        """Release cached allocator memory back to the OS after a forward pass.
-
-        SAM's ViT-B encoder + per-box mask decoding hits a high memory
-        watermark; PyTorch's caching allocator holds onto that peak until
-        told to release it. Without this, RSS/footprint stays elevated
-        indefinitely after the first segment() call.
-
-        We initally used this after each segment call, but the overhead
-        of reallocation seems to be high. For now we compromise and only
-        use this in batch_segment, where the memory footprint seems to
-        pile up.
-
-        !NEEDS_DED_PROFILING
-
-        """
-        if self.device == "cuda":
-            torch.cuda.empty_cache()
-        elif self.device == "mps":
-            torch.mps.empty_cache()
-
-    def _encode_image(
-        self, predictor: SamPredictor, image: np.ndarray, encoder_depth: int
-    ) -> None:
-        """
-        Optionally truncate the ViT-B encoder to the first `encoder_depth`
-        transformer blocks when it is < 12.
-
-        Full depth delegates to SamPredictor.set_image().
-        The truncated path mirrors set_torch_image() but substitutes
-        the encoder forward with an explicit block subset (patch_embed ->
-        pos_embed -> blocks[:encoder_depth] -> neck); the returned features
-        keep the same (1, 256, 64, 64) shape the mask decoder expects.
-        """
-        if encoder_depth == 12:
-            predictor.set_image(image)
-            return
-        sam = predictor.model
-        n_blocks = len(sam.image_encoder.blocks)
-        if not 1 <= encoder_depth < n_blocks:
-            raise ValueError(
-                f"encoder_depth must be in 1..{n_blocks - 1} (or 12 for full),"
-                f" is {encoder_depth}"
-            )
-        predictor.reset_image()
-        predictor.original_size = image.shape[:2]
-        with torch.no_grad():
-            input_image = predictor.transform.apply_image(image)
-            input_image_torch = torch.as_tensor(input_image, device=predictor.device)
-            input_image_torch = input_image_torch.permute(2, 0, 1).contiguous()[
-                None, :, :, :
-            ]
-            predictor.input_size = tuple(input_image_torch.shape[-2:])
-            predictor.features = encode_block_subset(
-                sam, sam.preprocess(input_image_torch), list(range(encoder_depth))
-            )
-        predictor.is_image_set = True
 
     def load_image(self, image_path: Path) -> np.ndarray:
         if image_path.suffix == ".npy":
@@ -292,58 +169,31 @@ class YoloSam(Model):
     def segment(
         self,
         image: np.ndarray,
-        embedding_cache: SAMEmbedding | None = None,
+        embedding_cache: SamEmbedding | None = None,
         encoder_depth: int = 12,
         **kwargs,
     ) -> YoloSAMSegmentationResult:
         logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
 
-        # ensure predictor exists for reuse
-        if not hasattr(self, "_predictor"):
-            self._predictor = SamPredictor(self.components["sam"])
-        predictor = self._predictor
-
         # YOLO Detection
-        # we want to return these boxes
-        # and overlay on the image
-        # we can see point of failure,
         with Timer(logger, "yolo") as t_yolo:
             with t_yolo.step("predict"):
-                results = self.components["yolo"].predict(
-                    source=image,
-                    conf=0.25,
-                    iou=0.5,
-                    max_det=4000,
-                    verbose=False,
-                    device=self.device,
-                )
-                boxes = results[0].boxes.xyxy
-
-            with t_yolo.step("box_transfer"):
-                input_boxes = boxes.to(predictor.device)
-                transformed_boxes = predictor.transform.apply_boxes_torch(
-                    input_boxes, image.shape[:2]
-                )
-
+                boxes = self._yolo.detect(image)
             t_yolo.field("boxes", len(boxes))
 
         # Always prime SAM with the image so the embedding is available for
         # downstream point-prompt endpoints (/split, /from-points, /propose-similar)
-        # even when YOLO found nothing. Without this, zero-detection images leave
-        # the user with no way to manually bootstrap segmentation.
+        # even when YOLO found nothing.
         with Timer(logger, "sam") as t_sam:
             if embedding_cache:
-                predictor.features = embedding_cache.features
-                predictor.original_size = embedding_cache.original_size
-                predictor.input_size = embedding_cache.input_size
-                predictor.is_image_set = True
+                emb = embedding_cache
                 t_sam.field("encode", "cached")
             else:
                 with t_sam.step("encode"):
-                    self._encode_image(predictor, image, encoder_depth)
+                    emb = self._sam.encode(image, encoder_depth)
                     t_sam.field("depth", encoder_depth)
 
-            if boxes is None or len(boxes) == 0:
+            if len(boxes) == 0:
                 logger.info(
                     "YOLO found 0 boxes — returning empty mask with SAM embedding cached"
                 )
@@ -352,22 +202,14 @@ class YoloSam(Model):
                     metadata={"detections": 0, "sam_embedding_cached": True},
                     model=self.MODEL_ENUM,
                     detection_boxes=np.array([]).reshape(0, 4),
-                    embedding=SAMEmbedding(
-                        features=predictor.features,
-                        original_size=predictor.original_size,
-                        input_size=predictor.input_size,
-                        encoder_depth=encoder_depth,
-                    ),
+                    embedding=emb,
                 )
 
-            # Chunked decode with a running full-res max-logit union (plus a
-            # per-pixel owner map), so images with many detections never
-            # materialise an (N, 1, H, W) CPU mask stack.
             box_batch_size = kwargs.get("box_batch_size", 64)
 
             with t_sam.step("decode"):
-                combined_mask, owner_labels = self._decode_union_with_ownership(
-                    predictor, transformed_boxes, box_batch_size
+                combined_mask, owner_labels = self._sam.decode_union(
+                    emb, boxes, box_batch_size
                 )
 
             t_sam.field("mask_px", int(np.count_nonzero(combined_mask)))
@@ -376,13 +218,8 @@ class YoloSam(Model):
             segmentation_mask=combined_mask,
             metadata={"detections": len(boxes), "encoder_depth": encoder_depth},
             model=self.MODEL_ENUM,
-            embedding=SAMEmbedding(
-                features=predictor.features,
-                original_size=predictor.original_size,
-                input_size=predictor.input_size,
-                encoder_depth=encoder_depth,
-            ),
-            detection_boxes=boxes.cpu().numpy(),
+            embedding=emb,
+            detection_boxes=boxes,
             instance_labels=owner_labels,
         )
 
@@ -392,38 +229,7 @@ class YoloSam(Model):
         the predictor that was set during the most recent segment() call.
         Returns a binary uint8 mask (0/1) merged across all prompts.
         """
-        if not hasattr(self, "_predictor") or not self._predictor.is_image_set:
-            raise RuntimeError("SAM predictor has no image — call segment() first")
-
-        predictor = self._predictor
-        h, w = predictor.original_size
-        combined = np.zeros((h, w), dtype=np.uint8)
-
-        for prompt in prompts:
-            cx, cy = prompt["point"]
-            x1, y1, x2, y2 = prompt["bbox"]
-
-            point_coords = torch.tensor(
-                [[[cx, cy]]], dtype=torch.float32, device=predictor.device
-            )  # (1, 1, 2)
-            point_labels = torch.ones((1, 1), dtype=torch.int, device=predictor.device)
-            box_tensor = torch.tensor(
-                [[x1, y1, x2, y2]], dtype=torch.float32, device=predictor.device
-            )
-            transformed_box = predictor.transform.apply_boxes_torch(
-                box_tensor, predictor.original_size
-            )
-
-            masks, _, _ = predictor.predict_torch(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                boxes=transformed_box,
-                multimask_output=False,
-            )
-            mask_np = masks.cpu().numpy().astype(np.uint8).squeeze()
-            combined = np.maximum(combined, mask_np)
-
-        return combined
+        return self._sam.predict_prompts(prompts)
 
     def segment_batch(
         self,
@@ -443,81 +249,40 @@ class YoloSam(Model):
 
         log_batch.info(f"segment_batch: {len(patches)} patches, output {img_shape}")
 
-        # --- Batch YOLO detection ---
-        yolo_model = self.components["yolo"]
-
-        if not hasattr(self, "_predictor"):
-            self._predictor = SamPredictor(self.components["sam"])
-        predictor = self._predictor
-
         total_detections = 0
-        t_yolo_total = 0.0
-        t_sam_total = 0.0
         all_boxes: list[np.ndarray] = []
         label_offset = 0  # owner ids keep global box order across patches
 
-        with Timer(log_batch, "segment_batch") as t_batch:
-            for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
-                # YOLO per patch (ONNX model is batch=1)
-                t_yolo_start = time.perf_counter()
-                results = yolo_model.predict(
-                    source=patch,
-                    conf=0.25,
-                    iou=0.5,
-                    max_det=4000,
-                    verbose=False,
-                    device=self.device,
-                )
-                t_yolo_patch = time.perf_counter() - t_yolo_start
-                t_yolo_total += t_yolo_patch
+        for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
+            boxes_np = self._yolo.detect(patch)
+            if len(boxes_np) == 0:
+                log_batch.debug(f"patch {i}: no detections, skipping")
+                continue
+            log_batch.debug(f"patch {i}: {len(boxes_np)} detections")
 
-                boxes = results[0].boxes.xyxy
+            emb = self._sam.encode(patch, encoder_depth)
+            patch_union, patch_labels = self._sam.decode_union(emb, boxes_np, 64)
 
-                if boxes is None or len(boxes) == 0:
-                    log_batch.debug(f"patch {i}: no detections, skipping")
-                    continue
+            x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
+            combined[y1:y2, x1:x2] = np.maximum(
+                combined[y1:y2, x1:x2], (patch_union > 0).astype("uint8") * 255
+            )
+            if patch_labels is not None:
+                lbl = combined_labels[y1:y2, x1:x2]
+                hit = patch_union > 0
+                lbl[hit] = patch_labels[hit] + label_offset
 
-                log_batch.debug(
-                    f"patch {i}: {len(boxes)} detections, yolo={fmt_duration(t_yolo_patch)}"
-                )
+            # Offset boxes to full-image coordinates
+            boxes_np[:, [0, 2]] += x1
+            boxes_np[:, [1, 3]] += y1
+            all_boxes.append(boxes_np)
 
-                # SAM per patch
-                t_sam_start = time.perf_counter()
-                self._encode_image(predictor, patch, encoder_depth)
-                input_boxes = boxes.to(predictor.device)
-                transformed_boxes = predictor.transform.apply_boxes_torch(
-                    input_boxes, patch.shape[:2]
-                )
-
-                patch_union, patch_labels = self._decode_union_with_ownership(
-                    predictor, transformed_boxes, 64
-                )
-                t_sam_patch = time.perf_counter() - t_sam_start
-                t_sam_total += t_sam_patch
-                log_batch.debug(f"patch {i}: sam={fmt_duration(t_sam_patch)}")
-
-                x2, y2 = x1 + patch.shape[1], y1 + patch.shape[0]
-                combined[y1:y2, x1:x2] = np.maximum(
-                    combined[y1:y2, x1:x2], (patch_union > 0).astype("uint8") * 255
-                )
-                if patch_labels is not None:
-                    lbl = combined_labels[y1:y2, x1:x2]
-                    hit = patch_union > 0
-                    lbl[hit] = patch_labels[hit] + label_offset
-
-                # Offset boxes to full-image coordinates
-                boxes_np = boxes.cpu().numpy()
-                boxes_np[:, [0, 2]] += x1
-                boxes_np[:, [1, 3]] += y1
-                all_boxes.append(boxes_np)
-
-                label_offset += len(boxes)
-                total_detections += len(boxes)
-                self._empty_device_cache()
-
-            t_batch.field("yolo", fmt_duration(t_yolo_total))
-            t_batch.field("sam", fmt_duration(t_sam_total))
-            t_batch.field("detections", total_detections)
+            label_offset += len(boxes_np)
+            total_detections += len(boxes_np)
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            elif self.device == "mps":
+                torch.mps.empty_cache()
 
         detection_boxes = (
             np.vstack(all_boxes) if all_boxes else np.array([]).reshape(0, 4)
@@ -527,8 +292,6 @@ class YoloSam(Model):
             segmentation_mask=combined,
             metadata={
                 "detections": total_detections,
-                "yolo_time": round(t_yolo_total, 3),
-                "sam_time": round(t_sam_total, 3),
                 "encoder_depth": encoder_depth,
             },
             model=self.MODEL_ENUM,
