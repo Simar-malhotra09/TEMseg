@@ -30,8 +30,19 @@ def _build_fasteryolosam(models: dict, device: str) -> FasterYoloSam:
     return FasterYoloSam(nano_config, device=device)
 
 
+def _build_yolosam(device: str):
+    """HACK BRANCH: dual-CoreML yolosam on arm Macs when the .mlpackages
+    exist (TEMSEG_COREML=0 forces the classic torch path)."""
+    from app.models.impls.yolosam_coreml import YoloSamCoreML, coreml_available
+
+    if coreml_available():
+        logger.info("yolosam: using dual CoreML backend (coreml-dual-pipeline-hack)")
+        return YoloSamCoreML(nano_config, device=device)
+    return YoloSam(nano_config, device=device)
+
+
 _MODEL_BUILDERS = {
-    AvailableModels.yolosam: lambda device: YoloSam(nano_config, device=device),
+    AvailableModels.yolosam: _build_yolosam,
     AvailableModels.yolomaskrcnn: lambda device: YoloMaskRCNN(
         yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
     ),
