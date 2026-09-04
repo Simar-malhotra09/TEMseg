@@ -184,12 +184,15 @@ class YoloSamCoreML(YoloSam):
     def _cm_decode_union(self, emb: np.ndarray, boxes_t: np.ndarray,
                          orig_hw) -> tuple[np.ndarray, np.ndarray]:
         """Chunked (B=64, duplicate-padded) running max-logit union + owner
-        labels. Per-chunk masks are resized in groups of 8 to bound memory."""
+        labels. Resize (torch interpolate, production kernel) and the
+        per-chunk max/argmax reduce run on MPS; only the final union/owner
+        maps come back to numpy."""
         h, w = orig_hw
         scale = IMG_SIZE / max(h, w)
         nw, nh = int(w * scale + 0.5), int(h * scale + 0.5)
-        running_max: np.ndarray | None = None
-        running_owner: np.ndarray | None = None
+        dev = torch.device(self.device)
+        running_max: torch.Tensor | None = None
+        running_owner: torch.Tensor | None = None
         for i in range(0, len(boxes_t), B64):
             chunk = boxes_t[i : i + B64]
             n = len(chunk)
@@ -198,32 +201,31 @@ class YoloSamCoreML(YoloSam):
             masks = self._cm_dec.predict(
                 {"image_embeddings": emb, "boxes": padded}
             )["masks"]  # (64,1,1024,1024) logits
-            chunk_max = None
-            chunk_owner = None
+            groups = []
             for j in range(0, B64, 8):
-                group = masks[j : j + 8, 0, :nh, :nw]
-                resized = np.stack(
-                    [cv.resize(m, (w, h), interpolation=cv.INTER_LINEAR) for m in group]
+                group = masks[j : j + 8, 0, :nh, :nw]  # (8,nh,nw)
+                gt = torch.from_numpy(
+                    np.ascontiguousarray(group, dtype=np.float32)
+                ).unsqueeze(1).to(dev)
+                groups.append(
+                    torch.nn.functional.interpolate(
+                        gt, size=(h, w), mode="bilinear", align_corners=False
+                    ).squeeze(1)
                 )
-                if chunk_max is None:
-                    chunk_max = resized.max(axis=0)
-                    chunk_owner = resized.argmax(axis=0).astype(np.uint16)
-                else:
-                    gmax = resized.max(axis=0)
-                    gowner = resized.argmax(axis=0).astype(np.uint16)
-                    upd = gmax > chunk_max
-                    chunk_max = np.maximum(chunk_max, gmax)
-                    chunk_owner = np.where(upd, gowner + j, chunk_owner)
-            # owner ids: 1-based, global across chunks (i is chunk start)
+            chunk_logits = torch.cat(groups, 0)  # (64,h,w) on MPS
+            chunk_max, chunk_owner = chunk_logits.max(dim=0)
+            chunk_owner = chunk_owner + i + 1  # 1-based global box id
             if running_max is None:
                 running_max = chunk_max
-                running_owner = chunk_owner + i + 1
+                running_owner = chunk_owner
             else:
                 upd = chunk_max > running_max
-                running_max = np.maximum(running_max, chunk_max)
-                running_owner = np.where(upd, chunk_owner + i + 1, running_owner)
-        union = (running_max > 0.0).astype(np.uint8)
-        owner = np.where(union > 0, running_owner, 0).astype(np.uint16)
+                running_max = torch.maximum(running_max, chunk_max)
+                running_owner = torch.where(upd, chunk_owner, running_owner)
+        union_t = running_max > 0.0
+        union = union_t.cpu().numpy().astype("uint8")
+        owner = torch.where(union_t, running_owner, torch.zeros_like(running_owner))
+        owner = owner.cpu().numpy().astype(np.uint16)
         return union, owner
 
     # ----------------------------------------------------------- segment()
@@ -243,51 +245,65 @@ class YoloSamCoreML(YoloSam):
 
             self._predictor = SamPredictor(self.components["sam"])
 
-        with Timer(logger, "yolo_coreml") as t_yolo:
-            with t_yolo.step("detect"):
-                boxes_np = self._cm_yolo_detect(image)
-            t_yolo.field("boxes", len(boxes_np))
+        t0 = time.perf_counter()
+        boxes_np = self._cm_yolo_detect(image)
+        t_yolo = time.perf_counter() - t0
+        logger.info(
+            f"[coreml] yolo detect {t_yolo*1000:.0f}ms, {len(boxes_np)} boxes"
+        )
 
-        with Timer(logger, "sam_coreml") as t_sam:
-            if embedding_cache is not None:
-                emb = embedding_cache.features
-                if isinstance(emb, torch.Tensor):
-                    emb = emb.detach().cpu().numpy()
-                emb = np.ascontiguousarray(emb, dtype=np.float32)
-                t_sam.field("encode", "cached")
-            else:
-                with t_sam.step("encode"):
-                    x = self._cm_sam_preprocess(image)
-                    emb = self._cm_enc.predict({"image": x})["image_embeddings"]
-                    t_sam.field("depth", encoder_depth)
+        if embedding_cache is not None:
+            emb = embedding_cache.features
+            if isinstance(emb, torch.Tensor):
+                emb = emb.detach().cpu().numpy()
+            emb = np.ascontiguousarray(emb, dtype=np.float32)
+            t_encode = 0.0
+            cached = True
+        else:
+            t0 = time.perf_counter()
+            x = self._cm_sam_preprocess(image)
+            emb = self._cm_enc.predict({"image": x})["image_embeddings"]
+            t_encode = time.perf_counter() - t0
+            cached = False
+        logger.info(
+            f"[coreml] sam encode {'cached' if cached else f'{t_encode*1000:.0f}ms'}"
+        )
 
-            # surface the embedding through the torch predictor for prompts
-            self._predictor.features = torch.from_numpy(emb).to(self.device)
-            self._predictor.original_size = image.shape[:2]
-            self._predictor.input_size = (IMG_SIZE, IMG_SIZE)
-            self._predictor.is_image_set = True
+        # surface the embedding through the torch predictor for prompts
+        self._predictor.features = torch.from_numpy(emb).to(self.device)
+        self._predictor.original_size = image.shape[:2]
+        self._predictor.input_size = (IMG_SIZE, IMG_SIZE)
+        self._predictor.is_image_set = True
 
-            if len(boxes_np) == 0:
-                logger.info("[coreml] YOLO found 0 boxes — empty mask, embedding cached")
-                return YoloSAMSegmentationResult(
-                    segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
-                    metadata={"detections": 0, "sam_embedding_cached": True},
-                    model=self.MODEL_ENUM,
-                    detection_boxes=np.array([]).reshape(0, 4),
-                    embedding=SAMEmbedding(
-                        features=self._predictor.features,
-                        original_size=image.shape[:2],
-                        input_size=(IMG_SIZE, IMG_SIZE),
-                        encoder_depth=encoder_depth,
-                    ),
-                )
+        if len(boxes_np) == 0:
+            logger.info("[coreml] YOLO found 0 boxes — empty mask, embedding cached")
+            return YoloSAMSegmentationResult(
+                segmentation_mask=np.zeros(image.shape[:2], dtype=np.uint8),
+                metadata={"detections": 0, "sam_embedding_cached": True},
+                model=self.MODEL_ENUM,
+                detection_boxes=np.array([]).reshape(0, 4),
+                embedding=SAMEmbedding(
+                    features=self._predictor.features,
+                    original_size=image.shape[:2],
+                    input_size=(IMG_SIZE, IMG_SIZE),
+                    encoder_depth=encoder_depth,
+                ),
+            )
 
-            with t_sam.step("decode"):
-                boxes_t = self._cm_transform_boxes(boxes_np, image.shape[:2])
-                combined_mask, owner_labels = self._cm_decode_union(
-                    emb, boxes_t, image.shape[:2]
-                )
-            t_sam.field("mask_px", int(np.count_nonzero(combined_mask)))
+        t0 = time.perf_counter()
+        boxes_t = self._cm_transform_boxes(boxes_np, image.shape[:2])
+        combined_mask, owner_labels = self._cm_decode_union(
+            emb, boxes_t, image.shape[:2]
+        )
+        t_decode = time.perf_counter() - t0
+        logger.info(
+            f"[coreml] sam decode {t_decode*1000:.0f}ms, "
+            f"mask px {int(np.count_nonzero(combined_mask))}"
+        )
+        logger.info(
+            f"[coreml] total {t_yolo*1000:.0f}ms yolo + "
+            f"{t_encode*1000:.0f}ms encode + {t_decode*1000:.0f}ms decode"
+        )
 
         return YoloSAMSegmentationResult(
             segmentation_mask=combined_mask,
