@@ -165,10 +165,20 @@ class YoloMaskRCNN(Model):
 
             labels = [torch.ones(len(boxes), dtype=torch.int64, device=self.device)]
             mask_prob = maskrcnn_inference(mask_logits, labels)[0]
-            masks_in_orig = paste_masks_in_image(mask_prob, yb, (h, w))
 
-        combined = (masks_in_orig.cpu().numpy()[:, 0] > 0.5).astype("uint8")
-        combined = combined.max(axis=0)
+            # Chunked paste: pasting all boxes at full res at once can exceed
+            # MPS limits on large images (~10 GiB for many boxes). A running max
+            # over chunks is bit-identical since thresholding at a fixed cutoff
+            # commutes with max.
+            combined = torch.zeros((h, w), dtype=torch.float32, device=self.device)
+            CHUNK = 64
+            for i in range(0, len(boxes), CHUNK):
+                chunk = paste_masks_in_image(mask_prob[i : i + CHUNK], yb[i : i + CHUNK], (h, w))
+                combined = torch.maximum(combined, chunk.squeeze(1).max(dim=0).values)
+                if self.device == "mps":
+                    torch.mps.empty_cache()
+
+        combined = (combined.cpu().numpy() > 0.5).astype("uint8")
 
         return SegmentationResult(
             segmentation_mask=combined,
