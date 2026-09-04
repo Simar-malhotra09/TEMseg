@@ -19,7 +19,7 @@ from app.api.instances import (
 )
 
 import json
-from app.logutils import Timer, fmt_duration, get_logger
+from app.logutils import Timer, fmt_duration, get_logger, ui_event
 from app.models.helpers.compute_stats import compute_stats_from_instances
 
 router = APIRouter(prefix="/masks")
@@ -218,6 +218,11 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     t.field("total", stats["particle_count"])
     t.stop()
 
+    ui_event(
+        "MASKS_SAVED",
+        "Edited masks saved.",
+        level="info",
+    )
     return {"mask_url": f"/images/{session_id}/mask", "stats": stats}
 
 

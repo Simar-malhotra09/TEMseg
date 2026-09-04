@@ -308,6 +308,24 @@ export async function getModels(): Promise<string[]> {
   return data.models ?? [];
 }
 
+export interface UiEvent {
+  id: number;
+  ts: string;
+  level: "info" | "warning" | "error";
+  code: string;
+  message: string;
+  progress: number | null;
+}
+
+export async function getUiEvents(since = 0): Promise<UiEvent[]> {
+  const res = await trackedFetch(`${BASE_URL}/ui/events?since=${since}`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch activity");
+  }
+  const data = await res.json();
+  return data.events ?? [];
+}
+
 export async function getSessionMetadata(
   sessionId: string,
 ): Promise<Metadata | null> {

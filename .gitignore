@@ -53,3 +53,6 @@ experimental_cobalt/
 model_scripts/
 scripts/test_rf_recovery.sh
 tools/
+
+# local todo/bug tracker (personal, never committed)
+TODO.md

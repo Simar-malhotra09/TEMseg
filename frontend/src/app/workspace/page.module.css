@@ -21,6 +21,7 @@ flex-shrink: 0;
 }
 .topbarLeft { display: flex; align-items: center; gap: 16px; }
 .topbarRight { display: flex; align-items: center; gap: 10px; }
+.statusWrap { position: relative; display: inline-flex; }
 .logo { font-size: 16px; font-weight: 700; letter-spacing: -0.5px; color: #e8e6e1; }
 .logoAccent { color: #7ee8a2; }
 .sessionTag { color: #555; font-size: 11px; }

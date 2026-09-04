@@ -28,19 +28,39 @@ to the "temseg" namespace only — root stays at INFO so chatty
 third-party libs (asyncio, matplotlib, numba) don't flood the console.
 """
 
+import contextvars
+import json
 import logging
 import os
 import sys
 import time
+from collections import deque
 from contextlib import contextmanager
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from uuid import uuid4
 
 _NAMESPACE = "temseg"
 _LOG_FILE_NAME = "temseg.log"
-_CONSOLE_FORMAT = "[%(component)s] %(message)s"
-_FILE_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s [%(component)s] %(message)s"
+_UI_LOG_FILE_NAME = "ui.log"
+_CONSOLE_FORMAT = "[%(component)s] %(req)s%(message)s"
+_FILE_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s [%(component)s] %(req)s%(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 _handler_marker = "_temseg_handler"
+_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_LOG_BACKUPS = 5
+
+# per-request correlation id; every log line made while a request is being
+# served carries it so interleaved requests can be untangled
+_req_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "temseg_req_id", default=None
+)
+
+# user-facing event stream: JSON lines in ui.log + in-memory ring buffer
+# that /ui/events serves to the frontend status panel
+_ui_events: deque[dict] = deque(maxlen=200)
+_ui_seq = 0
 
 _logger_levels = {
     "debug": logging.DEBUG,
@@ -50,10 +70,15 @@ _logger_levels = {
 }
 
 
+def set_request_id(rid: str | None) -> None:
+    _req_id.set(rid)
+
+
 class _ComponentFormatter(logging.Formatter):
     def format(self, record):
         if not hasattr(record, "component"):
             record.component = record.name
+        record.req = f"req={_req_id.get()} " if _req_id.get() else ""
         return super().format(record)
 
 
@@ -217,7 +242,9 @@ def init_logging(log_dir: Path | None = None, level: int | None = None) -> Path:
         log_dir = default_log_dir()
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / _LOG_FILE_NAME
-    file_handler = logging.FileHandler(log_path)
+    file_handler = RotatingFileHandler(
+        log_path, maxBytes=_LOG_MAX_BYTES, backupCount=_LOG_BACKUPS
+    )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
 
@@ -227,4 +254,56 @@ def init_logging(log_dir: Path | None = None, level: int | None = None) -> Path:
     root.setLevel(logging.INFO)
 
     logging.getLogger(_NAMESPACE).setLevel(app_level)
+
+    _init_ui_stream(log_dir)
     return log_path
+
+
+def _init_ui_stream(log_dir: Path) -> None:
+    """User-facing event stream: rotated JSON-lines file, no console noise."""
+    ui_logger = logging.getLogger(f"{_NAMESPACE}.ui")
+    if any(getattr(h, _handler_marker, False) for h in ui_logger.handlers):
+        return
+    handler = RotatingFileHandler(
+        log_dir / _UI_LOG_FILE_NAME, maxBytes=_LOG_MAX_BYTES, backupCount=_LOG_BACKUPS
+    )
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    setattr(handler, _handler_marker, True)
+    ui_logger.addHandler(handler)
+    ui_logger.propagate = False
+    ui_logger.setLevel(logging.INFO)
+
+
+def ui_event(
+    code: str,
+    message: str,
+    level: str = "info",
+    progress: float | None = None,
+    **fields,
+) -> None:
+    """Emit a user-facing event: JSON line in ui.log + /ui/events ring buffer.
+
+    These are the ONLY lines a non-technical user should ever see — plain
+    language, no stack traces, no timings. Dev detail stays in temseg.log.
+    """
+    global _ui_seq
+    _ui_seq += 1
+    event = {
+        "id": _ui_seq,
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "level": level,
+        "code": code,
+        "message": message,
+        "progress": progress,
+        **fields,
+    }
+    _ui_events.append(event)
+    logging.getLogger(f"{_NAMESPACE}.ui").log(
+        _logger_levels.get(level, logging.INFO), json.dumps(event)
+    )
+
+
+def get_ui_events(since: int = 0) -> list[dict]:
+    """Ring-buffer events with id > since, oldest first (for /ui/events)."""
+    return [e for e in _ui_events if e["id"] > since]
