@@ -93,6 +93,9 @@ datas = [
     (str(ROOT / "backend" / "src"), "backend_src"),
     # Weight manifest
     (str(ROOT / "weight_manifest.json"), "."),
+    # Shape rules config, read by the bundled fallback in settings.py
+    (str(ROOT / "backend" / "src" / "app" / "models" / "helpers" / "shape_config.toml"),
+     "app/models/helpers"),
 ]
 
 # Collect data files that PyTorch / torchvision / numpy need at runtime

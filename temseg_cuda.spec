@@ -54,6 +54,9 @@ datas = [
     (str(ROOT / "frontend" / "out"), "frontend_out"),
     (str(ROOT / "backend" / "src"), "backend_src"),
     (str(ROOT / "weight_manifest.json"), "."),
+    # Shape rules config, read by the bundled fallback in settings.py
+    (str(ROOT / "backend" / "src" / "app" / "models" / "helpers" / "shape_config.toml"),
+     "app/models/helpers"),
 ]
 
 datas += collect_data_files("torch")
