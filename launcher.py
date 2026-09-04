@@ -199,19 +199,11 @@ def _frontend_out_dir() -> Path:
 
 
 def _weights_dir() -> Path:
-    """Where weights live at runtime."""
-    if _is_frozen():
-        system = platform.system()
-        if system == "Darwin":
-            return (
-                Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
-            )
-        elif system == "Windows":
-            return Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
-        else:
-            return Path.home() / ".local" / "share" / "TEMseg" / "weights"
+    """Where weights live at runtime — resolved by backend settings
+    (env override > platform app-data dir), same in dev and frozen builds."""
+    from app.models.helpers.settings import settings
 
-    return _project_root()
+    return settings.WEIGHTS_DIR
 
 
 def _manifest_path() -> Path:

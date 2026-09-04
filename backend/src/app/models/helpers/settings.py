@@ -1,71 +1,45 @@
 """
-Weight path resolution:
+Weight path resolution: everything resolves through app_data_dir().
 
-1. FROZEN (PyInstaller .app / .exe):
-   macOS : ~/Library/Application Support/TEMseg/weights/
-   Windows: ~/AppData/Local/TEMseg/weights/
+Canonical weights location (dev and packaged):
+  macOS   : ~/Library/Application Support/TEMseg/weights
+  Windows : %LOCALAPPDATA%/TEMseg/weights (fallback ~/AppData/Local/TEMseg)
+  other   : ~/.local/share/TEMseg/weights
 
-2. DEV with TEMSEG_WEIGHTS_DIR env var override:
-   whatever the env var points to
-
-3. DEV default:
-   backend/weights/  (resolved via parents[4] from this file)
+Override for dev/testing: TEMSEG_WEIGHTS_DIR env var (checked first).
+The repo's backend/weights symlink is a dev convenience only — no code
+path references it.
 """
 
 import os
-import sys
 import platform
 from pathlib import Path
 
 
-def _app_support_weights_dir() -> Path:
-    """Platform-appropriate user data directory for weights."""
+def app_data_dir() -> Path:
+    """Platform-appropriate per-user TEMseg data dir (weights, shape config)."""
     system = platform.system()
     if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
-    elif system == "Windows":
-        return Path.home() / "AppData" / "Local" / "TEMseg" / "weights"
-    else:
-        # Linux / other
-        return Path.home() / ".local" / "share" / "TEMseg" / "weights"
+        return Path.home() / "Library" / "Application Support" / "TEMseg"
+    if system == "Windows":
+        base = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        return Path(base) / "TEMseg"
+    return Path.home() / ".local" / "share" / "TEMseg"
 
 
-def _dev_weights_dir() -> Path:
-    """Dev fallback: backend/weights/ relative to this file."""
-    return Path(__file__).resolve().parents[4] / "weights"
+def weights_dir() -> Path:
+    return app_data_dir() / "weights"
 
 
 def _resolve_weights_dir() -> Path:
-    """
-    Resolve weights directory with priority:
-      1. TEMSEG_WEIGHTS_DIR env var
-      2. Frozen app bundle -> platform-specific app data dir
-      3. Dev -> backend/weights/
-    """
     if env_dir := os.environ.get("TEMSEG_WEIGHTS_DIR"):
         return Path(env_dir)
-
-    if getattr(sys, "frozen", False):
-        return _app_support_weights_dir()
-
-    return _dev_weights_dir()
+    return weights_dir()
 
 
 def app_support_shape_config_path() -> Path:
     """Platform-appropriate user override location for shape_config.toml."""
-    system = platform.system()
-    if system == "Darwin":
-        return (
-            Path.home()
-            / "Library"
-            / "Application Support"
-            / "TEMseg"
-            / "shape_config.toml"
-        )
-    elif system == "Windows":
-        return Path.home() / "AppData" / "Local" / "TEMseg" / "shape_config.toml"
-    else:
-        return Path.home() / ".local" / "share" / "TEMseg" / "shape_config.toml"
+    return app_data_dir() / "shape_config.toml"
 
 
 def bundled_shape_config_path() -> Path:

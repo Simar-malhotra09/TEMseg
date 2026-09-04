@@ -11,16 +11,17 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
+from app.models.helpers.settings import settings
+
 from .base import SamBackend, YoloBackend
 from .impls.sam.coreml_sam import CoreMLSamBackend
 from .impls.sam.torch_sam import FasterTorchSamBackend, TorchSamBackend
 from .impls.yolo.coreml_yolo import CoreMLYoloBackend
 from .impls.yolo.ort_yolo import OrtYoloBackend
 
-WEIGHTS_DIR = Path.home() / "Library" / "Application Support" / "TEMseg" / "weights"
-YOLO_PKG = WEIGHTS_DIR / "best12x.mlpackage"
-ENC_PKG = WEIGHTS_DIR / "sam_encoder_vit_b_d12_fp32.mlpackage"
-DEC_PKG = WEIGHTS_DIR / "sam_decoder_head64_fp32.mlpackage"
+YOLO_PKG = settings.WEIGHTS_DIR / "best12x.mlpackage"
+ENC_PKG = settings.WEIGHTS_DIR / "sam_encoder_vit_b_d12_fp32.mlpackage"
+DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head64_fp32.mlpackage"
 
 
 def coreml_available() -> bool:
