@@ -13,9 +13,7 @@ from typing import Any, Dict
 
 from app.api.live_models import AvailableModels
 from app.logutils import get_logger
-from app.models.backends.base import SamBackend
 from app.models.backends.impls.sam.torch_sam import (
-    FasterTorchSamBackend,
     USE_DECODER_SDPA,
     USE_DENSE_PE_CACHE,
     USE_FUSED_UNION,
@@ -36,13 +34,10 @@ class FasterYoloSam(YoloSam):
         device: str = "cpu",
         components: Dict[str, Any] | None = None,
     ):
-        super().__init__(config, device, components=components)
+        super().__init__(config, device, components=components, _faster=True)
         logger.info(
             "FasterYoloSam active (fused_union=%s, decoder_sdpa=%s, dense_pe_cache=%s)",
             USE_FUSED_UNION,
             USE_DECODER_SDPA,
             USE_DENSE_PE_CACHE,
         )
-
-    def _make_sam_backend(self) -> SamBackend:
-        return FasterTorchSamBackend(self.components["sam"], self.device)

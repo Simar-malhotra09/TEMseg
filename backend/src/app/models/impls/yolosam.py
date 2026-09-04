@@ -16,9 +16,8 @@ from fastapi import APIRouter
 
 from app.api.live_models import AvailableModels
 from app.logutils import Timer, get_logger
-from app.models.backends.base import SamBackend, SamEmbedding, YoloBackend
-from app.models.backends.impls.sam.torch_sam import TorchSamBackend
-from app.models.backends.impls.yolo.ort_yolo import OrtYoloBackend
+from app.models.backends.base import SamEmbedding
+from app.models.backends.selection import choose_backends
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
@@ -46,24 +45,24 @@ class YoloSam(Model):
         config: ModelConfig,
         device: str = "cpu",
         components: Dict[str, Any] | None = None,
+        _faster: bool = False,
     ):
         logger.info("Initializing YoloSam")
         self.device = device
         self._shared_components = components
         super().__init__(config)  # calls self._load_components()
-        self._yolo: YoloBackend = OrtYoloBackend(self.components["yolo"], device)
-        self._sam: SamBackend = self._make_sam_backend()
-
-    def _make_sam_backend(self) -> SamBackend:
-        return TorchSamBackend(self.components["sam"], self.device)
+        self._yolo, self._sam, self._prompt_sam = choose_backends(
+            self.components, device, faster=_faster
+        )
 
     @property
     def _predictor(self):
-        """SamPredictor of the torch SAM backend, if one is loaded.
+        """SamPredictor of a torch SAM backend, if one is loaded.
 
-        Kept for the point-prompt endpoints in masks.py; None when the
-        selected SAM backend has no torch predictor."""
-        return getattr(self._sam, "predictor", None)
+        Kept for the point-prompt endpoints in masks.py; None when no torch
+        predictor exists."""
+        src = self._prompt_sam if self._prompt_sam is not None else self._sam
+        return getattr(src, "predictor", None)
 
     def _load_components(self) -> Dict[str, Any]:
         # Reuse components already loaded by another pipeline instance
@@ -192,6 +191,11 @@ class YoloSam(Model):
                 with t_sam.step("encode"):
                     emb = self._sam.encode(image, encoder_depth)
                     t_sam.field("depth", encoder_depth)
+
+            # point-prompt endpoints use the torch predictor; keep it in sync
+            # with whichever backend produced the embedding
+            if self._prompt_sam is not None and self._prompt_sam is not self._sam:
+                self._prompt_sam.sync_embedding(emb)
 
             if len(boxes) == 0:
                 logger.info(
