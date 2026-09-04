@@ -17,7 +17,7 @@ from app.api.utils import (
     batch_seg_patches,
 )
 from app.api.instances import extract_instances
-from app.logutils import Timer, get_logger
+from app.logutils import Timer, get_logger, ui_event
 
 
 from pydantic import BaseModel
@@ -163,6 +163,12 @@ async def segment(req: SegmentRequest, request: Request):
                 "error": f"Mismatch between requested model {req.model} and result {result.model}"
             }
         if result.segmentation_mask is None:
+            ui_event(
+                "SEGMENT_FAILED",
+                "Segmentation failed on this image. Try a different model, "
+                "or re-upload the image.",
+                level="error",
+            )
             return {"error": "Segmentation returned no mask"}
 
         # mask normalize + colorize
@@ -180,6 +186,12 @@ async def segment(req: SegmentRequest, request: Request):
                     logger.info(
                         f"Cached SAM embedding for session {req.session_id} (no particles detected)"
                     )
+                ui_event(
+                    "SEGMENT_EMPTY",
+                    "Segmentation ran, but no particles were found in this image. "
+                    "You can still add particles manually.",
+                    level="warning",
+                )
                 return {
                     "mask_url": None,
                     "metadata": result.metadata,
@@ -191,6 +203,12 @@ async def segment(req: SegmentRequest, request: Request):
             save_mask = colorize_components_inplace(mask) if req.colorize else mask
 
         if mask is None or mask.size == 0:
+            ui_event(
+                "SEGMENT_FAILED",
+                "Segmentation failed on this image. Try a different model, "
+                "or re-upload the image.",
+                level="error",
+            )
             return {"error": "Mask is empty"}
 
         with t.step("save"):
@@ -198,6 +216,12 @@ async def segment(req: SegmentRequest, request: Request):
             success = cv.imwrite(str(mask_path), save_mask)
 
         if not success:
+            ui_event(
+                "SEGMENT_FAILED",
+                "Segmentation finished, but the result could not be saved. "
+                "Check that the app has disk access and try again.",
+                level="error",
+            )
             return {"error": "Failed to save mask"}
 
         # ── save YOLO debug boxes overlay ────────────────────────────
@@ -287,6 +311,12 @@ async def segment(req: SegmentRequest, request: Request):
         with open(stats_path, "w") as f:
             json.dump(stats_results, f)
         logger.info(f"Saved statistics to {stats_path.name}")
+
+    ui_event(
+        "SEGMENT_DONE",
+        f"Segmentation complete — {stats_results.get('particle_count', 0)} particles detected.",
+        level="info",
+    )
 
     return SegmentResponse(
         mask_url=f"/images/{req.session_id}/mask",

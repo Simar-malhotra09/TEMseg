@@ -8,7 +8,7 @@ import numpy as np
 import cv2 as cv
 import sys
 import os
-from app.logutils import get_logger
+from app.logutils import get_logger, ui_event
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/images")
@@ -343,6 +343,12 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
 
     # YOLO is warmed at backend startup (see api/main.py lifespan) — the ONNX
     # graph is static-shape so warming against the uploaded image buys nothing.
+
+    ui_event(
+        "IMAGE_LOADED",
+        "Image loaded — ready to segment.",
+        level="info",
+    )
 
     return {
         "session_id": session_id,

@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import asyncio
 import time
 import shutil
 from pathlib import Path
 from typing import Dict
+from uuid import uuid4
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 from app.api.routers import images, segment, ground_truths, masks, export, rf, config
@@ -13,7 +15,7 @@ from app.api.model_registry import get_or_load_model
 
 from typing import List
 
-from app.logutils import get_logger, init_logging
+from app.logutils import get_logger, init_logging, set_request_id, ui_event, get_ui_events
 
 init_logging()
 log = get_logger("api")
@@ -29,6 +31,11 @@ async def lifespan(app: FastAPI):
     app.state.models = {}
     get_or_load_model(app.state.models, AvailableModels.yolosam)
     app.state.embedding_cache: Dict[str, Dict] = {}
+    ui_event(
+        "MODELS_READY",
+        "Analysis engine is ready — upload an image to begin.",
+        level="info",
+    )
 
     # Warm YOLO at startup instead of on image upload. The ONNX graph has a
     # static [1,3,640,640] input, so any dummy image triggers the one-time
@@ -48,6 +55,12 @@ async def lifespan(app: FastAPI):
             log.info("YOLO startup warmup complete")
         except Exception as e:
             log.warning(f"YOLO warmup failed (non-fatal): {e}")
+            ui_event(
+                "STARTUP_WARNING",
+                "The analysis engine started, but first use may be slow. "
+                "If images take a long time to process, restart the app.",
+                level="warning",
+            )
 
     async def _background_warmup():
         try:
@@ -66,6 +79,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Tag every log line produced while serving this request with req=<id>."""
+    rid = uuid4().hex[:6]
+    set_request_id(rid)
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = rid
+    return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    ui_event(
+        "BACKEND_ERROR",
+        "Something went wrong while processing your request. "
+        "Please try again — if this keeps happening, restart the app.",
+        level="error",
+    )
+    log.error(f"Unhandled error on {request.url.path}: {exc!r}")
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 app.include_router(images.router)
 app.include_router(segment.router)
 app.include_router(ground_truths.router)
@@ -83,6 +118,12 @@ async def root():
 @app.get("/models", response_model=List[str])
 def get_models():
     return [model.value for model in AvailableModels]
+
+
+@app.get("/ui/events")
+def ui_events(since: int = 0):
+    """User-facing event feed for the frontend status panel."""
+    return {"events": get_ui_events(since)}
 
 
 def cleanup_old_sessions(max_age_hours: int = 24, force=False):

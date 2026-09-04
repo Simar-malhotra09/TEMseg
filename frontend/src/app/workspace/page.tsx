@@ -20,6 +20,7 @@ import RefineCanvas from "./components/RefineCanvas";
 import AnnotateCanvas from "./components/AnnotateCanvas";
 import BoxAnnotateCanvas from "./components/BoxAnnotateCanvas";
 import ExportPanel from "./components/ExportPanel";
+import StatusPanel from "./components/StatusPanel";
 import StatsPanel from "./components/StatsPanel";
 import StatsDetailView from "./components/StatsDetailView";
 import ParticleHighlight from "./components/ParticleHighlight";
@@ -117,6 +118,7 @@ export default function Workspace() {
   const [status, setStatus] = useState("Upload an image to begin."); // def status in our status bar
   const activeRequestCount = useSyncExternalStore(subscribeToRequestActivity, getActiveRequestCount, () => 0);
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
+  const [activityOpen, setActivityOpen] = useState(false);
 
   // metadata
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -1252,12 +1254,19 @@ export default function Workspace() {
             )}
 
             {/*Display zoom size and reset to normal on click*/}
-            <span
-              className={`${styles.statusPill} ${isBlocked ? styles.statusPillBlocked : ""}`}
-              key={isBlocked ? "blocked" : status}
-            >
-              {isBlocked ? <AsciiWaterfall active /> : status}
-            </span>
+            <div className={styles.statusWrap}>
+              <button
+                type="button"
+                className={`${styles.statusPill} ${isBlocked ? styles.statusPillBlocked : ""}`}
+                key={isBlocked ? "blocked" : status}
+                onClick={() => setActivityOpen(o => !o)}
+                title="Activity"
+              >
+                {isBlocked ? <AsciiWaterfall active /> : status}
+                <ChevronDown size={11} style={{ marginLeft: 6 }} />
+              </button>
+              {activityOpen && <StatusPanel onClose={() => setActivityOpen(false)} />}
+            </div>
             {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
               <button type="button" className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
                 {Math.round(zoom * 100)}% ✕

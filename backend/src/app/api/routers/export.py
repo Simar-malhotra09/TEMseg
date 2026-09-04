@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
-from app.logutils import Timer, get_logger
+from app.logutils import Timer, get_logger, ui_event
 
 logger = get_logger("export")
 router = APIRouter(prefix="/export", tags=["export"])
@@ -314,6 +314,12 @@ async def export_session(session_id: str, body: ExportRequest):
     t.field("files", len(entries))
     t.field("zip_kb", round(buf.getbuffer().nbytes / 1024, 1))
     t.stop()
+
+    ui_event(
+        "EXPORT_READY",
+        "Your export is ready — check your downloads folder.",
+        level="info",
+    )
 
     return StreamingResponse(
         buf,
