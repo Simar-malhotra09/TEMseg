@@ -1,13 +1,12 @@
 #!/bin/bash
 # build_mac.sh - TEMseg macOS build (COREML VARIANT)
 #
-# Self-contained tier-2 pipeline: uses temseg_tier2.spec (this directory) and
-# namespaced output dirs so it never collides with the original build or tier1.
-# Tier 2 = tier 1 + verified-safe module-graph slimming (see temseg_tier2.spec
-# header). Unlike tier 1, tier 2 changes WHAT gets bundled, so smoke-test the
-# resulting .app before distributing it.
+# CoreML variant of the tier-2 pipeline: uses temseg_coreml.spec (this
+# directory) and namespaced output dirs so it never collides with the classic
+# builds. = tier 2 + bundled coremltools + variant marker; run the API suite
+# against the .app before distributing it.
 #
-# Usage: ./scripts/mac/tier2/build_mac.sh [--clean] [--skip-frontend] [--force-frontend]
+# Usage: ./scripts/mac/coreml/build_mac.sh [--clean] [--skip-frontend] [--force-frontend]
 
 set -e
 
@@ -53,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- timing helpers ---------------------------------------------------------
+# timing helpers
 NOW_S() { date +%s; }
 T_TOTAL_START="$(NOW_S)"
 
@@ -205,7 +204,7 @@ fi
 T_RENAME=$(( $(NOW_S) - T0 ))
 T_TOTAL=$(( $(NOW_S) - T_TOTAL_START ))
 
-# --- timing summary + log ---------------------------------------------------
+# timing summary + log
 mkdir -p "$WORK_DIR"
 LOG_CSV="${WORK_DIR}/build_timings.csv"
 SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"

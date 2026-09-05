@@ -1,60 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
-# TEMseg PyInstaller spec - COREML VARIANT (macOS .app, CoreML inference path)
-#
-# = temseg_tier2.spec (identical tier-1/tier-2 slimming; see
-# ../tier2/temseg_tier2.spec for the full rationale) PLUS the CoreML runtime:
-#   * collect_all("coremltools") — mlpackage loading at runtime (with its
-#     native libs, data and hidden imports). Adds ~70MB (coremltools + sympy
-#     deps) over the classic build — that's the whole point of having a
-#     separate classic build.
-#   * a coreml_variant.marker at the bundle root: launcher.py uses it to (a)
-#     allow the coreml-variant weight_manifest entries (the mlpackages) and
-#     (b) skip the frozen-classic TEMSEG_COREML=0 preset.
-# Everything else (torch/ort/ultralytics collections, CUDA stripping, data
-# pruning, EXE/BUNDLE) matches temseg_tier2.spec — torch stays bundled until
-# the prompt decoder + resize glue no longer need it.
-#
-# LESSONS LEARNED (verified with clean-build + launch smoke tests):
-#   * `torch.testing` must NOT be excluded. torch/autograd/gradcheck.py does
-#     `import torch.testing` at module top level (line 11), and torch.autograd
-#     is imported at torch init.
-#   * `numpy.f2py` / `numpy.distutils` must NOT be excluded. scipy's
-#     array_api_compat layer clones the numpy module at import time and that
-#     triggers numpy.__getattr__ -> `import numpy.f2py` (see
-#     scipy/_lib/array_api_compat/_internal.py). So numpy collection is left
-#     EXACTLY as in tier 1.
-#
-# Changes vs tier 1 (temseg_tier1.spec):
-#   1. Removed collect_data_files("torch"): _pyinstaller_hooks_contrib/stdhooks/
-#      hook-torch.py already collects torch datas (with dev headers excluded via
-#      excludes=["**/*.h", "**/*.hpp", "**/*.cuh", ...]). Same data files,
-#      smaller bundle (no include/*.h etc.), one fewer duplicate collection.
-#   2. Removed collect_submodules("torch"): hook-torch.py already sets
-#      hiddenimports = collect_submodules("torch"). Removing ours removes a
-#      duplicate ~2180-module walk during spec evaluation. (The hook still
-#      walks them once during Analysis - the saving is the duplicate work.)
-#   3. Removed collect_submodules("hyperspy"): collect_all("hyperspy") above
-#      already returns the full submodule list (collect_all = collect_data_files
-#      + collect_dynamic_libs + collect_submodules). Pure duplicate work.
-#   4. `excludes` gains a small set of verified-safe subtrees:
-#      tensorboard / torch.utils.tensorboard (try/except + TYPE_CHECKING only)
-#      and the hyperspy.tests / rsciio.tests test suites. See the excludes
-#      block for the reasoning.
-#
-# Everything else (numpy, torchvision, onnxruntime, ultralytics collections,
-# hiddenimports, CUDA-stripping, data pruning, EXE/BUNDLE settings) matches
-# temseg_tier1.spec.
+# CoreML variant of temseg_tier2.spec: adds the coremltools collection (the
+# mlpackage runtime) and a coreml_variant.marker at the bundle root (launcher.py
+# uses it to allow the coreml-variant weight_manifest entries and to skip the
+# frozen-classic TEMSEG_COREML=0 preset). Everything else matches
+# temseg_tier2.spec — see its header for the rationale.
 """
 TEMseg PyInstaller spec: cross-platform (macOS .app bundle / Windows .exe one-dir)
 
 Usage:
-    pyinstaller temseg_tier2.spec
+    pyinstaller temseg_coreml.spec
 
 What this bundles:
     - launcher.py as the entry point
     - backend/src/ as backend_src (the FastAPI app + models)
     - frontend/out/ as frontend_out (static Next.js build)
     - weight_manifest.json (for first-run download)
+    - coremltools + coreml_variant.marker (CoreML path)
 """
 
 import sys
@@ -125,8 +86,8 @@ extra_hiddenimports = _hs_hiddenimports
 # rosettasciio metadata (distribution name) stays.
 datas += copy_metadata("rosettasciio")
 
-# --- CoreML variant additions (hiddenimports appended below, once the
-# hiddenimports list exists) ---
+# CoreML variant additions (hiddenimports appended below, once the
+# hiddenimports list exists).
 _ct_datas, _ct_binaries, _ct_hiddenimports = collect_all("coremltools")
 datas += _ct_datas
 extra_binaries += _ct_binaries
@@ -281,7 +242,7 @@ excludes = [
     "PySide6",
     "sip",
     "PyQt5.sip",
-    # --- TIER2 additions (each verified against installed sources) ---
+    # TIER2 additions (each verified against installed sources)
     # tensorboard: ultralytics imports torch.utils.tensorboard inside
     # try/except (utils/callbacks/tensorboard.py -> SummaryWriter=None), and
     # torch only references it under TYPE_CHECKING (torch/monitor/__init__.py).
