@@ -4,7 +4,7 @@ Decoder is static-batch B=16 (see model_scripts/coreml_export); partial
 chunks are duplicate-padded, which is a no-op under the max-logit union.
 Postprocess (crop 1024^2 to prepad + bilinear resize to original) runs on
 MPS via torch interpolate — production's kernel, bit-identical — with the
-per-chunk max/argmax reduce staying on MPS. Point prompts unsupported.
+per-chunk max/argmax reduce in numpy (MPS int64 ops roundtrip through CPU). Point prompts unsupported.
 """
 
 import time
@@ -78,8 +78,8 @@ class CoreMLSamBackend(SamBackend):
         boxes_t[:, [0, 2]] *= nw / w
         boxes_t[:, [1, 3]] *= nh / h
 
-        running_max: torch.Tensor | None = None
-        running_owner: torch.Tensor | None = None
+        running_max: np.ndarray | None = None
+        running_owner: np.ndarray | None = None
         for i in range(0, len(boxes_t), B):
             chunk = boxes_t[i : i + B].astype(np.float32)
             n = len(chunk)
@@ -100,19 +100,17 @@ class CoreMLSamBackend(SamBackend):
                     ).squeeze(1)
                 )
             chunk_logits = torch.cat(groups, 0)
-            chunk_max, chunk_owner = chunk_logits.max(dim=0)
-            chunk_owner = chunk_owner + i + 1
+            chunk = chunk_logits.cpu().numpy()
+            chunk_max = chunk.max(axis=0)
+            chunk_owner = chunk.argmax(axis=0) + i + 1
             if running_max is None:
                 running_max = chunk_max
                 running_owner = chunk_owner
             else:
                 upd = chunk_max > running_max
-                running_max = torch.maximum(running_max, chunk_max)
-                running_owner = torch.where(upd, chunk_owner, running_owner)
+                running_max = np.maximum(running_max, chunk_max)
+                running_owner = np.where(upd, chunk_owner, running_owner)
 
         union_t = running_max > 0.0
-        owner = torch.where(union_t, running_owner, torch.zeros_like(running_owner))
-        return (
-            union_t.cpu().numpy().astype("uint8"),
-            owner.cpu().numpy().astype(np.uint16),
-        )
+        owner = np.where(union_t, running_owner, np.zeros_like(running_owner))
+        return union_t.astype("uint8"), owner.astype(np.uint16)
