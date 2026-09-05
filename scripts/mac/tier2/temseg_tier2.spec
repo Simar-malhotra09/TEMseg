@@ -6,7 +6,7 @@
 # Every removal here was verified against the installed PyInstaller 6.21.0 +
 # pyinstaller-hooks-contrib sources before being made.
 #
-# LESSONS LEARNED (verified with clean-build + launch smoke tests):
+# LESSONS LEARNED (verified with clean-build + launch tests):
 #   * `torch.testing` must NOT be excluded. torch/autograd/gradcheck.py does
 #     `import torch.testing` at module top level (line 11), and torch.autograd
 #     is imported at torch init.
@@ -261,7 +261,7 @@ excludes = [
     "PySide6",
     "sip",
     "PyQt5.sip",
-    # --- TIER2 additions (each verified against installed sources) ---
+    # TIER2 additions (each verified against installed sources)
     # tensorboard: ultralytics imports torch.utils.tensorboard inside
     # try/except (utils/callbacks/tensorboard.py -> SummaryWriter=None), and
     # torch only references it under TYPE_CHECKING (torch/monitor/__init__.py).

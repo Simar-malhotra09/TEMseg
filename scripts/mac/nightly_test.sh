@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly build + API smoke test for TEMseg.
+# nightly build + API test for TEMseg.
 #
 # Builds the tier-2 .app (clean, reusing the existing frontend export), runs
 # the API test suite against it, then removes the temporary build artifacts so

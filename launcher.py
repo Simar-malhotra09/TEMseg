@@ -64,10 +64,8 @@ def _is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
-# ---------------------------------------------------------------------------
 # Windows: ensure Microsoft Edge WebView2 runtime is installed before pywebview
 # starts. PyWebView's EdgeChromium backend fails opaquely without it.
-# ---------------------------------------------------------------------------
 
 # Microsoft Evergreen Bootstrapper (small ~2MB downloader that pulls the full runtime)
 WEBVIEW2_BOOTSTRAPPER_URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
@@ -390,9 +388,7 @@ def start_frontend_server():
     server.serve_forever()
 
 
-# ---------------------------------------------------------------------------
 # Backend (in-process via uvicorn)
-# ---------------------------------------------------------------------------
 
 BACKEND_PORT = 8080
 
@@ -422,9 +418,7 @@ def start_backend_server():
     )
 
 
-# ---------------------------------------------------------------------------
 # Wait helpers
-# ---------------------------------------------------------------------------
 
 
 def wait_for_server(port: int, timeout: int = 60) -> bool:
@@ -438,9 +432,7 @@ def wait_for_server(port: int, timeout: int = 60) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
 # PyWebView JS API bridge
-# ---------------------------------------------------------------------------
 
 
 class Api:
@@ -496,9 +488,7 @@ class Api:
             return {"success": False, "error": str(e)}
 
 
-# ---------------------------------------------------------------------------
 # Loading window (shown during weight download / model init)
-# ---------------------------------------------------------------------------
 
 LOADING_HTML = """
 <!DOCTYPE html>
@@ -661,9 +651,7 @@ LOADING_HTML = """
 """
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 
 
 def main():
@@ -673,7 +661,7 @@ def main():
 
     headless = os.environ.get("TEMSEG_HEADLESS") == "1"
 
-    # --- Phase 0: Windows-only — ensure WebView2 runtime exists ---
+    # Phase 0: Windows-only — ensure WebView2 runtime exists
     # PyWebView's EdgeChromium backend silently fails without it on fresh
     # Windows installs. Skipped in headless mode (no GUI).
     if not headless and not _ensure_webview2_runtime():
@@ -708,7 +696,7 @@ def main():
 
             ui_eval('setStatus("Starting backend…"); setProgress(0);')
 
-            # --- Phase 2: Start servers ---
+            # Phase 2: Start servers
             backend_thread = threading.Thread(target=start_backend_server, daemon=True)
             backend_thread.start()
 
@@ -741,7 +729,7 @@ def main():
 
     if headless:
         # No GUI: run the same startup sequence and keep serving. Used by the
-        # API smoke test (scripts/mac/test_api.sh) and CI/nightly cron, which
+        # API suite (scripts/mac/test_api.sh) and the nightly cron, which
         # have no WindowServer/Aqua session to create a pywebview window.
         log.info("Headless mode (TEMSEG_HEADLESS=1) — skipping GUI")
         _run_startup(lambda js: log.debug("ui: %s", js))
@@ -749,7 +737,7 @@ def main():
             time.sleep(3600)
         return
 
-    # --- GUI mode: loading window + weight check ---
+    # GUI mode: loading window + weight check
     loading_window = webview.create_window(
         title="TEMseg — Loading",
         html=LOADING_HTML,
@@ -763,7 +751,7 @@ def main():
         if not _run_startup(loading_window.evaluate_js):
             return  # keep loading window open so the user can read the error
 
-        # --- Phase 3: Open main window, close loader ---
+        # Phase 3: Open main window, close loader
         main_window = webview.create_window(
             title="TEMseg",
             url=f"http://localhost:{FRONTEND_PORT}/workspace",

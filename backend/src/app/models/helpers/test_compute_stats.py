@@ -16,9 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from app.models.helpers.compute_stats import compute_stats, _equivalent_diameter_px
 
 
-# ---------------------------------------------------------------------------
 # Helpers to generate synthetic masks
-# ---------------------------------------------------------------------------
 
 def make_blank(h=512, w=512) -> np.ndarray:
     return np.zeros((h, w), dtype=np.uint8)
@@ -48,9 +46,7 @@ def count_components(mask: np.ndarray) -> int:
     return n - 1
 
 
-# ---------------------------------------------------------------------------
 # Test 1: Single circle — check count, area, diameter, circularity
-# ---------------------------------------------------------------------------
 
 def test_single_circle():
     print("\n=== Test 1: Single circle (r=50) ===")
@@ -86,9 +82,7 @@ def test_single_circle():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 2: Multiple circles of same size — check count and consistency
-# ---------------------------------------------------------------------------
 
 def test_multiple_same_circles():
     print("\n=== Test 2: 5 circles of same size (r=30) ===")
@@ -115,9 +109,7 @@ def test_multiple_same_circles():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 3: Known pixel scale — check real-unit conversion
-# ---------------------------------------------------------------------------
 
 def test_pixel_scale_conversion():
     print("\n=== Test 3: Pixel scale conversion (0.5 nm/px) ===")
@@ -151,9 +143,7 @@ def test_pixel_scale_conversion():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 4: Elongated rectangle — check aspect ratio and shape classification
-# ---------------------------------------------------------------------------
 
 def test_elongated_rectangle():
     print("\n=== Test 4: Elongated rectangle (20x100) ===")
@@ -183,9 +173,7 @@ def test_elongated_rectangle():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 5: Mixed shapes — check shape distribution
-# ---------------------------------------------------------------------------
 
 def test_shape_distribution():
     print("\n=== Test 5: Mixed shapes (3 circles + 2 rods) ===")
@@ -216,9 +204,7 @@ def test_shape_distribution():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 6: Coverage calculation
-# ---------------------------------------------------------------------------
 
 def test_coverage():
     print("\n=== Test 6: Coverage ===")
@@ -236,9 +222,7 @@ def test_coverage():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 7: Empty mask
-# ---------------------------------------------------------------------------
 
 def test_empty_mask():
     print("\n=== Test 7: Empty mask ===")
@@ -254,9 +238,7 @@ def test_empty_mask():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 8: Perimeter sanity check (circle perimeter ≈ 2πr)
-# ---------------------------------------------------------------------------
 
 def test_perimeter():
     print("\n=== Test 8: Perimeter of circle (r=60) ===")
@@ -275,9 +257,7 @@ def test_perimeter():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Test 9: Distribution fitting sanity
-# ---------------------------------------------------------------------------
 
 def test_distribution_fitting():
     print("\n=== Test 9: Distribution fitting (20 circles, varied radii) ===")
@@ -324,9 +304,7 @@ def test_distribution_fitting():
     print("  ✓ PASSED")
 
 
-# ---------------------------------------------------------------------------
 # Run all
-# ---------------------------------------------------------------------------
 
 def run_all():
     tests = [

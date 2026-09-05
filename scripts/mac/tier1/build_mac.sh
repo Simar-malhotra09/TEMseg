@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- timing helpers ---------------------------------------------------------
+# timing helpers
 NOW_S() { date +%s; }
 T_TOTAL_START="$(NOW_S)"
 
@@ -196,7 +196,7 @@ fi
 T_RENAME=$(( $(NOW_S) - T0 ))
 T_TOTAL=$(( $(NOW_S) - T_TOTAL_START ))
 
-# --- timing summary + log ---------------------------------------------------
+# timing summary + log
 mkdir -p "$WORK_DIR"
 LOG_CSV="${WORK_DIR}/build_timings.csv"
 SHORT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"

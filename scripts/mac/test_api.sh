@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_api.sh - TEMseg backend API smoke/integration test (no GUI needed)
+# test_api.sh - TEMseg backend API test (no GUI needed)
 #
 # Launches a built TEMseg .app, drives the FastAPI backend over HTTP, verifies
 # responses, then cleans up. Designed to be run manually or nightly in CI to
@@ -26,9 +26,7 @@
 
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 FRONTEND_URL="${FRONTEND_URL:-http://localhost:3001}"
 TIMEOUT="${TIMEOUT:-180}"
@@ -66,11 +64,9 @@ if [ -z "$REPO_ROOT" ]; then
 fi
 cd "$REPO_ROOT"
 
-# ---------------------------------------------------------------------------
 # Test data fixtures (co-located with this script so the test is self-contained;
 # these are NOT bundled into the app - the spec only packages backend/src,
 # frontend/out, launcher.py, weight_manifest.json).
-# ---------------------------------------------------------------------------
 FIXTURES="$SCRIPT_DIR/fixtures"
 EMD="${EMD:-$FIXTURES/sample.emd}"      # rsciio/hyperspy path, known-good for segmentation
 TIF="${TIF:-$FIXTURES/sample.tif}"      # tifffile path
@@ -83,9 +79,7 @@ for _f in "$EMD" "$TIF" "$JPG" "$NPY" "$GT_MASK"; do
     [ -f "$_f" ] || { echo "Missing fixture: $_f"; exit 2; }
 done
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 PASS=0
 FAIL=0
 SKIP=0
@@ -161,9 +155,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
 # Launch app
-# ---------------------------------------------------------------------------
 shopt -s nullglob
 if [ -z "$APP" ]; then
     for p in dist/tier2/TEMseg-*.app dist/tier1/TEMseg-*.app dist/coreml/TEMseg-coreml-*.app dist/TEMseg.app dist/TEMseg-*.app; do
@@ -207,9 +199,7 @@ done
 [ "$UP" = true ] || { echo "Backend never came up - tail of log:"; tail -60 "$LOGDIR/app.log"; exit 1; }
 echo "Backend is up."
 
-# ===========================================================================
 section "1. Health + models"
-# ===========================================================================
 req GET "$BASE_URL/"
 assert_code 200 && pass "GET / returns 200" || true
 
@@ -223,9 +213,7 @@ else
     :
 fi
 
-# ===========================================================================
 section "2. Uploads (all format branches)"
-# ===========================================================================
 upload() {
     local label="$1" file="$2"
     req POST "$BASE_URL/images/upload" -F "file=@$file"
@@ -290,9 +278,7 @@ if [ -n "${EMD_SID:-}" ]; then
     assert_code 200 && pass "GET original file" || true
 fi
 
-# ===========================================================================
 section "3. Segmentation (YoloSAM)"
-# ===========================================================================
 MASK_URL=""
 if [ -n "${EMD_SID:-}" ]; then
     req POST "$BASE_URL/segment/" \
@@ -314,9 +300,7 @@ if [ -n "$MASK_URL" ] && [ "$MASK_URL" != "None" ]; then
     assert_code 200 && pass "GET mask.png" || true
 fi
 
-# ===========================================================================
 section "4. Instances + stats"
-# ===========================================================================
 INSTANCES_JSON=""
 if [ -n "${EMD_SID:-}" ]; then
     req POST "$BASE_URL/masks/$EMD_SID/instances"
@@ -330,9 +314,7 @@ if [ -n "${EMD_SID:-}" ]; then
     assert_code 200 && pass "GET stats.json" || true
 fi
 
-# ===========================================================================
 section "5. Export"
-# ===========================================================================
 if [ -n "${EMD_SID:-}" ]; then
     ZIP="$LOGDIR/export.zip"
     req_file POST "$BASE_URL/export/$EMD_SID" "$ZIP" \
@@ -351,16 +333,13 @@ if [ -n "${EMD_SID:-}" ]; then
     assert_code 200 && pass "export histogram CSV (diameter)" || true
 fi
 
-# ===========================================================================
 section "6. Frontend static server"
-# ===========================================================================
 req GET "$FRONTEND_URL/"
 assert_code 200 && echo "$HTTP_BODY" | grep -qiE "<html|<div id" && pass "frontend / serves HTML" || fail "frontend / not serving HTML"
 
 req GET "$FRONTEND_URL/workspace"
 assert_code 200 && pass "frontend /workspace (SPA fallback)" || true
 
-# ===========================================================================
 if [ "$QUICK" = true ]; then
     section "QUICK MODE - skipping full-suite checks"
 else
@@ -394,7 +373,6 @@ else
         skip "refinement endpoints (no instances detected)"
     fi
 
-    # =========================================================================
     if [ "$ALL_MODELS" = true ]; then
         section "8. Other models (lazy-load)"
         for MODEL in YoloMaskRCNN MaskRCNN-Synthetic; do
@@ -405,7 +383,6 @@ else
         done
     fi
 
-    # =========================================================================
     section "9. Ground truth"
     req POST "$BASE_URL/gt/$EMD_SID" -F "file=@$GT_MASK"
     assert_code 200 && pass "GT upload" || true
@@ -415,7 +392,6 @@ else
         -d '{"blackout":false,"inverse_blackout":false,"regions":[]}'
     assert_no_5xx && pass "GT compute (200/4xx business OK)" || true
 
-    # =========================================================================
     section "10. RF recovery"
     req POST "$BASE_URL/rf/train" \
         -H "Content-Type: application/json" \
@@ -427,7 +403,6 @@ else
         -d "{\"session_id\":\"$EMD_SID\",\"top_n\":3,\"bg_scribbles\":[{\"points\":[[5,5],[5,20],[20,5]]}]}"
     assert_no_5xx && pass "RF propose (200/4xx business OK)" || true
 
-    # =========================================================================
     section "11. Config"
     req GET "$BASE_URL/config/shape-rules"
     assert_code 200 && pass "GET shape-rules" || true
@@ -436,9 +411,7 @@ else
     assert_code 200 && pass "reset shape-rules" || true
 fi
 
-# ===========================================================================
 section "Summary"
-# ===========================================================================
 echo "  passed : $PASS"
 echo "  failed : $FAIL"
 echo "  skipped: $SKIP"
