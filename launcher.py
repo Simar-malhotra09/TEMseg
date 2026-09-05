@@ -247,6 +247,11 @@ def _verify_sha256(filepath: Path, expected: str) -> bool:
     return actual == expected
 
 
+def _platform_matches(platforms: list) -> bool:
+    """Entry platforms filter: darwin-arm64 = this machine (arm Mac)."""
+    return sys.platform == "darwin" and platform.machine() == "arm64"
+
+
 def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
     """
     Ensure all weights exist in the weights dir.
@@ -273,9 +278,14 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
 
     for entry in manifest:
         filename = entry["filename"]
+        platforms = entry.get("platforms")
+        if platforms and not _platform_matches(platforms):
+            log.info(f"Skipping {filename} (platform)")
+            continue
         url = entry.get("url", "")
         sha256 = entry.get("sha256", "")
         dest = weights_dir / filename
+        dest.parent.mkdir(parents=True, exist_ok=True)
 
         if dest.exists():
             if _verify_sha256(dest, sha256):
