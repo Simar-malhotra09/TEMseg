@@ -4,7 +4,9 @@ Decoder is static-batch B=16 (see model_scripts/coreml_export); partial
 chunks are duplicate-padded, which is a no-op under the max-logit union.
 Postprocess (crop 1024^2 to prepad + bilinear resize to original) runs on
 MPS via torch interpolate — production's kernel, bit-identical — with the
-per-chunk max/argmax reduce in numpy (MPS int64 ops roundtrip through CPU). Point prompts unsupported.
+per-chunk max/argmax reduce done pairwise elementwise (MPS dim-0 reductions
+and numpy axis-0 argmax both take slow kernels; elementwise ops are exact
+and fast). Point prompts unsupported.
 """
 
 import time
@@ -78,8 +80,8 @@ class CoreMLSamBackend(SamBackend):
         boxes_t[:, [0, 2]] *= nw / w
         boxes_t[:, [1, 3]] *= nh / h
 
-        running_max: np.ndarray | None = None
-        running_owner: np.ndarray | None = None
+        running_max: torch.Tensor | None = None
+        running_owner: torch.Tensor | None = None
         for i in range(0, len(boxes_t), B):
             chunk = boxes_t[i : i + B].astype(np.float32)
             n = len(chunk)
@@ -100,17 +102,23 @@ class CoreMLSamBackend(SamBackend):
                     ).squeeze(1)
                 )
             chunk_logits = torch.cat(groups, 0)
-            chunk = chunk_logits.cpu().numpy()
-            chunk_max = chunk.max(axis=0)
-            chunk_owner = chunk.argmax(axis=0) + i + 1
             if running_max is None:
-                running_max = chunk_max
-                running_owner = chunk_owner
+                running_max = chunk_logits[0].clone()
+                running_owner = torch.full_like(
+                    running_max, i + 1, dtype=torch.float32
+                )
+                start = 1
             else:
-                upd = chunk_max > running_max
-                running_max = np.maximum(running_max, chunk_max)
-                running_owner = np.where(upd, chunk_owner, running_owner)
+                start = 0
+            for j in range(start, chunk_logits.shape[0]):
+                m = chunk_logits[j]
+                upd = m > running_max
+                running_max = torch.where(upd, m, running_max)
+                running_owner = torch.where(upd, float(i + j + 1), running_owner)
 
         union_t = running_max > 0.0
-        owner = np.where(union_t, running_owner, np.zeros_like(running_owner))
-        return union_t.astype("uint8"), owner.astype(np.uint16)
+        owner = torch.where(union_t, running_owner, torch.zeros_like(running_owner))
+        return (
+            union_t.cpu().numpy().astype("uint8"),
+            owner.cpu().numpy().astype(np.uint16),
+        )
