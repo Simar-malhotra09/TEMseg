@@ -31,7 +31,8 @@
       "size_mb": 0.2,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "best12x.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
@@ -40,7 +41,8 @@
       "size_mb": 136.3,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "best12x.mlpackage/Manifest.json",
@@ -49,7 +51,8 @@
       "size_mb": 0.0,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_encoder_vit_b_d12_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
@@ -58,7 +61,8 @@
       "size_mb": 0.2,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_encoder_vit_b_d12_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
@@ -67,7 +71,8 @@
       "size_mb": 367.5,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_encoder_vit_b_d12_fp32.mlpackage/Manifest.json",
@@ -76,7 +81,8 @@
       "size_mb": 0.0,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_decoder_head16_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
@@ -85,7 +91,8 @@
       "size_mb": 0.1,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_decoder_head16_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
@@ -94,7 +101,8 @@
       "size_mb": 20.5,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     },
     {
       "filename": "sam_decoder_head16_fp32.mlpackage/Manifest.json",
@@ -103,7 +111,8 @@
       "size_mb": 0.0,
       "platforms": [
         "darwin-arm64"
-      ]
+      ],
+      "variant": "coreml"
     }
   ]
 }

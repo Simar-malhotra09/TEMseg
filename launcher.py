@@ -252,6 +252,31 @@ def _platform_matches(platforms: list) -> bool:
     return sys.platform == "darwin" and platform.machine() == "arm64"
 
 
+def _coreml_variant_enabled() -> bool:
+    """CoreML build ships a coreml_variant.marker in the bundle; classic
+    builds and dev resolve from TEMSEG_COREML (default: on)."""
+    root = _bundle_dir() if _is_frozen() else _project_root()
+    if (root / "coreml_variant.marker").exists():
+        return True
+    return os.environ.get("TEMSEG_COREML", "").strip().lower() not in ("0", "false", "no")
+
+
+def _entry_applies(entry: dict) -> bool:
+    platforms = entry.get("platforms")
+    if platforms and not _platform_matches(platforms):
+        return False
+    if entry.get("variant") == "coreml" and not _coreml_variant_enabled():
+        return False
+    return True
+
+
+def _apply_variant_defaults() -> None:
+    """Frozen classic builds force the classic pipeline (no coremltools
+    bundled); the CoreML build ships a marker file instead."""
+    if _is_frozen() and not (_bundle_dir() / "coreml_variant.marker").exists():
+        os.environ.setdefault("TEMSEG_COREML", "0")
+
+
 def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
     """
     Ensure all weights exist in the weights dir.
@@ -278,9 +303,8 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
 
     for entry in manifest:
         filename = entry["filename"]
-        platforms = entry.get("platforms")
-        if platforms and not _platform_matches(platforms):
-            log.info(f"Skipping {filename} (platform)")
+        if not _entry_applies(entry):
+            log.info(f"Skipping {filename} (variant/platform)")
             continue
         url = entry.get("url", "")
         sha256 = entry.get("sha256", "")
@@ -644,6 +668,8 @@ LOADING_HTML = """
 
 def main():
     log.info("Starting TEMseg...")
+
+    _apply_variant_defaults()
 
     headless = os.environ.get("TEMSEG_HEADLESS") == "1"
 
