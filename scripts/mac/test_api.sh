@@ -166,14 +166,18 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 shopt -s nullglob
 if [ -z "$APP" ]; then
-    for p in dist/tier2/TEMseg-*.app dist/tier1/TEMseg-*.app dist/TEMseg.app dist/TEMseg-*.app; do
-        [ -x "$p/Contents/MacOS/TEMseg" ] && { APP="$p"; break; }
+    for p in dist/tier2/TEMseg-*.app dist/tier1/TEMseg-*.app dist/coreml/TEMseg-coreml-*.app dist/TEMseg.app dist/TEMseg-*.app; do
+        [ -d "$p" ] && APP="$p" && break
     done
 fi
 [ -n "$APP" ] || { echo "No .app found. Build first or pass --app."; exit 2; }
 APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 
 APP_BIN="$APP/Contents/MacOS/TEMseg"
+if [ ! -x "$APP_BIN" ]; then
+    # coreml variant names its binary after the variant
+    APP_BIN="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f -perm -111 | head -1)"
+fi
 [ -x "$APP_BIN" ] || { echo "Binary not found: $APP_BIN"; exit 2; }
 
 echo "========================================"

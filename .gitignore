@@ -56,3 +56,4 @@ tools/
 
 # local todo/bug tracker (personal, never committed)
 TODO.md
+scripts/mac/coreml/coreml_variant.marker

@@ -38,13 +38,15 @@ build_ok=0
 test_ok=0
 
 cleanup_build() {
-    # Preserve the build-timings CSV alongside the logs, then drop the
-    # temporary build artifacts (the .app and PyInstaller work dir).
-    if [ -f "$WORK_DIR/build_timings.csv" ]; then
-        cp "$WORK_DIR/build_timings.csv" \
-            "$LOG_DIR/build_timings_$(date +%Y%m%d_%H%M%S).csv" 2>/dev/null || true
-    fi
-    rm -rf "$DIST_DIR" "$WORK_DIR"
+    # Preserve the build-timings CSVs alongside the logs, then drop the
+    # temporary build artifacts (the .apps and PyInstaller work dirs).
+    for t in "$WORK_DIR" "build/coreml"; do
+        if [ -f "$t/build_timings.csv" ]; then
+            cp "$t/build_timings.csv" \
+                "$LOG_DIR/build_timings_$(date +%Y%m%d_%H%M%S)_$(basename "$t").csv" 2>/dev/null || true
+        fi
+    done
+    rm -rf "$DIST_DIR" "$WORK_DIR" "dist/coreml" "build/coreml"
 }
 trap cleanup_build EXIT
 
@@ -54,15 +56,31 @@ trap cleanup_build EXIT
     echo "git  : $(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
     echo ""
 
-    echo "=== [1/2] build tier2 (clean, skip frontend) ==="
+    echo "=== [1/4] build tier2 classic (clean, skip frontend) ==="
     if ./scripts/mac/tier2/build_mac.sh --clean --skip-frontend; then
         build_ok=1
     fi
 
     echo ""
-    echo "=== [2/2] API test ==="
+    echo "=== [2/4] API test (classic) ==="
     if ./scripts/mac/test_api.sh "$@"; then
         test_ok=1
+    fi
+
+    echo ""
+    echo "=== [3/4] build coreml variant (skip frontend) ==="
+    if ./scripts/mac/coreml/build_mac.sh --skip-frontend; then
+        SAFE_BRANCH=$(printf '%s' "$(git rev-parse --abbrev-ref HEAD)" | sed 's/[^a-zA-Z0-9]/-/g; s/^-//; s/-$//')
+        COREML_APP="dist/coreml/TEMseg-coreml-${SAFE_BRANCH}.app"
+        if [ -d "$COREML_APP" ]; then
+            echo ""
+            echo "=== [4/4] API test (coreml variant) ==="
+            if ./scripts/mac/test_api.sh "$@" --app "$COREML_APP"; then
+                test_ok=1
+            fi
+        else
+            echo "ERROR: coreml build produced no $COREML_APP"
+        fi
     fi
 } > "$LOG" 2>&1
 
