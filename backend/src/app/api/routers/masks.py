@@ -287,11 +287,8 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
 
     # restore predictor state from cached embedding
+    yolosam.sync_prompt_embedding(embedding)
     predictor = yolosam._predictor
-    predictor.features = embedding.features
-    predictor.original_size = embedding.original_size
-    predictor.input_size = embedding.input_size
-    predictor.is_image_set = True
     logger.info("Restored SAM model state from cache")
 
     # ── 3. run SAM for each point ─────────────────────────────────────────────
@@ -477,11 +474,8 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
     if yolosam is None:
         raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
 
+    yolosam.sync_prompt_embedding(embedding)
     predictor = yolosam._predictor
-    predictor.features = embedding.features
-    predictor.original_size = embedding.original_size
-    predictor.input_size = embedding.input_size
-    predictor.is_image_set = True
 
     h_img, w_img = embedding.original_size
     image_area = float(h_img * w_img)
@@ -673,11 +667,8 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     if yolosam is None:
         raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
 
+    yolosam.sync_prompt_embedding(embedding)
     predictor = yolosam._predictor
-    predictor.features = embedding.features
-    predictor.original_size = embedding.original_size
-    predictor.input_size = embedding.input_size
-    predictor.is_image_set = True
 
     h_img, w_img = embedding.original_size
     image_area = float(h_img * w_img)
@@ -1067,11 +1058,8 @@ async def propose_similar(
     if yolosam is None:
         raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
 
+    yolosam.sync_prompt_embedding(embedding)
     predictor = yolosam._predictor
-    predictor.features = embedding.features
-    predictor.original_size = embedding.original_size
-    predictor.input_size = embedding.input_size
-    predictor.is_image_set = True
 
     h_img, w_img = embedding.original_size
     logger.info(f"Image size {h_img}x{w_img}, restored SAM embedding")

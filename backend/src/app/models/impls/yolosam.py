@@ -64,6 +64,13 @@ class YoloSam(Model):
         src = self._prompt_sam if self._prompt_sam is not None else self._sam
         return getattr(src, "predictor", None)
 
+    def sync_prompt_embedding(self, emb: SamEmbedding) -> None:
+        """Point the torch prompt predictor at a cached embedding (point-prompt
+        endpoints restore state without re-encoding; emb.features is numpy,
+        sync_embedding converts it to a device tensor)."""
+        src = self._prompt_sam if self._prompt_sam is not None else self._sam
+        src.sync_embedding(emb)
+
     def _load_components(self) -> Dict[str, Any]:
         # Reuse components already loaded by another pipeline instance
         # Both FYS and YoloSAM share the same components
