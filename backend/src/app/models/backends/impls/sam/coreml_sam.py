@@ -1,6 +1,6 @@
-"""SAM on CoreML: encoder + B=64 decoder .mlpackages with numpy/MPS glue.
+"""SAM on CoreML: encoder + B=16 decoder .mlpackages with numpy/MPS glue.
 
-Decoder is static-batch B=64 (see model_scripts/coreml_export); partial
+Decoder is static-batch B=16 (see model_scripts/coreml_export); partial
 chunks are duplicate-padded, which is a no-op under the max-logit union.
 Postprocess (crop 1024^2 to prepad + bilinear resize to original) runs on
 MPS via torch interpolate — production's kernel, bit-identical — with the
@@ -19,7 +19,7 @@ from ...base import SamBackend, SamEmbedding
 logger = get_logger("CoreMLSam")
 
 IMG_SIZE = 1024
-B64 = 64
+B = 16
 PIXEL_MEAN = np.array([123.675, 116.28, 103.53], dtype=np.float32)
 PIXEL_STD = np.array([58.395, 57.12, 57.375], dtype=np.float32)
 
@@ -52,7 +52,7 @@ class CoreMLSamBackend(SamBackend):
         self._dec.predict(
             {
                 "image_embeddings": np.zeros((1, 256, 64, 64), np.float32),
-                "boxes": np.zeros((B64, 4), np.float32),
+                "boxes": np.zeros((B, 4), np.float32),
             }
         )
         logger.info(f"coreml sam decoder loaded+compiled in {time.perf_counter() - t0:.1f}s")
@@ -69,7 +69,7 @@ class CoreMLSamBackend(SamBackend):
         )
 
     def decode_union(
-        self, emb: SamEmbedding, boxes_xyxy: np.ndarray, box_batch: int = B64
+        self, emb: SamEmbedding, boxes_xyxy: np.ndarray, box_batch: int = B
     ) -> tuple[np.ndarray, np.ndarray]:
         h, w = emb.original_size
         scale = IMG_SIZE / max(h, w)
@@ -80,16 +80,16 @@ class CoreMLSamBackend(SamBackend):
 
         running_max: torch.Tensor | None = None
         running_owner: torch.Tensor | None = None
-        for i in range(0, len(boxes_t), B64):
-            chunk = boxes_t[i : i + B64].astype(np.float32)
+        for i in range(0, len(boxes_t), B):
+            chunk = boxes_t[i : i + B].astype(np.float32)
             n = len(chunk)
-            reps = (B64 + n - 1) // n
-            padded = np.tile(chunk, (reps, 1))[:B64].copy()
+            reps = (B + n - 1) // n
+            padded = np.tile(chunk, (reps, 1))[:B].copy()
             masks = self._dec.predict(
                 {"image_embeddings": emb.features, "boxes": padded}
-            )["masks"]  # (64,1,1024,1024) logits
+            )["masks"]  # (B,1,1024,1024) logits
             groups = []
-            for j in range(0, B64, 8):
+            for j in range(0, B, 8):
                 group = masks[j : j + 8, 0, :nh, :nw]
                 gt = torch.from_numpy(
                     np.ascontiguousarray(group, dtype=np.float32)

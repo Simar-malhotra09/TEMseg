@@ -21,7 +21,7 @@ from .impls.yolo.ort_yolo import OrtYoloBackend
 
 YOLO_PKG = settings.WEIGHTS_DIR / "best12x.mlpackage"
 ENC_PKG = settings.WEIGHTS_DIR / "sam_encoder_vit_b_d12_fp32.mlpackage"
-DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head64_fp32.mlpackage"
+DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head16_fp32.mlpackage"
 
 
 def coreml_available() -> bool:
