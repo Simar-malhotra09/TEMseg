@@ -13,7 +13,6 @@ re-paying the load+compile warmup on every model-class switch.
 import os
 import platform
 import sys
-from pathlib import Path
 from typing import Any, Dict
 
 from app.models.helpers.settings import settings
