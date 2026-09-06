@@ -49,6 +49,64 @@ const TOOLTIP_FIELD_LABELS: Record<ParticleMetricField, string> = {
   solidity: "Solidity", aspect_ratio: "Aspect Ratio", n_vertices: "Vertices", shape: "Shape",
 };
 
+type ToastKind = "ok" | "info" | "warn" | "err";
+interface ToastMsg { id: number; kind: ToastKind; title: string; desc?: string }
+
+const TOAST_DURATION = 2500;
+const TOAST_CLASS: Record<ToastKind, string> = {
+  ok: styles.toastOk, info: styles.toastInfo, warn: styles.toastWarn, err: styles.toastErr,
+};
+
+// Self-dismissing toast. Auto-dismisses after TOAST_DURATION; hovering pins
+// it (timer re-arms from the remaining time on mouse leave); clicking
+// dismisses immediately.
+function ToastCard({ msg, onDone }: { msg: ToastMsg; onDone: (id: number) => void }) {
+  const [leaving, setLeaving] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  const deadlineRef = useRef(0);
+
+  const clear = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const dismiss = () => {
+    if (leaving) return;
+    clear();
+    setLeaving(true);
+    window.setTimeout(() => onDone(msg.id), 170);
+  };
+
+  const arm = (ms: number) => {
+    clear();
+    deadlineRef.current = Date.now() + ms;
+    timerRef.current = window.setTimeout(dismiss, ms);
+  };
+
+  useEffect(() => {
+    arm(TOAST_DURATION);
+    return clear;
+    // intentionally mount-only: each toast owns its own dismiss timer
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className={`${styles.toast} ${TOAST_CLASS[msg.kind]}${leaving ? ` ${styles.toastLeaving}` : ""}`}
+      onMouseEnter={() => { if (!leaving) clear(); }}
+      onMouseLeave={() => { if (!leaving) arm(Math.max(300, deadlineRef.current - Date.now())); }}
+      onClick={dismiss}
+    >
+      <div className={styles.toastBody}>
+        <div className={styles.toastTitle}>{msg.title}</div>
+        {msg.desc && <div className={styles.toastDesc}>{msg.desc}</div>}
+      </div>
+    </div>
+  );
+}
+
 // Horizontal ascii waterfall shown in the status pill while a backend
 // request is in flight.
 const WATERFALL_LOOP = "=^..^=   U..U  :D  T^T   ╯°□°)╯  ";
@@ -121,6 +179,16 @@ export default function Workspace() {
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
   const [activityOpen, setActivityOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // transient toasts — push for things worth surfacing beyond the status pill
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const toastIdRef = useRef(0);
+  const pushToast = (kind: ToastKind, title: string, desc?: string) => {
+    toastIdRef.current += 1;
+    const id = toastIdRef.current;
+    setToasts(prev => [...prev.slice(-3), { id, kind, title, desc }]);
+  };
+  const removeToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
 
   // metadata
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -383,6 +451,7 @@ export default function Workspace() {
         setRefineDone(true);
         setRefineMode(false);
         setStatus("Edited masks saved.");
+        pushToast("ok", "Edited masks saved");
     },
     onDiscard: () => {
       refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
@@ -447,6 +516,7 @@ export default function Workspace() {
       const result = await uploadImage(file);
       if (result.error) {
         setStatus(result.error);
+        pushToast("err", "Upload failed", result.error);
         return;
       }
       setSessionId(result.session_id);
@@ -458,6 +528,7 @@ export default function Workspace() {
     } catch (err) {
       console.error("upload failed:", err);
       setStatus(`Upload failed: ${(err as Error).message}`);
+      pushToast("err", "Upload failed", (err as Error).message);
     }
   }
 
@@ -508,11 +579,13 @@ export default function Workspace() {
     // if gt available, compute scores 
     if (msg) {
       setStatus(msg);
+      pushToast("ok", "Segmentation done", msg);
       if (seg.groundTruth) {
         await seg.scoreGroundTruth(activeRegions, blackout, inverse);
       }
     } else {
       setStatus("Segmentation failed.");
+      pushToast("err", "Segmentation failed");
     }
   }
 
@@ -533,6 +606,7 @@ export default function Workspace() {
       if (res.proposals.length === 0) {
         const reason = res.rejected[0]?.reason ?? "unknown";
         setStatus(`Click rejected: ${reason}`);
+        pushToast("warn", "Click rejected", reason);
         return;
       }
       const added = res.proposals[0];
@@ -543,6 +617,7 @@ export default function Workspace() {
     } catch (err) {
       console.error("bootstrap click failed:", err);
       setStatus(`Bootstrap failed: ${(err as Error).message}`);
+      pushToast("err", "Bootstrap failed", (err as Error).message);
     } finally {
       setBootstrapBusy(false);
     }
@@ -577,9 +652,11 @@ export default function Workspace() {
       const n = pendingProposals.length;
       setPendingProposals([]);
       setStatus(`Added ${n} particle(s).`);
+      pushToast("ok", `Added ${n} particle(s)`);
     } catch (err) {
       console.error("accept proposals failed:", err);
       setStatus(`Accept failed: ${(err as Error).message}`);
+      pushToast("err", "Accept failed", (err as Error).message);
     } finally {
       setBootstrapBusy(false);
     }
@@ -589,6 +666,7 @@ export default function Workspace() {
     if (pendingProposals.length === 0) return;
     setPendingProposals([]);
     setStatus("Discarded pending proposals.");
+    pushToast("info", "Discarded pending proposals");
   }
 
   function handleRejectProposal(id: number) {
@@ -647,6 +725,7 @@ export default function Workspace() {
       if (res.proposals.length === 0) {
         const reason = res.rejected[0]?.reason ?? "unknown";
         setStatus(`Box rejected: ${reason}`);
+        pushToast("warn", "Box rejected", reason);
         return;
       }
       const added = res.proposals[0];
@@ -657,6 +736,7 @@ export default function Workspace() {
     } catch (err) {
       console.error("box drawn failed:", err);
       setStatus(`Box segment failed: ${(err as Error).message}`);
+      pushToast("err", "Box segment failed", (err as Error).message);
     } finally {
       setBootstrapBusy(false);
     }
@@ -674,6 +754,7 @@ export default function Workspace() {
       // const res = await proposeSimilar(sessionId, "cosine");
       if (!res.proposals || res.proposals.length === 0) {
         setStatus(res.message ?? "No similar particles found.");
+        pushToast("info", res.message ?? "No similar particles found");
         return;
       }
       setPendingProposals(prev => [...prev, ...res.proposals]);
@@ -683,6 +764,7 @@ export default function Workspace() {
     } catch (err) {
       console.error("propose similar failed:", err);
       setStatus(`Find Similar failed: ${(err as Error).message}`);
+      pushToast("err", "Find Similar failed", (err as Error).message);
     } finally {
       setBootstrapBusy(false);
     }
@@ -696,10 +778,12 @@ export default function Workspace() {
       const res = await rfPropose(sessionId, 5, rfBgScribblesRef.current);
       if (res.error) {
         setStatus(res.error);
+        pushToast("err", "RF recovery failed", res.error);
         return;
       }
       if (!res.proposals || res.proposals.length === 0) {
         setStatus(res.message ?? "RF found no missed regions.");
+        pushToast("info", res.message ?? "RF found no missed regions");
         return;
       }
       setPendingProposals(prev => [...prev, ...res.proposals]);
@@ -709,6 +793,7 @@ export default function Workspace() {
     } catch (err) {
       console.error("RF propose failed:", err);
       setStatus(`RF Recovery failed: ${(err as Error).message}`);
+      pushToast("err", "RF Recovery failed", (err as Error).message);
     } finally {
       setBootstrapBusy(false);
     }
@@ -843,6 +928,7 @@ export default function Workspace() {
       seg.setStats(newStats);
     }
     setStatus(`Pixel size updated${meta.pixel_size != null && meta.pixel_size !== "-" ? `: ${meta.pixel_size} ${meta.pixel_unit ?? ""}` : ""}`);
+    pushToast("ok", "Pixel size updated");
   }
 
   function handleToggleScaleBar() {
@@ -2111,7 +2197,7 @@ export default function Workspace() {
                   <button
                     type="button"
                     className={styles.actionBtn}
-                    onClick={() => { clearMeasurements(); clearAngleMeasurements(); }}
+                    onClick={() => { clearMeasurements(); clearAngleMeasurements(); pushToast("info", "Measurements cleared"); }}
                   >
                     <Trash2 size={14} /> Clear All Measurements
                   </button>
@@ -2819,6 +2905,11 @@ export default function Workspace() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+        {toasts.length > 0 && (
+          <div className={styles.toasts}>
+            {toasts.map(t => <ToastCard key={t.id} msg={t} onDone={removeToast} />)}
           </div>
         )}
       </div>
