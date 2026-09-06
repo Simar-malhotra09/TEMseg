@@ -1482,17 +1482,9 @@ export default function Workspace() {
                     refineMode
                       ? () => {
                           refine.handleSave();
-                          setTimeout(() => {
-                            seg.setMasksVisible(b => !b);
-                          }, 300);
-
                         }
                       : () => {
                           enterRefineMode();
-
-                          setTimeout(() => {
-                            seg.setMasksVisible(b => !b);
-                          }, 300);
                         }
                   }
                   >
@@ -2083,7 +2075,7 @@ export default function Workspace() {
                 )}
 
                 {/* yolo detection boxes overlay (full image + green boxes) */}
-                {seg.segDone && seg.boxesVisible && seg.boxesUrl && (
+                {!refineMode && seg.segDone && seg.boxesVisible && seg.boxesUrl && (
                   <img src={seg.boxesUrl} style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
@@ -2092,7 +2084,7 @@ export default function Workspace() {
                 )}
 
                 {/* seg mask overlay */}
-                {seg.segDone && seg.masksVisible && seg.maskUrl && (
+                {!refineMode && seg.segDone && seg.masksVisible && seg.maskUrl && (
                   <img src={seg.maskUrl} style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
