@@ -255,6 +255,88 @@ margin-bottom: 2px;
 .miniBtn:hover { color: var(--text); border-color: var(--text-blast); }
 .miniBtnOn { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
+/* Modal */
+.modalRoot { position: fixed; inset: 0; z-index: 90; }
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+.modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: min(480px, calc(100vw - 40px));
+  max-height: calc(100vh - 70px);
+  display: flex;
+  flex-direction: column;
+}
+.modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.modalHead h3 {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.modalHeadSub { font-size: 10px; color: var(--text-ghost); margin: 2px 0 0; }
+.modalClose {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--text-ghost);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+.modalClose:hover { background: var(--bg-hover); color: var(--text); }
+.modalBody { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+.kbdRow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 18px;
+}
+.kbdRow > span:first-child { white-space: nowrap; }
+.kbdRow > span:last-child { color: var(--text-dim); font-size: 11px; text-align: left; }
+.kbd {
+  font-family: inherit;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.reworkBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
 /* Dropdown */
 .dropdownWrap { position: relative; }
 .dropdownBtn {

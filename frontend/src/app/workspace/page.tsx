@@ -120,6 +120,7 @@ export default function Workspace() {
   const activeRequestCount = useSyncExternalStore(subscribeToRequestActivity, getActiveRequestCount, () => 0);
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
   const [activityOpen, setActivityOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // metadata
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -1440,6 +1441,13 @@ export default function Workspace() {
               title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             >
               {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+            <button type="button"
+              className={styles.iconBtn}
+              onClick={() => setHelpOpen(true)}
+              title="Keyboard shortcuts"
+            >
+              ?
             </button>
           </div>
         </header>
@@ -2787,6 +2795,32 @@ export default function Workspace() {
           />
 
         </div>
+
+        {helpOpen && (
+          <div className={styles.modalRoot}>
+            <div className={styles.modalBackdrop} onClick={() => setHelpOpen(false)} />
+            <div className={styles.modal}>
+              <div className={styles.modalHead}>
+                <div>
+                  <h3>Keyboard shortcuts</h3>
+                  <p className={styles.modalHeadSub}>Everything is reachable without leaving the keyboard</p>
+                </div>
+                <button type="button" className={styles.modalClose} onClick={() => setHelpOpen(false)}>✕</button>
+              </div>
+              <div className={styles.modalBody}>
+                <p className={styles.reworkBanner}>
+                  <AlertTriangle size={12} /> THIS SHORTCUT MAP NEEDS REWORKED — entries may not match this build
+                </p>
+                <div className={styles.kbdRow}>
+                  <span><span className={styles.kbd}>wheel / pinch</span></span><span>zoom at cursor</span>
+                  <span><span className={styles.kbd}>space + drag</span></span><span>pan</span>
+                  <span><span className={styles.kbd}>[</span> <span className={styles.kbd}>]</span></span><span>mask fill opacity down / up</span>
+                  <span><span className={styles.kbd}>delete</span></span><span>remove selection (refine / measure vertices)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
