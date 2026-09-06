@@ -452,7 +452,7 @@ position: relative;
 display: flex;
 align-items: center;
 gap: 6px;
-width: 150px;
+width: 180px;
 }
 .dropdownWrapDepth { width: 88px; }
 .dropdownBtn {
@@ -474,7 +474,8 @@ font-size: 12px;
 .dropdownList {
 position: absolute;
 top: calc(100% + 4px);
-left: 0; right: 0;
+left: 0;
+min-width: 100%;
 background: var(--bg-toast);
 border: 1px solid var(--border);
 border-radius: 4px;
