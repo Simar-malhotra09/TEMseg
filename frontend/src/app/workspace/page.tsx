@@ -1455,7 +1455,7 @@ export default function Workspace() {
               onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
               title="New workspace"
             >
-              <span className={styles.logo}>TEM <span className={styles.logoAccent}>Particle Segmenter</span></span>
+              <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
               <span className={styles.brandTag}>v0</span>
             </button>
             <span className={styles.sessionChip}>
