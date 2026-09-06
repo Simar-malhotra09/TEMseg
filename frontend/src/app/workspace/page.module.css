@@ -74,6 +74,7 @@
 
 /* Top Bar */
 .topbar {
+position: relative;
 display: flex;
 align-items: center;
 justify-content: space-between;
@@ -264,9 +265,11 @@ color: var(--text);
 .dropdownItem:hover { background: var(--bg-hover); }
 .dropdownItemActive { color: var(--accent); }
 .dropdownItemDesc {
+display: block;
 font-size: 10px;
 color: var(--text-faint);
 margin-top: 2px;
+white-space: nowrap;
 }
 
 /* Mode rail: icon column replacing the old button tabs. Active mode reads as
