@@ -690,6 +690,8 @@ export default function Workspace() {
     refine.reinit(res.instances);  // feed instances into hook
     refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
     setRefineMode(true);
+    seg.setMasksVisible(false);
+    seg.setBoxesVisible(false);
     seg.setGtVisible(false);
     setStatus("Refine mode — drag vertices, space+drag to pan.");
   }
