@@ -1836,6 +1836,7 @@ export default function Workspace() {
             )}
 
             {activeTab === "analysis" && (
+              <>
               <section className={styles.sidebarSection}>
                 <p className={styles.sidebarLabel}>Measurements</p>
                 <button type="button"
@@ -1902,30 +1903,31 @@ export default function Workspace() {
                   </button>
                 )}
               </section>
+
+              <section className={styles.sidebarSection}>
+                <p className={styles.sidebarLabel}>Ground Truth</p>
+                <button type="button" className={styles.actionBtn}
+                  onClick={() => gtFileRef.current?.click()}
+                  disabled={!sessionId}>
+                  <Upload size={14} /> Upload GT
+                </button>
+                <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
+                  hidden onChange={onGroundTruthFileChange} />
+                <p className={styles.sidebarHint}>
+                  {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+                </p>
+                {seg.gtUrl && (
+                  <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                    {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {seg.gtVisible ? "Hide GT" : "Show GT"}
+                  </button>
+                )}
+              </section>
+              </>
             )}
 
             {activeTab === "settings" && (
               <>
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>Ground Truth</p>
-                  <button type="button" className={styles.actionBtn}
-                    onClick={() => gtFileRef.current?.click()}
-                    disabled={!sessionId}>
-                    <Upload size={14} /> Upload GT
-                  </button>
-                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-                    hidden onChange={onGroundTruthFileChange} />
-                  <p className={styles.sidebarHint}>
-                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
-                  </p>
-                  {seg.gtUrl && (
-                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
-                      {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                      {seg.gtVisible ? "Hide GT" : "Show GT"}
-                    </button>
-                  )}
-                </section>
-
                 <section>
                   {sessionId && (
                     <ExportPanel
