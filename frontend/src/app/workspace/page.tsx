@@ -200,8 +200,14 @@ export default function Workspace() {
   // sidebar tab: which of the 3 action groups is showing
   const [activeTab, setActiveTab] = useState<SidebarTab>("segment");
 
-  // system info for the Settings pane (backends, weights, device)
+  // system info feeds the footer device chip and the Settings pane; the
+  // mount fetch covers the chip, the settings-tab fetch refreshes the pane.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  useEffect(() => {
+    getSystemInfo()
+      .then(setSystemInfo)
+      .catch(err => console.error("getSystemInfo failed:", err));
+  }, [];
 
   // display adjustment (brightness/contrast multipliers, image layers only)
   const [brightness, setBrightness] = useState(1);
