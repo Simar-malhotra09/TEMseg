@@ -1494,7 +1494,7 @@ export default function Workspace() {
               )}
             </div>
             {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
-              <div className={styles.dropdownWrap}>
+              <div className={`${styles.dropdownWrap} ${styles.dropdownWrapDepth}`}>
                 <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
                   n={encoderDepth} <ChevronDown size={14} />
                 </button>
