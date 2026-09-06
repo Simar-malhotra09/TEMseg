@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle, Contrast,
-  Slice, Pencil, CirclePlus, BarChart2, Settings,
+  Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
@@ -137,6 +137,19 @@ export default function Workspace() {
   const [contrast, setContrast] = useState(1);
   const [displayOpen, setDisplayOpen] = useState(false);
   const imgFilter = `brightness(${brightness}) contrast(${contrast})`;
+
+  // UI theme: light/dark, persisted per device. Defaults to the OS preference.
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const saved = localStorage.getItem("temseg-theme");
+    if (saved === "light" || saved === "dark") setTheme(saved);
+    else if (window.matchMedia("(prefers-color-scheme: light)").matches) setTheme("light");
+  }, []);
+  const toggleTheme = () => setTheme(t => {
+    const next = t === "dark" ? "light" : "dark";
+    localStorage.setItem("temseg-theme", next);
+    return next;
+  });
   const konvaBrightness = Math.max(-1, Math.min(1, (brightness - 1) * 0.6));
   const konvaContrast = Math.max(-100, Math.min(100, (contrast - 1) * 80));
 
@@ -1256,18 +1269,18 @@ export default function Workspace() {
       )}
 
       {/* Main workspace */}
-      <div className={styles.workspaceRoot}style={{display: showStatsDetail? "none" : "flex" }}>
+      <div className={styles.workspaceRoot} data-theme={theme} style={{display: showStatsDetail? "none" : "flex" }}>
 
         {/* topbar */}
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <div
+            <button type="button" className={styles.brandWrap}
               onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
               title="New workspace"
-              style={{ cursor: "pointer" }}
             >
-              <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
-            </div>
+              <span className={styles.logo}>TEM <span className={styles.logoAccent}>Particle Segmenter</span></span>
+              <span className={styles.brandTag}>v0</span>
+            </button>
             <span className={styles.sessionTag}>
               session · {sessionId ? sessionId.slice(0, 8) : "upload image to start"}
             </span>
@@ -1338,6 +1351,13 @@ export default function Workspace() {
                 {Math.round(zoom * 100)}% ✕
               </button>
             )}
+            <button type="button"
+              className={`${styles.iconBtn} ${styles.themeBtn}`}
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
           </div>
         </header>
 
