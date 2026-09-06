@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 // import {Image} from "next/Image"
 import {
   Upload, Play, Sliders,
-  Eye, EyeOff, Trash2, ChevronDown, AlertTriangle, Contrast,
+  Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
   Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
 } from "lucide-react";
 
@@ -25,6 +25,7 @@ import StatsPanel from "./components/StatsPanel";
 import StatsDetailView from "./components/StatsDetailView";
 import ParticleHighlight from "./components/ParticleHighlight";
 import ExpandableHint from "./components/ExpandableHint";
+import CalibrateSection from "./components/CalibrateSection";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -135,7 +136,6 @@ export default function Workspace() {
   // display adjustment (brightness/contrast multipliers, image layers only)
   const [brightness, setBrightness] = useState(1);
   const [contrast, setContrast] = useState(1);
-  const [displayOpen, setDisplayOpen] = useState(false);
   const imgFilter = `brightness(${brightness}) contrast(${contrast})`;
 
   // UI theme: light/dark, persisted per device. Defaults to the OS preference.
@@ -279,6 +279,7 @@ export default function Workspace() {
   // scale bar calibration
   const [scaleBarMode, setScaleBarMode] = useState(false);
   const [scaleBarPixels, setScaleBarPixels] = useState<number | null>(null);
+  const [showScaleBarOverlay, setShowScaleBarOverlay] = useState(false);
   const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -897,6 +898,62 @@ export default function Workspace() {
     setScaleBarPixels(pixels);
   }
 
+  // calibrated scale bar drawn over the image, bottom-right. Bar length is a
+  // "nice" physical length (nm-scale), picked so its on-screen size stays
+  // readable at the current zoom; text/ticks hold a constant screen size.
+  function renderScaleBarOverlay() {
+    if (!showScaleBarOverlay || !image || imgSize.width <= 0) return null;
+    const pixelSize = metadata?.pixel_size;
+    if (typeof pixelSize !== "number" || pixelSize <= 0) return null;
+    const unit =
+      metadata?.pixel_unit && metadata.pixel_unit !== "-"
+        ? metadata.pixel_unit
+        : "nm";
+    const scr = viewportSize.width > 0
+      ? (viewportSize.width / imgSize.width) * zoom
+      : zoom;
+    const nice = [10, 20, 50, 100, 200, 500].find(n => {
+      const onScreen = (n / pixelSize) * scr;
+      return onScreen >= 55 && onScreen <= 190;
+    }) ?? 100;
+    const px = nice / pixelSize;
+    const x0 = imgSize.width - 18 / scr - px;
+    const y0 = imgSize.height - 18 / scr;
+    return (
+      <svg
+        viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{
+          position: "absolute", top: 0, left: 0,
+          width: "100%", height: "100%",
+          pointerEvents: "none",
+          zIndex: 13,
+        }}
+      >
+        <g fill="#ffffff" stroke="#111111">
+          <rect
+            x={x0 - 6 / scr} y={y0 - 26 / scr}
+            width={px + 12 / scr} height={38 / scr}
+            fill="rgba(8,10,12,0.55)" stroke="none"
+          />
+          <line x1={x0} y1={y0} x2={x0 + px} y2={y0}
+            strokeWidth={2.4} vectorEffect="non-scaling-stroke" />
+          <line x1={x0} y1={y0 - 6 / scr} x2={x0} y2={y0 + 6 / scr}
+            strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+          <line x1={x0 + px} y1={y0 - 6 / scr} x2={x0 + px} y2={y0 + 6 / scr}
+            strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+          <text
+            x={x0 + px / 2} y={y0 - 9 / scr}
+            textAnchor="middle" fontSize={11 / scr} fontFamily="inherit"
+            fill="#ffffff" stroke="none"
+          >
+            {nice} {unit}
+          </text>
+        </g>
+      </svg>
+    );
+  }
+
   // analysis: point-to-point distance measurement
   function startMeasure() {
     handleScaleBarCancel();
@@ -1348,36 +1405,6 @@ export default function Workspace() {
               />
             )}
 
-            <div style={{ position: "relative" }}>
-              <button type="button" className={styles.actionBtn}
-                title="Display"
-                onClick={() => setDisplayOpen(o => !o)}>
-                <Contrast size={14} />
-              </button>
-              {displayOpen && (
-                <div className={styles.subWindow}
-                  style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 220, zIndex: 30, padding: 10 }}>
-                  <p className={styles.sidebarLabel} style={{ marginBottom: 4 }}>Display</p>
-                  <p className={styles.sidebarHint}>
-                    Brightness {(brightness * 100).toFixed(0)}%
-                  </p>
-                  <input type="range" min={50} max={150} value={Math.round(brightness * 100)}
-                    onChange={e => setBrightness(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
-                  <p className={styles.sidebarHint}>
-                    Contrast {(contrast * 100).toFixed(0)}%
-                  </p>
-                  <input type="range" min={50} max={180} value={Math.round(contrast * 100)}
-                    onChange={e => setContrast(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
-                  <button type="button" className={styles.actionBtn}
-                    onClick={() => { setBrightness(1); setContrast(1); }}>
-                    Reset
-                  </button>
-                </div>
-              )}
-            </div>
-
             {/*Display zoom size and reset to normal on click*/}
             <div className={styles.statusWrap}>
               <button
@@ -1549,8 +1576,71 @@ export default function Workspace() {
                   </p>
                 </section>
 
-                {/* ground truth + export live in the Settings pane (rail,
-                    bottom) since they're session-level, not per-run actions. */}
+                {/* [DISPLAY] brightness/contrast sliders, image layers only.
+                    Reset here only resets these two — not the canvas zoom. */}
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Display</p>
+                  <p className={styles.sidebarHint}>
+                    Brightness {(brightness * 100).toFixed(0)}%
+                  </p>
+                  <input type="range" min={50} max={150} value={Math.round(brightness * 100)}
+                    onChange={e => setBrightness(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <p className={styles.sidebarHint}>
+                    Contrast {(contrast * 100).toFixed(0)}%
+                  </p>
+                  <input type="range" min={50} max={180} value={Math.round(contrast * 100)}
+                    onChange={e => setContrast(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <button type="button" className={styles.actionBtn}
+                    onClick={() => { setBrightness(1); setContrast(1); }}>
+                    Reset
+                  </button>
+                </section>
+
+                {/* pixel size + scale bar calibration, shared with the
+                    analysis pane and the stats panel */}
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Calibrate</p>
+                  <CalibrateSection
+                    sessionId={sessionId}
+                    metadata={metadata}
+                    scaleBarMode={scaleBarMode}
+                    scaleBarPixels={scaleBarPixels}
+                    onMetadataUpdate={handleMetadataUpdate}
+                    onToggleScaleBar={handleToggleScaleBar}
+                    onScaleBarCancel={handleScaleBarCancel}
+                  />
+                  <label className={styles.sidebarHint}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input type="checkbox"
+                      checked={showScaleBarOverlay}
+                      disabled={!image || typeof metadata?.pixel_size !== "number" || metadata.pixel_size <= 0}
+                      onChange={e => setShowScaleBarOverlay(e.target.checked)}
+                      style={{ accentColor: "#7ee8a2" }} />
+                    Scale bar overlay
+                  </label>
+                </section>
+
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Ground Truth</p>
+                  <button type="button" className={styles.actionBtn}
+                    onClick={() => gtFileRef.current?.click()}
+                    disabled={!sessionId}>
+                    <Upload size={14} /> Upload GT
+                  </button>
+                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
+                    hidden onChange={onGroundTruthFileChange} />
+                  <p className={styles.sidebarHint}>
+                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+                  </p>
+                  {seg.gtUrl && (
+                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                      {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {seg.gtVisible ? "Hide GT" : "Show GT"}
+                    </button>
+                  )}
+                </section>
               </>
             )}
 
@@ -1985,23 +2075,16 @@ export default function Workspace() {
               </section>
 
               <section className={styles.sidebarSection}>
-                <p className={styles.sidebarLabel}>Ground Truth</p>
-                <button type="button" className={styles.actionBtn}
-                  onClick={() => gtFileRef.current?.click()}
-                  disabled={!sessionId}>
-                  <Upload size={14} /> Upload GT
-                </button>
-                <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-                  hidden onChange={onGroundTruthFileChange} />
-                <p className={styles.sidebarHint}>
-                  {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
-                </p>
-                {seg.gtUrl && (
-                  <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
-                    {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                    {seg.gtVisible ? "Hide GT" : "Show GT"}
-                  </button>
-                )}
+                <p className={styles.sidebarLabel}>Calibrate</p>
+                <CalibrateSection
+                  sessionId={sessionId}
+                  metadata={metadata}
+                  scaleBarMode={scaleBarMode}
+                  scaleBarPixels={scaleBarPixels}
+                  onMetadataUpdate={handleMetadataUpdate}
+                  onToggleScaleBar={handleToggleScaleBar}
+                  onScaleBarCancel={handleScaleBarCancel}
+                />
               </section>
               </>
             )}
@@ -2228,6 +2311,9 @@ export default function Workspace() {
                     pointerEvents: "none",
                   }} />
                 )}
+
+                {/* calibrated scale bar, bottom-right of the image */}
+                {renderScaleBarOverlay()}
 
                 {/* manual annotation canvas,SVG overlay, in image-space */}
                 {annotateMode && !refineMode && image && imgSize.width > 0 && (

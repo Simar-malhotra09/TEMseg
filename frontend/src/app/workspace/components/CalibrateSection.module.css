@@ -1,0 +1,85 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.confirmRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.label {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.val {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.valFlex {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+}
+.iconBtn:hover {
+  color: var(--text);
+  background: var(--border);
+}
+.iconBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pixelInput {
+  width: 64px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.pixelInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.pixelUnitInput {
+  width: 36px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.pixelUnitInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
