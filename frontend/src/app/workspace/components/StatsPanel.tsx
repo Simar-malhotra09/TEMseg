@@ -359,7 +359,7 @@ export default function StatsPanel({
               <div className={styles.row}>
                 <span
                   className={styles.label}
-                  style={{ color: scaleBarMode ? "#7ee8a2" : undefined }}
+                  style={{ color: scaleBarMode ? "var(--accent)" : undefined }}
                 >
                   {scaleBarMode ? "Draw line →" : "Scale Bar"}
                 </span>
@@ -398,7 +398,7 @@ export default function StatsPanel({
                   gap: 4,
                 }}
               >
-                <span className={styles.label} style={{ color: "#7ee8a2" }}>
+                <span className={styles.label} style={{ color: "var(--accent)" }}>
                   {scaleBarPixels.toFixed(1)} px — enter length:
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>

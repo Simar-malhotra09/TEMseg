@@ -1,7 +1,7 @@
 .panel {
   width: 210px;
   flex-shrink: 0;
-  border-left: 1px solid #1e1e1e;
+  border-left: 1px solid var(--border-soft);
   padding: 16px 12px;
   overflow-y: auto;
   display: flex;
@@ -19,13 +19,13 @@
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #555;
+  color: var(--text-faint);
   margin-bottom: 2px;
 }
 
 .hint {
   font-size: 11px;
-  color: #444;
+  color: var(--text-ghost);
   line-height: 1.5;
 }
 
@@ -41,18 +41,18 @@
   justify-content: space-between;
   align-items: baseline;
   padding: 5px 0;
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--bg-hover);
   gap: 8px;
 }
 
 .label {
-  color: #555;
+  color: var(--text-faint);
   font-size: 11px;
   white-space: nowrap;
 }
 
 .val {
-  color: #e8e6e1;
+  color: var(--text);
   font-size: 11px;
   text-align: right;
   word-break: break-all;
@@ -60,7 +60,7 @@
 
 .divider {
   height: 1px;
-  background: #1e1e1e;
+  background: var(--border-soft);
   margin: 6px 0;
 }
 
@@ -71,14 +71,14 @@
   gap: 4px;
   background: none;
   border: none;
-  color: #888;
+  color: var(--text-dim);
   cursor: pointer;
   padding: 0;
   font-family: inherit;
   font-size: 11px;
 }
 .collapseBtn:hover {
-  color: #7ee8a2;
+  color: var(--accent);
 }
 
 /* mini histogram */
@@ -92,7 +92,7 @@
 
 .histBar {
   flex: 1;
-  background: #7ee8a2;
+  background: var(--accent);
   border-radius: 1px 1px 0 0;
   min-height: 1px;
   opacity: 0.7;
@@ -104,7 +104,7 @@
 
 .histLabel {
   font-size: 10px;
-  color: #444;
+  color: var(--text-ghost);
   text-align: center;
   margin-top: 2px;
 }
@@ -125,7 +125,7 @@
 
 .shapeLabel {
   font-size: 10px;
-  color: #888;
+  color: var(--text-dim);
   width: 56px;
   text-transform: capitalize;
   flex-shrink: 0;
@@ -134,7 +134,7 @@
 .shapeBarOuter {
   flex: 1;
   height: 6px;
-  background: #1a1a1a;
+  background: var(--bg-hover);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -147,7 +147,7 @@
 
 .shapeCount {
   font-size: 10px;
-  color: #555;
+  color: var(--text-faint);
   width: 24px;
   text-align: right;
 }
@@ -156,10 +156,10 @@
 .detailsBtn {
   margin-top: 8px;
   padding: 6px 10px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #7ee8a2;
+  color: var(--accent);
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
@@ -168,7 +168,7 @@
   transition: border-color 0.15s;
 }
 .detailsBtn:hover {
-  border-color: #7ee8a2;
+  border-color: var(--accent);
 }
 
 .warnRow {
@@ -176,10 +176,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  background: #1e1e1e;
-  border: 1px solid #3a2a1a;
+  background: var(--border-soft);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #e8c87e;
+  color: var(--warn);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -190,15 +190,15 @@
   justify-content: center;
   background: none;
   border: none;
-  color: #777;
+  color: var(--text-dim);
   cursor: pointer;
   padding: 2px;
   border-radius: 3px;
   transition: color 0.15s, background 0.15s;
 }
 .iconBtn:hover {
-  color: #e8e6e1;
-  background: #2a2a2a;
+  color: var(--text);
+  background: var(--border);
 }
 .iconBtn:disabled {
   opacity: 0.4;
@@ -207,30 +207,30 @@
 
 .pixelInput {
   width: 64px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 3px;
-  color: #e8e6e1;
+  color: var(--text);
   font-family: inherit;
   font-size: 11px;
   padding: 3px 5px;
   outline: none;
 }
 .pixelInput:focus {
-  border-color: #7ee8a2;
+  border-color: var(--accent);
 }
 
 .pixelUnitInput {
   width: 36px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 3px;
-  color: #e8e6e1;
+  color: var(--text);
   font-family: inherit;
   font-size: 11px;
   padding: 3px 5px;
   outline: none;
 }
 .pixelUnitInput:focus {
-  border-color: #7ee8a2;
+  border-color: var(--accent);
 }

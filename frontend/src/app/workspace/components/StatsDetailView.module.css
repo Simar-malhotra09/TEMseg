@@ -3,8 +3,8 @@
   flex-direction: column;
   gap: 20px;
   height: 100vh;
-  background: #0d0d0d;
-  color: #e8e6e1;
+  background: var(--bg);
+  color: var(--text);
   font-family: 'JetBrains Mono', 'Fira Mono', monospace;
   font-size: 13px;
   overflow-y: auto;
@@ -23,10 +23,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #ccc;
+  color: var(--text);
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -34,8 +34,8 @@
   transition: border-color 0.15s, color 0.15s;
 }
 .backBtn:hover {
-  border-color: #7ee8a2;
-  color: #7ee8a2;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .title {
@@ -46,7 +46,7 @@
 
 .subtitle {
   font-size: 12px;
-  color: #555;
+  color: var(--text-faint);
 }
 
 /* charts row */
@@ -58,8 +58,8 @@
 }
 
 .chartCard {
-  background: #111;
-  border: 1px solid #1e1e1e;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -76,7 +76,7 @@
 .chartTitle {
   font-size: 12px;
   font-weight: 600;
-  color: #888;
+  color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -90,9 +90,9 @@
   display: flex;
   gap: 16px;
   font-size: 11px;
-  color: #666;
+  color: var(--text-dim);
   padding-top: 4px;
-  border-top: 1px solid #1a1a1a;
+  border-top: 1px solid var(--bg-hover);
 }
 
 .exportRow {
@@ -106,18 +106,18 @@
   align-items: center;
   gap: 5px;
   padding: 4px 8px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #888;
+  color: var(--text-dim);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .exportBtn:hover {
-  border-color: #7ee8a2;
-  color: #7ee8a2;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .exportIcon {
@@ -130,8 +130,8 @@
 .toggleGroup {
   display: flex;
   gap: 2px;
-  background: #0d0d0d;
-  border: 1px solid #2a2a2a;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -140,18 +140,18 @@
   padding: 4px 10px;
   background: none;
   border: none;
-  color: #666;
+  color: var(--text-dim);
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .toggleBtn:hover {
-  color: #ccc;
+  color: var(--text);
 }
 .toggleActive {
-  background: #7ee8a2;
-  color: #0d0d0d;
+  background: var(--accent);
+  color: var(--bg);
   font-weight: 600;
 }
 
@@ -161,7 +161,7 @@
   flex-direction: column;
   gap: 6px;
   padding-top: 8px;
-  border-top: 1px solid #1a1a1a;
+  border-top: 1px solid var(--bg-hover);
 }
 
 .legendItem {
@@ -179,27 +179,27 @@
 }
 
 .legendLabel {
-  color: #888;
+  color: var(--text-dim);
   text-transform: capitalize;
   width: 70px;
 }
 
 .legendVal {
-  color: #e8e6e1;
+  color: var(--text);
 }
 
 /* tooltip */
 .tooltip {
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 11px;
-  color: #e8e6e1;
+  color: var(--text);
 }
 
 .tooltipCount {
-  color: #7ee8a2;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -212,8 +212,8 @@
 }
 
 .card {
-  background: #111;
-  border: 1px solid #1e1e1e;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
   border-radius: 6px;
   padding: 10px 14px;
   display: flex;
@@ -224,7 +224,7 @@
 
 .cardLabel {
   font-size: 10px;
-  color: #555;
+  color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -232,13 +232,13 @@
 .cardVal {
   font-size: 14px;
   font-weight: 600;
-  color: #e8e6e1;
+  color: var(--text);
 }
 
 /* table */
 .tableCard {
-  background: #111;
-  border: 1px solid #1e1e1e;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -258,7 +258,7 @@
   align-items: center;
   gap: 4px;
   font-size: 10px;
-  color: #555;
+  color: var(--text-faint);
 }
 
 .tableWrap {
@@ -276,19 +276,19 @@
 .th {
   position: sticky;
   top: 0;
-  background: #161616;
+  background: var(--bg-elev);
   padding: 8px 10px;
   text-align: left;
-  color: #666;
+  color: var(--text-dim);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid var(--border);
   transition: color 0.15s;
 }
 .th:hover {
-  color: #7ee8a2;
+  color: var(--accent);
 }
 
 .sortIconInactive {
@@ -296,32 +296,32 @@
   margin-left: 2px;
 }
 .sortIconActive {
-  color: #7ee8a2;
+  color: var(--accent);
   margin-left: 2px;
 }
 
 .tr {
-  border-bottom: 1px solid #1a1a1a;
+  border-bottom: 1px solid var(--bg-hover);
   transition: background 0.1s;
 }
 .tr:hover {
-  background: #161616;
+  background: var(--bg-elev);
 }
 
 .trClickable {
   cursor: pointer;
 }
 .trClickable:hover {
-  background: #1a2a1e;
+  background: var(--rail-active-bg);
 }
 
 .trHighlighted {
-  background: #1a2a1e;
+  background: var(--rail-active-bg);
 }
 
 .td {
   padding: 6px 10px;
-  color: #ccc;
+  color: var(--text);
   white-space: nowrap;
 }
 
@@ -332,18 +332,18 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #1e1e1e;
-  border: 1px solid #2a2a2a;
+  background: var(--border-soft);
+  border: 1px solid var(--border);
   font-size: 10px;
-  color: #888;
+  color: var(--text-dim);
   font-weight: 600;
 }
 
 .trClickable:hover .particleId,
 .trHighlighted .particleId {
-  background: #7ee8a2;
-  border-color: #7ee8a2;
-  color: #0d0d0d;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }
 
 .shapeBadge {
@@ -357,8 +357,8 @@
 
 /* distribution fit */
 .fitCard {
-  background: #111;
-  border: 1px solid #1e1e1e;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 16px;
   display: flex;
@@ -375,10 +375,10 @@
 
 .fitBest {
   font-size: 12px;
-  color: #888;
+  color: var(--text-dim);
 }
 .fitBest strong {
-  color: #7ee8a2;
+  color: var(--accent);
   text-transform: capitalize;
 }
 
@@ -389,8 +389,8 @@
 }
 
 .fitModel {
-  background: #0d0d0d;
-  border: 1px solid #1a1a1a;
+  background: var(--bg);
+  border: 1px solid var(--bg-hover);
   border-radius: 6px;
   padding: 12px;
   display: flex;
@@ -399,8 +399,8 @@
 }
 
 .fitModelBest {
-  border-color: #7ee8a233;
-  background: #0d110e;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .fitModelHeader {
@@ -412,7 +412,7 @@
 .fitModelName {
   font-size: 13px;
   font-weight: 600;
-  color: #ccc;
+  color: var(--text);
   text-transform: capitalize;
 }
 
@@ -420,8 +420,8 @@
   font-size: 9px;
   padding: 1px 6px;
   border-radius: 3px;
-  background: #7ee8a2;
-  color: #0d0d0d;
+  background: var(--accent);
+  color: var(--bg);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -440,11 +440,11 @@
 }
 
 .fitParamKey {
-  color: #555;
+  color: var(--text-faint);
 }
 
 .fitParamVal {
-  color: #e8e6e1;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
@@ -452,24 +452,24 @@
   display: flex;
   justify-content: space-between;
   font-size: 10px;
-  color: #555;
+  color: var(--text-faint);
   padding-top: 6px;
-  border-top: 1px solid #1a1a1a;
+  border-top: 1px solid var(--bg-hover);
 }
 
 .fitPass {
-  color: #7ee8a2;
+  color: var(--accent);
 }
 
 .fitFail {
-  color: #e87e7e;
+  color: var(--danger);
 }
 
 .shapeBadgeClickable {
   cursor: pointer;
 }
 .shapeBadgeClickable:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-hover);
 }
 
 .legendItemInactive {
@@ -483,7 +483,7 @@
 }
 .legendItemActive {
   position: relative;
-  background: #121612;
+  background: var(--accent-soft);
   border-radius: 3px;
 }
 
@@ -495,5 +495,5 @@
   bottom: 3px;
   width: 3px;
   border-radius: 2px;
-  background: #7ee8a2;
+  background: var(--accent);
 }

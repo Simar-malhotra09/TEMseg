@@ -1257,19 +1257,21 @@ export default function Workspace() {
     <>
       {/*If in stats dashboard hide the workspace*/}
       {showStatsDetail && seg.stats && sessionId && (
-        <StatsDetailView
-          stats={seg.stats}
-          metadata={metadata}
-          groundTruthScore={seg.groundTruthScore as any}
-          sessionId={sessionId}
-          onBack={() => setShowStatsDetail(false)}
-          onLocateParticle={handleLocateParticle}
-          onLocateShape={handleLocateShape}
-        />
+        <div className={styles.themeScope} data-theme={theme} style={{ display: "contents" }}>
+          <StatsDetailView
+            stats={seg.stats}
+            metadata={metadata}
+            groundTruthScore={seg.groundTruthScore as any}
+            sessionId={sessionId}
+            onBack={() => setShowStatsDetail(false)}
+            onLocateParticle={handleLocateParticle}
+            onLocateShape={handleLocateShape}
+          />
+        </div>
       )}
 
       {/* Main workspace */}
-      <div className={styles.workspaceRoot} data-theme={theme} style={{display: showStatsDetail? "none" : "flex" }}>
+      <div className={`${styles.workspaceRoot} ${styles.themeScope}`} data-theme={theme} style={{display: showStatsDetail? "none" : "flex" }}>
 
         {/* topbar */}
         <header className={styles.topbar}>
