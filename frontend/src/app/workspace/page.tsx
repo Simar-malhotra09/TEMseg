@@ -220,7 +220,13 @@ export default function Workspace() {
         seg.setMaskUrl(`${BASE_URL}/images/${restored}/mask?t=${Date.now()}`);
         seg.setMasksVisible(true);
       }
-      if (instRes?.instances) setLoadedInstances(instRes.instances);
+      if (instRes?.instances) {
+        setLoadedInstances(instRes.instances);
+        if (instRes.instances.length > 0) {
+          // detection boxes overlay exists whenever segmentation found particles
+          seg.setBoxesUrl(`${BASE_URL}/images/${restored}/yolo-boxes-debug?t=${Date.now()}`);
+        }
+      }
 
       setStatus(
         stats
@@ -1397,6 +1403,15 @@ export default function Workspace() {
                     {seg.masksVisible ? "Hide Masks" : "Show Masks"}
                   </button>
                 </section>
+                <section>
+                  {/*[ACTION]- show/hide yolo boxes */}
+                  <button type="button" className={styles.actionBtn}
+                    disabled={!seg.segDone || !seg.boxesUrl}
+                    onClick={() => seg.setBoxesVisible(v => !v)}>
+                    <BoxSelect size={14} />
+                    {seg.boxesVisible ? "Hide Boxes" : "Show Boxes"}
+                  </button>
+                </section>
                 {seg.segDone && seg.masksVisible && (
                   <div style={{ marginBottom: 8 }}>
                     <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
@@ -2063,6 +2078,15 @@ export default function Workspace() {
                       onViewBoxChange={refine.setViewBox}
                     />
                   </div>
+                )}
+
+                {/* yolo detection boxes overlay (full image + green boxes) */}
+                {seg.segDone && seg.boxesVisible && seg.boxesUrl && (
+                  <img src={seg.boxesUrl} style={{
+                    position: "absolute", top: 0, left: 0,
+                    width: "100%", height: "100%",
+                    pointerEvents: "none",
+                  }} />
                 )}
 
                 {/* seg mask overlay */}

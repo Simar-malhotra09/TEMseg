@@ -15,6 +15,8 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
   const [segDone, setSegDone] = useState(false);
   const [maskUrl, setMaskUrl] = useState<string | null>(null);
   const [masksVisible, setMasksVisible] = useState(true);
+  const [boxesUrl, setBoxesUrl] = useState<string | null>(null);
+  const [boxesVisible, setBoxesVisible] = useState(true);
   const [stats, setStats] = useState<StatsResult | null>(null);
   const [isSegmenting, setIsSegmenting] = useState(false);
 
@@ -72,6 +74,12 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
       setCommittedRegions(blackout ? activeRegions : []);
       setInvCommittedRegions(inverse ? activeRegions : []);
       setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
+      setBoxesUrl(
+        result.debug_boxes_url
+          ? `${BASE_URL}${result.debug_boxes_url}?t=${Date.now()}`
+          : null
+      );
+      setBoxesVisible(true);
       setStats(result.stats);
       setSegDone(true);
       setMasksVisible(true);
@@ -149,6 +157,8 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
     setSegDone(false);
     setMaskUrl(null);
     setMasksVisible(true);
+    setBoxesUrl(null);
+    setBoxesVisible(true);
     setStats(null);
     setBlackoutRegions([]);
     setInvBlackoutRegions([]);
@@ -171,6 +181,10 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
     setMaskUrl,
     masksVisible,
     setMasksVisible,
+    boxesUrl,
+    setBoxesUrl,
+    boxesVisible,
+    setBoxesVisible,
     stats,
     setStats,
     isSegmenting,
