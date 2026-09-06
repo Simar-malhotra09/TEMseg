@@ -49,18 +49,35 @@ def coreml_available() -> bool:
     return all(p.exists() for p in (YOLO_PKG, ENC_PKG, DEC_PKG))
 
 
+def choose_yolo_backend(components: Dict[str, Any], device: str) -> YoloBackend:
+    """The yolo backend for a given platform, cached by assets+device so
+    every model family (yolosam, yolomaskrcnn) shares one detector."""
+    if coreml_available():
+        key = ("coreml-yolo", str(YOLO_PKG))
+    else:
+        key = ("classic-yolo", id(components["yolo"]), device)
+    if key not in _backend_cache:
+        backend = (
+            CoreMLYoloBackend(YOLO_PKG)
+            if coreml_available()
+            else OrtYoloBackend(components["yolo"], device)
+        )
+        _backend_cache[key] = backend
+    return _backend_cache[key]
+
+
 def choose_backends(
     components: Dict[str, Any], device: str, faster: bool = False
 ) -> tuple[YoloBackend, SamBackend, SamBackend | None]:
     """(yolo, sam, prompt_sam). prompt_sam is a torch SAM for point-prompt
     endpoints; it may be the same object as sam on the classic path.
     Cached: same key -> same instances, no recompile."""
+    yolo = choose_yolo_backend(components, device)
     if coreml_available():
         key = ("coreml", str(YOLO_PKG), str(ENC_PKG), str(DEC_PKG),
                id(components["sam"]), device)
         if key in _backend_cache:
             return _backend_cache[key]
-        yolo: YoloBackend = CoreMLYoloBackend(YOLO_PKG)
         sam: SamBackend = CoreMLSamBackend(ENC_PKG, DEC_PKG, device)
         prompt_sam = TorchSamBackend(components["sam"], device)
         cached = (yolo, sam, prompt_sam)
@@ -69,7 +86,6 @@ def choose_backends(
     key = ("classic", faster, id(components["yolo"]), id(components["sam"]), device)
     if key in _backend_cache:
         return _backend_cache[key]
-    yolo = OrtYoloBackend(components["yolo"], device)
     sam_cls = FasterTorchSamBackend if faster else TorchSamBackend
     sam = sam_cls(components["sam"], device)
     cached = (yolo, sam, None)

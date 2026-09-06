@@ -30,11 +30,25 @@ def _build_fasteryolosam(models: dict, device: str) -> FasterYoloSam:
     return FasterYoloSam(nano_config, device=device)
 
 
+def _build_yolomaskrcnn(models: dict, device: str) -> YoloMaskRCNN:
+    """Build YoloMaskRCNN sharing YoloSam's detector when available, so both
+    model families run one yolo backend (no duplicate load/compile)."""
+    base = models.get(AvailableModels.yolosam)
+    if base is not None:
+        logger.info("YoloMaskRCNN reusing YoloSam components (shared detector)")
+        return YoloMaskRCNN(
+            yolomaskrcnn_config,
+            AvailableModels.yolomaskrcnn,
+            device=device,
+            components=base.components,
+        )
+    return YoloMaskRCNN(
+        yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
+    )
+
+
 _MODEL_BUILDERS = {
     AvailableModels.yolosam: lambda device: YoloSam(nano_config, device=device),
-    AvailableModels.yolomaskrcnn: lambda device: YoloMaskRCNN(
-        yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
-    ),
     AvailableModels.maskrcnn_synthetic: lambda device: MaskRCNN(
         house_synthetic_config, AvailableModels.maskrcnn_synthetic, device=device
     ),
@@ -59,6 +73,8 @@ def get_or_load_model(models: dict, model: AvailableModels):
         device = get_device()
         if model is AvailableModels.fasteryolosam:
             models[model] = _build_fasteryolosam(models, device)
+        elif model is AvailableModels.yolomaskrcnn:
+            models[model] = _build_yolomaskrcnn(models, device)
         else:
             builder = _MODEL_BUILDERS.get(model)
             if builder is None:

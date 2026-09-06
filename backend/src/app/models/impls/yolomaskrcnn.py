@@ -14,9 +14,9 @@ from torchvision.models.detection.roi_heads import (
     paste_masks_in_image,
 )
 from torchvision.models.detection.transform import resize_boxes
-from ultralytics import YOLO
 
 from app.api.live_models import AvailableModels
+from app.models.backends.selection import choose_yolo_backend, coreml_available
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolomaskrcnn")
@@ -27,33 +27,51 @@ class YoloMaskRCNN(Model):
 
     YOLO's boxes are used as the region proposals (unmodified), and only the
     Mask R-CNN backbone + mask head are run to produce the masks. The RPN and
-    box head are never used at inference time.
+    box head are never used at inference time. The detector is the same
+    yolo backend yolosam uses (shared instance via the registry), so the two
+    model families never hold two copies of the detector.
     """
 
     def __init__(
-        self, config: ModelConfig, model_id: AvailableModels, device: str = "cpu"
+        self,
+        config: ModelConfig,
+        model_id: AvailableModels,
+        device: str = "cpu",
+        components: Dict[str, Any] | None = None,
     ):
         self.device = device
         self.model_id = model_id
+        self._shared_components = components
         super().__init__(config)
+        self._yolo = choose_yolo_backend(self.components, device)
 
     def _load_components(self) -> Dict[str, Any]:
         if not hasattr(self, "config") or not self.config.components:
             raise ValueError("Invalid config: missing 'components'")
 
-        components: Dict[str, Any] = {}
+        components: Dict[str, Any] = (
+            dict(self._shared_components) if self._shared_components else {}
+        )
 
         for comp in self.config.components:
             if not hasattr(comp, "name") or not hasattr(comp, "path"):
                 raise ValueError(f"Invalid component structure: {comp}")
 
             name = comp.name.lower()
+            if name in components:
+                continue  # already loaded by another pipeline instance
             model_path = Path(comp.path)
 
             if not model_path.exists() or not model_path.is_file():
                 raise FileNotFoundError(f"Model file not found: {model_path}")
 
             if name == "yolo":
+                if coreml_available():
+                    # the CoreML yolo backend serves detections; the onnx
+                    # session would be loaded and never used
+                    continue
+                from ultralytics import YOLO
+
                 components["yolo"] = YOLO(str(model_path), task="detect")
             elif name == "maskrcnn":
                 model = self._build_model()
@@ -72,10 +90,8 @@ class YoloMaskRCNN(Model):
                 model.eval()
                 components["maskrcnn"] = model
 
-        if "yolo" not in components or "maskrcnn" not in components:
-            raise ValueError(
-                "YoloMaskRCNN config must contain 'yolo' and 'maskrcnn' components"
-            )
+        if "maskrcnn" not in components:
+            raise ValueError("YoloMaskRCNN config must contain a 'maskrcnn' component")
         return components
 
     def _build_model(self, num_classes: int = 2) -> torch.nn.Module:
@@ -119,18 +135,9 @@ class YoloMaskRCNN(Model):
         return img
 
     def segment(self, image: np.ndarray) -> SegmentationResult:
-        yolo = self.components["yolo"]
         model = self.components["maskrcnn"]
 
-        results = yolo.predict(
-            source=image,
-            conf=0.25,
-            iou=0.5,
-            max_det=4000,
-            verbose=False,
-            device=self.device,
-        )
-        boxes = results[0].boxes.xyxy.cpu().numpy()
+        boxes = self._yolo.detect(image)
 
         h, w = image.shape[:2]
         if len(boxes) == 0:
