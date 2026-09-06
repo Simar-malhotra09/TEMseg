@@ -1100,6 +1100,16 @@ export default function Workspace() {
     return `${px.toFixed(1)} px`;
   }
 
+  function formatMeasureListLabel(px: number): string {
+    const unit =
+      metadata?.pixel_unit && metadata.pixel_unit !== "-" ? metadata.pixel_unit : "nm";
+    const ps = metadata?.pixel_size;
+    if (typeof ps === "number" && ps > 0) {
+      return `${px.toFixed(1)} px · ${(px * ps).toFixed(1)} ${unit}`;
+    }
+    return `${px.toFixed(1)} px`;
+  }
+
   // analysis: three-point angle measurement. The second click is the vertex.
   function startAngle() {
     handleScaleBarCancel();
@@ -2041,43 +2051,61 @@ export default function Workspace() {
                     Click three points. The angle is measured at the second point.
                   </p>
                 )}
-                {angleMeasurements.length > 0 && (
+                {(measureEdges.length > 0 || angleMeasurements.length > 0) && (
                   <div className={styles.subWindow}>
-                    <p className={styles.subWindowTitle}>Angles</p>
+                    <p className={styles.subWindowTitle}>Measurements</p>
+                    {measureEdges.map((e, i) => {
+                      const p = measureVertices[e.a];
+                      const q = measureVertices[e.b];
+                      if (!p || !q) return null;
+                      const len = Math.hypot(q.x - p.x, q.y - p.y);
+                      return (
+                        <div key={`e${i}`} className={styles.measureRow}>
+                          <span className={styles.measureNum}>#{i + 1}</span>
+                          <span className={styles.measureVal}>{formatMeasureListLabel(len)}</span>
+                          <button
+                            type="button"
+                            className={styles.miniBtn}
+                            onClick={() => setMeasureEdges(prev => prev.filter((_, j) => j !== i))}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
                     {angleMeasurements.map((m, i) => {
                       const minor = angleMetrics(m.a, m.b, m.c).deg;
                       const shown = m.reflex ? 360 - minor : minor;
                       return (
-                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                          <span className={styles.sidebarHint}>#{i + 1} {shown.toFixed(1)}°</span>
+                        <div key={`a${i}`} className={styles.measureRow}>
+                          <span className={styles.measureNum}>∠{i + 1}</span>
+                          <span className={styles.measureVal}>{shown.toFixed(1)}°</span>
                           <button
                             type="button"
+                            className={`${styles.miniBtn} ${m.reflex ? styles.miniBtnOn : ""}`}
                             onClick={() => toggleAngleReflex(i)}
-                            style={{
-                              background: "none",
-                              border: "1px solid #2a2a2a",
-                              color: m.reflex ? "#7ee8a2" : "#555",
-                              cursor: "pointer",
-                              fontSize: 10,
-                              padding: "2px 6px",
-                              fontFamily: "inherit",
-                            }}
                           >
                             {m.reflex ? "Reflex" : "Minor"}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.miniBtn}
+                            onClick={() => setAngleMeasurements(prev => prev.filter((_, j) => j !== i))}
+                          >
+                            ✕
                           </button>
                         </div>
                       );
                     })}
                   </div>
                 )}
-                {(measureVertices.length > 0 || measureEdges.length > 0) && (
-                  <button type="button" className={styles.actionBtn} onClick={clearMeasurements}>
-                    <Trash2 size={14} /> Clear Distance ({measureVertices.length})
-                  </button>
-                )}
-                {angleMeasurements.length > 0 && (
-                  <button type="button" className={styles.actionBtn} onClick={clearAngleMeasurements}>
-                    <Trash2 size={14} /> Clear Angles ({angleMeasurements.length})
+                {(measureVertices.length > 0 || measureEdges.length > 0 || angleMeasurements.length > 0) && (
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
+                    onClick={() => { clearMeasurements(); clearAngleMeasurements(); }}
+                  >
+                    <Trash2 size={14} /> Clear All Measurements
                   </button>
                 )}
               </section>
