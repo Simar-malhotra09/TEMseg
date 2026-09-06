@@ -16,6 +16,8 @@ export interface BlackoutRect {
 
 interface Props {
   imageSrc: string;
+  imageBrightness?: number;  // konva Brighten range [-1, 1]
+  imageContrast?: number;    // konva Contrast range [-100, 100]
   imgWidth: number;   // original image width
   imgHeight: number;  // original image height
   width: number;      // viewport width
@@ -26,7 +28,7 @@ interface Props {
 }
 
 
-export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, height, isInverse, initialRegions, onChange }: Props) {
+export default function BlackoutCanvas({ imageSrc, imageBrightness, imageContrast, imgWidth, imgHeight, width, height, isInverse, initialRegions, onChange }: Props) {
   const [image] = useImage(imageSrc);
   const [rects, setRects] = useState<BlackoutRect[]>(initialRegions ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,7 +124,14 @@ export default function BlackoutCanvas({ imageSrc, imgWidth, imgHeight, width, h
       onMouseUp={handleMouseUp}
     >
       <Layer ref={layerRef}>
-        <KonvaImage image={image} width={width} height={height} />
+        <KonvaImage
+          image={image}
+          width={width}
+          height={height}
+          filters={[Konva.Filters.Brighten, Konva.Filters.Contrast]}
+          brightness={imageBrightness ?? 0}
+          contrast={imageContrast ?? 0}
+        />
         {rects.map(rect => {
           const scaled = scaleToViewport(rect);
           return (

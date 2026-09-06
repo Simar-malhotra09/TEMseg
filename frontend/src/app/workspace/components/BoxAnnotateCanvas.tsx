@@ -5,6 +5,7 @@ import { Instance } from "@/lib/api";
 
 interface Props {
   imageSrc: string;
+  imageFilter?: string;
   imgWidth: number;
   imgHeight: number;
   viewportWidth: number;
@@ -31,7 +32,7 @@ type ViewBox = { x: number; y: number; w: number; h: number };
  * and overlay together.
  */
 export default function BoxAnnotateCanvas({
-  imageSrc,
+  imageSrc, imageFilter,
   imgWidth,
   imgHeight,
   viewportWidth,
@@ -222,6 +223,7 @@ export default function BoxAnnotateCanvas({
         width={imgWidth}
         height={imgHeight}
         preserveAspectRatio="none"
+        style={{ filter: imageFilter }}
       />
       {existingInstances.map(inst => {
         if (!inst.contour || inst.contour.length < 3) return null;

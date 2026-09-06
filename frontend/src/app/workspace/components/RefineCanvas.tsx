@@ -13,6 +13,7 @@ interface Props {
   imgHeight: number;
 
   // data is rendered as-is, no local copy
+  imageFilter?: string;
   instances: Instance[];
   selectedId: number | null;
   viewBox: ViewBox;
@@ -71,7 +72,7 @@ const VERTEX_RADIUS = 5;  // constant screen-space px
 const EDGE_HIT_WIDTH = 8; // constant screen-space px
 
 export default function RefineCanvas({
-  imageSrc, width, height, imgWidth, imgHeight,
+  imageSrc, width, height, imgWidth, imgHeight, imageFilter,
   instances, selectedId, viewBox, splitMode, splitPoints,
   pasteMode = false,
   clipboard = null,
@@ -267,7 +268,7 @@ export default function RefineCanvas({
         x={0} y={0}
         width={imgWidth}
         height={imgHeight}
-        style={{ imageRendering: "crisp-edges" }}
+        style={{ imageRendering: "crisp-edges", filter: imageFilter }}
       />
 
       {instances.map((inst) => {

@@ -5,6 +5,7 @@ import { Instance } from "@/lib/api";
 
 interface Props {
   imageSrc: string;
+  imageFilter?: string;
   imgWidth: number;
   imgHeight: number;
   viewportWidth: number;
@@ -33,7 +34,7 @@ type ViewBox = { x: number; y: number; w: number; h: number };
  * user navigated to them.
  */
 export default function AnnotateCanvas({
-  imageSrc,
+  imageSrc, imageFilter,
   imgWidth,
   imgHeight,
   viewportWidth,
@@ -252,6 +253,7 @@ export default function AnnotateCanvas({
         width={imgWidth}
         height={imgHeight}
         preserveAspectRatio="none"
+        style={{ filter: imageFilter }}
       />
       {/* committed instances  */}
       {existingInstances.map(inst => {

@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 // import {Image} from "next/Image"
 import {
   Upload, Play, Sliders,
-  Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
+  Eye, EyeOff, Trash2, ChevronDown, AlertTriangle, Contrast,
   Slice, Pencil, CirclePlus, BarChart2, Settings,
 } from "lucide-react";
 
@@ -131,6 +131,14 @@ export default function Workspace() {
 
   // system info for the Settings pane (backends, weights, device)
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+
+  // display adjustment (brightness/contrast multipliers, image layers only)
+  const [brightness, setBrightness] = useState(1);
+  const [contrast, setContrast] = useState(1);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const imgFilter = `brightness(${brightness}) contrast(${contrast})`;
+  const konvaBrightness = Math.max(-1, Math.min(1, (brightness - 1) * 0.6));
+  const konvaContrast = Math.max(-100, Math.min(100, (contrast - 1) * 80));
 
   useEffect(() => {
     if (activeTab !== "settings") return;
@@ -1281,6 +1289,36 @@ export default function Workspace() {
               />
             )}
 
+            <div style={{ position: "relative" }}>
+              <button type="button" className={styles.actionBtn}
+                title="Display"
+                onClick={() => setDisplayOpen(o => !o)}>
+                <Contrast size={14} />
+              </button>
+              {displayOpen && (
+                <div className={styles.subWindow}
+                  style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: 220, zIndex: 30, padding: 10 }}>
+                  <p className={styles.sidebarLabel} style={{ marginBottom: 4 }}>Display</p>
+                  <p className={styles.sidebarHint}>
+                    Brightness {(brightness * 100).toFixed(0)}%
+                  </p>
+                  <input type="range" min={50} max={150} value={Math.round(brightness * 100)}
+                    onChange={e => setBrightness(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <p className={styles.sidebarHint}>
+                    Contrast {(contrast * 100).toFixed(0)}%
+                  </p>
+                  <input type="range" min={50} max={180} value={Math.round(contrast * 100)}
+                    onChange={e => setContrast(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <button type="button" className={styles.actionBtn}
+                    onClick={() => { setBrightness(1); setContrast(1); }}>
+                    Reset
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/*Display zoom size and reset to normal on click*/}
             <div className={styles.statusWrap}>
               <button
@@ -2056,6 +2094,7 @@ export default function Workspace() {
                   style={{
                     display: "block",
                     visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode ? "hidden" : "visible",
+                    filter: imgFilter,
                     ...(displayWidth > 0 && displayHeight > 0
                       ? { width: displayWidth, height: displayHeight }
                       : {}),
@@ -2075,6 +2114,8 @@ export default function Workspace() {
                       height={viewportSize.height}
                       imgWidth={imgSize.width}
                       imgHeight={imgSize.height}
+                      imageBrightness={konvaBrightness}
+                      imageContrast={konvaContrast}
                       isInverse={seg.isInvBlackoutMode}
                       initialRegions={seg.isInvBlackoutMode ? seg.invBlackoutRegions : seg.blackoutRegions}
                       onChange={regions => {
@@ -2099,6 +2140,8 @@ export default function Workspace() {
                       height={viewportSize.height}
                       imgWidth={imgSize.width}
                       imgHeight={imgSize.height}
+                      imageBrightness={konvaBrightness}
+                      imageContrast={konvaContrast}
                       initialStrokes={rfBgScribbles}
                       brushSize={rfBgBrushSize}
                       onBrushSizeChange={setRfBgBrushSize}
@@ -2119,6 +2162,7 @@ export default function Workspace() {
                       height={viewportSize.height}
                       imgWidth={imgSize.width}
                       imgHeight={imgSize.height}
+                      imageFilter={imgFilter}
                       instances={refine.instances}
                       selectedId={refine.selectedId}
                       viewBox={refine.viewBox}
@@ -2171,6 +2215,7 @@ export default function Workspace() {
                     imgHeight={imgSize.height}
                     viewportWidth={viewportSize.width}
                     viewportHeight={viewportSize.height}
+                    imageFilter={imgFilter}
                     existingInstances={loadedInstances}
                     pendingProposals={pendingProposals}
                     onPolygonComplete={handlePolygonComplete}
@@ -2185,6 +2230,7 @@ export default function Workspace() {
                     imgHeight={imgSize.height}
                     viewportWidth={viewportSize.width}
                     viewportHeight={viewportSize.height}
+                    imageFilter={imgFilter}
                     busy={bootstrapBusy}
                     existingInstances={loadedInstances}
                     pendingProposals={pendingProposals}

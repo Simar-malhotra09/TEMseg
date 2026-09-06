@@ -19,6 +19,8 @@ const MAX_BRUSH_SIZE = 400;
 
 interface Props {
   imageSrc: string;
+  imageBrightness?: number;  // konva Brighten range [-1, 1]
+  imageContrast?: number;    // konva Contrast range [-100, 100]
   imgWidth: number;   // original image width
   imgHeight: number;  // original image height
   width: number;      // viewport width
@@ -30,7 +32,7 @@ interface Props {
 }
 
 export default function ScribbleCanvas({
-  imageSrc, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onBrushSizeChange, onChange,
+  imageSrc, imageBrightness, imageContrast, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onBrushSizeChange, onChange,
 }: Props) {
   const [image] = useImage(imageSrc);
   const [strokes, setStrokes] = useState<Scribble[]>(initialStrokes ?? []);
@@ -123,7 +125,14 @@ export default function ScribbleCanvas({
       onWheel={handleWheel}
     >
       <Layer>
-        <KonvaImage image={image} width={width} height={height} />
+        <KonvaImage
+          image={image}
+          width={width}
+          height={height}
+          filters={[Konva.Filters.Brighten, Konva.Filters.Contrast]}
+          brightness={imageBrightness ?? 0}
+          contrast={imageContrast ?? 0}
+        />
         {strokes.map(stroke => (
           <Line
             key={stroke.id}
