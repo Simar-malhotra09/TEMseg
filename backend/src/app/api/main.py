@@ -37,21 +37,17 @@ async def lifespan(app: FastAPI):
         level="info",
     )
 
-    # Warm YOLO at startup instead of on image upload. The ONNX graph has a
-    # static [1,3,640,640] input, so any dummy image triggers the one-time
-    # ~5.7s CoreML compile and the result covers every uploaded shape.
-    # FasterYoloSam shares this YOLO session via the registry, so one warm
-    # serves both pipelines. Runs on a thread so lifespan isn't blocked;
-    # segment requests await the event rather than racing the compile.
+    # Warm the selected yolo backend at startup instead of on first upload
+    # (classic: one-time ORT CoreML-EP compile; coreml backend warms in its
+    # own __init__). Runs on a thread so lifespan isn't blocked; segment
+    # requests await the event rather than racing the compile.
     app.state.yolo_warm = asyncio.Event()
 
     def _warm_yolo():
         try:
             yolosam = app.state.models[AvailableModels.yolosam]
             dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-            yolosam.components["yolo"].predict(
-                source=dummy, verbose=False, conf=0.25, device=yolosam.device
-            )
+            yolosam._yolo.detect(dummy)
             log.info("YOLO startup warmup complete")
         except Exception as e:
             log.warning(f"YOLO warmup failed (non-fatal): {e}")

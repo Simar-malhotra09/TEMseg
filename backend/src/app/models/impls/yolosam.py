@@ -17,7 +17,7 @@ from fastapi import APIRouter
 from app.api.live_models import AvailableModels
 from app.logutils import Timer, get_logger
 from app.models.backends.base import SamEmbedding
-from app.models.backends.selection import choose_backends
+from app.models.backends.selection import choose_backends, coreml_available
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
@@ -105,6 +105,11 @@ class YoloSam(Model):
             if name == "yolo":
                 from ultralytics import YOLO
 
+                if coreml_available():
+                    # the CoreML yolo backend serves detections; the onnx
+                    # session would be loaded and never used
+                    logger.info("CoreML yolo active — skipping ONNX yolo load")
+                    continue
                 try:
                     model = YOLO(str(model_path), task="detect")
                     logger.info(f"Loading YOLO model from {model_path.name}")

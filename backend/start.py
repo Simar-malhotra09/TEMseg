@@ -76,7 +76,21 @@ def main():
     parser.add_argument("--no-reload", action="store_true")
     parser.add_argument("--backend-only", action="store_true")
     parser.add_argument("--frontend-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "-c", "--classical", action="store_true",
+        help="load only the classical stack (yolo onnx + sam pth)",
+    )
+    mode.add_argument(
+        "-m", "--coreml", action="store_true",
+        help="load only the CoreML stack (yolo + sam mlpackages + sam pth for prompts)",
+    )
     args = parser.parse_args()
+
+    if args.classical:
+        os.environ["TEMSEG_COREML"] = "0"
+    elif args.coreml:
+        os.environ["TEMSEG_COREML"] = "1"
 
     processes: list[subprocess.Popen] = []
 
