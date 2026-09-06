@@ -78,6 +78,20 @@
 
 .themeScope ::selection { background: var(--select-bg); }
 
+/* Scrollbars — thin, square, border-hued thumb (ui-re mock port) */
+.themeScope :global(*) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.themeScope :global(*)::-webkit-scrollbar { width: 8px; height: 8px; }
+.themeScope :global(*)::-webkit-scrollbar-track { background: transparent; }
+.themeScope :global(*)::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 0;
+  border: 2px solid var(--bg);
+}
+.themeScope :global(*)::-webkit-scrollbar-thumb:hover { background: var(--text-blast); }
+
 /* Range inputs — square thumbs, muted green (ui-re mock port) */
 .themeScope :global(input[type="range"]) {
   -webkit-appearance: none;
