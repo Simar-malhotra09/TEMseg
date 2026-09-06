@@ -9,7 +9,7 @@ import {
   Slice, Pencil, CirclePlus, BarChart2, Settings,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
 import { nextFreeId } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -128,6 +128,16 @@ export default function Workspace() {
 
   // sidebar tab: which of the 3 action groups is showing
   const [activeTab, setActiveTab] = useState<SidebarTab>("segment");
+
+  // system info for the Settings pane (backends, weights, device)
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== "settings") return;
+    getSystemInfo()
+      .then(setSystemInfo)
+      .catch(err => console.error("getSystemInfo failed:", err));
+  }, [activeTab]);
 
   // which method is showing in the Point/Box/Similar sub-window
   const [augmentMethod, setAugmentMethod] = useState<AugmentMethod>("click");
@@ -1938,6 +1948,64 @@ export default function Workspace() {
 
             {activeTab === "settings" && (
               <>
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Pipeline</p>
+                  {systemInfo ? (
+                    <div className={styles.subWindow}>
+                      <p className={styles.sidebarHint}>device · {systemInfo.device}</p>
+                      <p className={styles.sidebarHint}>yolo · {systemInfo.backends.yolo ?? "not loaded"}</p>
+                      <p className={styles.sidebarHint}>sam · {systemInfo.backends.sam ?? "not loaded"}</p>
+                      {systemInfo.backends.prompt_sam && (
+                        <p className={styles.sidebarHint}>prompts · {systemInfo.backends.prompt_sam}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className={styles.sidebarHint}>Loading pipeline info…</p>
+                  )}
+                </section>
+
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Weights</p>
+                  {systemInfo && (
+                    <div className={styles.subWindow}>
+                      {(() => {
+                        const byPkg = new Map<string, { size: number; present: boolean }>();
+                        for (const w of systemInfo.weights) {
+                          const pkg = w.filename.split("/")[0];
+                          const cur = byPkg.get(pkg) ?? { size: 0, present: true };
+                          cur.size += w.size_mb;
+                          cur.present = cur.present && w.present;
+                          byPkg.set(pkg, cur);
+                        }
+                        return Array.from(byPkg.entries()).map(([pkg, s]) => (
+                          <p key={pkg} className={styles.sidebarHint}>
+                            {s.present ? "✓" : "✗"} {pkg} · {s.size.toFixed(0)} MB
+                          </p>
+                        ));
+                      })()}
+                    </div>
+                  )}
+                </section>
+
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Shortcuts</p>
+                  <div className={styles.subWindow}>
+                    <p className={styles.sidebarHint}>wheel / pinch — zoom at cursor</p>
+                    <p className={styles.sidebarHint}>space + drag — pan</p>
+                    <p className={styles.sidebarHint}>[ / ] — mask opacity</p>
+                    <p className={styles.sidebarHint}>refine — drag vertices, delete/backspace removes selection</p>
+                  </div>
+                </section>
+
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>App</p>
+                  <div className={styles.subWindow}>
+                    {systemInfo && (
+                      <p className={styles.sidebarHint}>logs · {systemInfo.log_dir}</p>
+                    )}
+                    <p className={styles.sidebarHint}>version · 0.1.0</p>
+                  </div>
+                </section>
               </>
             )}
 

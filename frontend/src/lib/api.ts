@@ -359,6 +359,23 @@ export async function getStats(sessionId: string): Promise<StatsResult | null> {
   return res.json();
 }
 
+export interface SystemInfo {
+  device: string;
+  log_dir: string;
+  backends: {
+    yolo?: string;
+    sam?: string;
+    prompt_sam?: string | null;
+  };
+  weights: { filename: string; size_mb: number; present: boolean }[];
+}
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  const res = await trackedFetch(`${BASE_URL}/system/info`);
+  if (!res.ok) throw new Error(`getSystemInfo: ${res.status}`);
+  return res.json();
+}
+
 export interface FromPointsResponse {
   proposals: Instance[];
   rejected: { index: number; reason: string }[];

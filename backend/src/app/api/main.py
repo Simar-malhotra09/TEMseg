@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 from app.api.routers import images, segment, ground_truths, masks, export, rf, config
 from app.api.live_models import AvailableModels
-from app.api.model_registry import get_or_load_model
+from app.api.model_registry import get_device, get_or_load_model
 
 from typing import List
 
@@ -120,6 +120,52 @@ def get_models():
 def ui_events(since: int = 0):
     """User-facing event feed for the frontend status panel."""
     return {"events": get_ui_events(since)}
+
+
+@app.get("/system/info")
+def system_info(request: Request):
+    """Active backends, device, weight presence and log dir — Settings pane."""
+    import json
+    import sys
+
+    from app.logutils import default_log_dir
+    from app.models.helpers.settings import settings
+
+    info = {
+        "device": get_device(),
+        "log_dir": str(default_log_dir()),
+        "backends": {},
+        "weights": [],
+    }
+    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
+    if yolosam is not None:
+        info["backends"] = {
+            "yolo": type(yolosam._yolo).__name__,
+            "sam": type(yolosam._sam).__name__,
+            "prompt_sam": (
+                type(yolosam._prompt_sam).__name__
+                if yolosam._prompt_sam is not None
+                else None
+            ),
+        }
+    if getattr(sys, "frozen", False):
+        manifest_path = Path(sys._MEIPASS) / "weight_manifest.json"
+    else:
+        manifest_path = Path(__file__).resolve().parents[4] / "weight_manifest.json"
+    if manifest_path.exists():
+        try:
+            data = json.load(open(manifest_path))
+            for entry in data.get("weights", []):
+                info["weights"].append(
+                    {
+                        "filename": entry["filename"],
+                        "size_mb": entry.get("size_mb"),
+                        "present": (settings.WEIGHTS_DIR / entry["filename"]).exists(),
+                    }
+                )
+        except Exception:
+            log.warning("Could not read weight manifest for /system/info")
+    return info
 
 
 def cleanup_old_sessions(max_age_hours: int = 24, force=False):
