@@ -785,4 +785,23 @@ align-items: center;
 padding: 0;
 }
 .zoomBtn:hover { text-decoration: underline; }
-</content>
+.deviceChip {
+display: inline-flex;
+align-items: center;
+gap: 5px;
+padding: 1.5px 8px;
+border-radius: 3px;
+background: var(--bg-hover);
+border: 1px solid var(--border);
+font-size: 9.5px;
+text-transform: uppercase;
+letter-spacing: 0.06em;
+}
+.deviceLed {
+width: 6px;
+height: 6px;
+border-radius: 50%;
+background: var(--accent);
+box-shadow: 0 0 5px var(--accent);
+flex-shrink: 0;
+}

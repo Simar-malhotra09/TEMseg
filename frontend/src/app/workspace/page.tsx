@@ -346,6 +346,11 @@ export default function Workspace() {
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
 
+  // image-space cursor position for the footer statusbar. Throttled state
+  // update so mousemove doesn't re-render the whole page every event.
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const cursorPosThrottle = useRef(0);
+
   // scale bar calibration
   const [scaleBarMode, setScaleBarMode] = useState(false);
   const [scaleBarPixels, setScaleBarPixels] = useState<number | null>(null);
@@ -854,6 +859,17 @@ export default function Workspace() {
   }
 
   function handleMouseMove(e: React.MouseEvent) {
+    if (imgSize.width > 0) {
+      const now = performance.now();
+      if (now - cursorPosThrottle.current > 50) {
+        cursorPosThrottle.current = now;
+        const rect = e.currentTarget.getBoundingClientRect();
+        setCursorPos({
+          x: Math.round(((e.clientX - rect.left) / rect.width) * imgSize.width),
+          y: Math.round(((e.clientY - rect.top) / rect.height) * imgSize.height),
+        });
+      }
+    }
     if (!isPanning.current) return;
     const rawX = e.clientX - panStart.current.x;
     const rawY = e.clientY - panStart.current.y;
@@ -863,6 +879,11 @@ export default function Workspace() {
       x: Math.min(excessW, Math.max(-excessW, rawX)),
       y: Math.min(excessH, Math.max(-excessH, rawY)),
     });
+  }
+
+  function handleViewportLeave() {
+    handleMouseUp();
+    setCursorPos(null);
   }
 
   // locate particle give id 
@@ -2306,7 +2327,7 @@ export default function Workspace() {
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
+                onMouseLeave={handleViewportLeave}
                 style={{
                   position: "relative",
                   display: "inline-block",
@@ -2909,6 +2930,19 @@ export default function Workspace() {
           />
 
         </div>
+
+        <footer className={styles.statusbar}>
+          <span className={styles.sbarB}>
+            {cursorPos ? `x ${cursorPos.x} · y ${cursorPos.y}` : "x — · y —"}
+          </span>
+          <span className={styles.sbarGrow} />
+          <span className={styles.sbarRight}>
+            <span className={styles.deviceChip}>
+              <span className={styles.deviceLed} />
+              {systemInfo ? `${systemInfo.device}` : "backend"}
+            </span>
+          </span>
+        </footer>
 
         {helpOpen && (
           <div className={styles.modalRoot}>
