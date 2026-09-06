@@ -207,7 +207,7 @@ export default function Workspace() {
     getSystemInfo()
       .then(setSystemInfo)
       .catch(err => console.error("getSystemInfo failed:", err));
-  }, [];
+  }, []);
 
   // display adjustment (brightness/contrast multipliers, image layers only)
   const [brightness, setBrightness] = useState(1);
@@ -1639,7 +1639,7 @@ export default function Workspace() {
                       max={100}
                       value={Math.round(polygonOpacity * 100)}
                       onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
-                      style={{ width: "100%", accentColor: "#7ee8a2" }}
+                      style={{ width: "100%" }}
                     />
                   </div>
                 )}

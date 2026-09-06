@@ -17,6 +17,8 @@
   --accent-hover: #9df0b6;
   --accent-soft: rgba(126, 232, 162, 0.12);
   --accent-border: rgba(126, 232, 162, 0.2);
+  --slider: #6cae7c;
+  --slider-active: #a0d8ae;
   --on-accent: #0d0d0d;
   --rail-active-bg: #0f140f;
   --danger: #f87171;
@@ -59,6 +61,8 @@
   --accent-hover: #156a3a;
   --accent-soft: rgba(26, 122, 68, 0.10);
   --accent-border: rgba(26, 122, 68, 0.28);
+  --slider: #57916f;
+  --slider-active: #7fb493;
   --on-accent: #ffffff;
   --rail-active-bg: #eef3ef;
   --danger: #b3261e;
@@ -73,6 +77,51 @@
 }
 
 .themeScope ::selection { background: var(--select-bg); }
+
+/* Range inputs — square thumbs, muted green (ui-re mock port) */
+.themeScope :global(input[type="range"]) {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.themeScope :global(input[type="range"]:disabled) { opacity: 0.4; cursor: not-allowed; }
+.themeScope :global(input[type="range"])::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+}
+.themeScope :global(input[type="range"])::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -5px;
+  border-radius: 2px;
+  background: var(--slider);
+  border: 1.5px solid var(--bg-elev);
+  box-shadow: 0 0 0 1px var(--slider), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.themeScope :global(input[type="range"]:hover)::-webkit-slider-thumb,
+.themeScope :global(input[type="range"]:focus-visible)::-webkit-slider-thumb {
+  background: var(--slider-active);
+  box-shadow: 0 0 0 1px var(--slider-active), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.themeScope :global(input[type="range"])::-moz-range-track {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+}
+.themeScope :global(input[type="range"])::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--slider);
+  border: 1.5px solid var(--bg-elev);
+  box-shadow: 0 0 0 1px var(--slider);
+}
 
 /* Top Bar */
 .topbar {
