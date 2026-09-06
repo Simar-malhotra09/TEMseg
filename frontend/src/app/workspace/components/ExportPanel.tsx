@@ -28,9 +28,10 @@ interface Props {
   segDone: boolean;
   refineDone: boolean;  // true if user has saved refinements at least once
   hasStats: boolean;
+  panelBelow?: boolean;  // topbar variant: panel drops below the trigger
 }
 
-export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }: Props) {
+export default function ExportPanel({ sessionId, segDone, refineDone, hasStats, panelBelow }: Props) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<ExportItem>>(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -151,7 +152,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
   }
 
   return (
-    <div ref={panelRef} style={{ position: "relative", width: "100%" }}>
+    <div ref={panelRef} style={{ position: "relative", width: panelBelow ? "auto" : "100%" }}>
       <button type="button"
         className={`${styles.triggerBtn} ${!segDone ? styles.triggerBtnDisabled : ""}`}
         onClick={() => segDone && setOpen(o => !o)}
@@ -161,7 +162,8 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats }
       </button>
 
       {open && (
-        <div className={styles.panel}>
+        <div className={styles.panel}
+          style={panelBelow ? { top: "calc(100% + 5px)", bottom: "auto", right: "auto", minWidth: 340 } : undefined}>
           <div className={styles.panelHeader}>
             <span className={styles.panelTitle}>Export</span>
             <button type="button" className={styles.closeBtn} onClick={() => setOpen(false)}>

@@ -1261,6 +1261,16 @@ export default function Workspace() {
               </span>
             )}
 
+            {sessionId && (
+              <ExportPanel
+                sessionId={sessionId}
+                segDone={seg.segDone}
+                refineDone={refineDone}
+                hasStats={!!seg.stats}
+                panelBelow
+              />
+            )}
+
             {/*Display zoom size and reset to normal on click*/}
             <div className={styles.statusWrap}>
               <button
@@ -1928,16 +1938,6 @@ export default function Workspace() {
 
             {activeTab === "settings" && (
               <>
-                <section>
-                  {sessionId && (
-                    <ExportPanel
-                      sessionId={sessionId}
-                      segDone={seg.segDone}
-                      refineDone={refineDone}
-                      hasStats={!!seg.stats}
-                    />
-                  )}
-                </section>
               </>
             )}
 
