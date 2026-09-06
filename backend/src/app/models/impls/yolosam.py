@@ -106,7 +106,7 @@ class YoloSam(Model):
                 from ultralytics import YOLO
 
                 try:
-                    model = YOLO(str(model_path))
+                    model = YOLO(str(model_path), task="detect")
                     logger.info(f"Loading YOLO model from {model_path.name}")
                 except Exception as e:
                     raise RuntimeError(f"Failed to load YOLO: {e}") from e
