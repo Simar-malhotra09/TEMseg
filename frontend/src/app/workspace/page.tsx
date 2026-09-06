@@ -2315,9 +2315,17 @@ export default function Workspace() {
                 onDrop={onDrop}
                 onClick={() => fileRef.current?.click()}
               >
-                <Upload size={32} strokeWidth={1.5} />
-                <p className={styles.dropLabel}>Drop image here or click to upload</p>
-                <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+                <div className={styles.emptyInner}>
+                  <svg className={styles.emptyMark} viewBox="0 0 32 32" aria-hidden="true">
+                    <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--accent)" opacity=".9" />
+                    <circle cx="12.5" cy="12" r="4.6" fill="#fff" opacity=".95" />
+                    <circle cx="20" cy="19" r="3.2" fill="#fff" opacity=".8" />
+                    <circle cx="22.5" cy="11.5" r="2.2" fill="#fff" opacity=".6" />
+                  </svg>
+                  <h2 className={styles.emptyTitle}>Open an image</h2>
+                  <p className={styles.dropLabel}>Drop image here or click to upload</p>
+                  <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+                </div>
               </div>
             ) : (
               <div

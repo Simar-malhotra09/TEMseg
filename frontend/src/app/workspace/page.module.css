@@ -581,22 +581,36 @@ overflow: hidden;
 position: relative;
 }
 .dropZone {
+position: absolute;
+inset: 0;
+display: flex;
+align-items: center;
+justify-content: center;
+cursor: pointer;
+z-index: 5;
+transition: background 0.2s;
+color: var(--text-ghost);
+}
+.dropZoneDragging { background: var(--accent-soft); }
+.emptyInner {
 display: flex;
 flex-direction: column;
 align-items: center;
-justify-content: center;
-gap: 12px;
-width: 380px;
-height: 260px;
-border: 1.5px dashed var(--border);
-border-radius: 8px;
-cursor: pointer;
-transition: border-color 0.2s;
-color: var(--text-ghost);
+text-align: center;
+width: 460px;
+padding: 20px;
 }
-.dropZone:hover, .dropZoneDragging { border-color: var(--accent); color: var(--accent); }
-.dropLabel { font-size: 13px; color: inherit; }
-.dropHint { font-size: 11px; color: var(--text-blast); }
+.emptyMark { width: 34px; height: 34px; border-radius: 8px; margin-bottom: 12px; }
+.emptyTitle {
+font-size: 14px;
+font-weight: 650;
+letter-spacing: 0.05em;
+text-transform: uppercase;
+color: var(--text-dim);
+margin: 0;
+}
+.dropLabel { font-size: 12px; color: inherit; margin: 6px 0 0; }
+.dropHint { font-size: 11px; color: var(--text-blast); margin: 4px 0 0; }
 
 .imageViewport {
 position: relative;
