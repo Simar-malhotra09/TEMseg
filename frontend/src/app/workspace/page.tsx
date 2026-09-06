@@ -7,6 +7,7 @@ import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
   Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
+  Maximize, Minus, Plus, Square,
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
@@ -826,16 +827,15 @@ export default function Workspace() {
 
 
   // css zoom/pan handlers. disabled when blackout or refine active
+  const zoomBy = (delta: number) => setZoom(z => Math.min(Math.max(z * delta, 0.5), 5));
+
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
     if (analysisMode || scaleBarMode) return;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(z => {
-      const next = Math.min(Math.max(z * delta, 0.5), 5);
-      // center the img if zoomed out
-      // if (next <= 1) setPan({ x: 0, y: 0 });
-      return next;
-    });
+    // center the img if zoomed out
+    // if (next <= 1) setPan({ x: 0, y: 0 });
+    zoomBy(delta);
   }
 
   function handleMouseDown(e: React.MouseEvent) {
@@ -2857,6 +2857,34 @@ export default function Workspace() {
                     ))
                 }
 
+              </div>
+            )}
+            {image && !refineMode && (
+              <div className={styles.canvasTools}>
+                <button type="button" className={styles.toolBtn} title="Fit to view"
+                  disabled={analysisMode || scaleBarMode}
+                  onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+                  <Maximize size={13} />
+                </button>
+                <button type="button" className={styles.toolBtn} title="Zoom out"
+                  disabled={analysisMode || scaleBarMode}
+                  onClick={() => zoomBy(0.9)}>
+                  <Minus size={13} />
+                </button>
+                <span className={styles.toolZoomLabel}>{Math.round(zoom * 100)}%</span>
+                <button type="button" className={styles.toolBtn} title="Zoom in"
+                  disabled={analysisMode || scaleBarMode}
+                  onClick={() => zoomBy(1.1)}>
+                  <Plus size={13} />
+                </button>
+                <span className={styles.toolSep} />
+                <button type="button"
+                  className={`${styles.toolBtn}${seg.boxesVisible ? ` ${styles.toolBtnOn}` : ""}`}
+                  title="Show / hide boxes"
+                  disabled={!seg.segDone}
+                  onClick={() => seg.setBoxesVisible(!seg.boxesVisible)}>
+                  <Square size={13} />
+                </button>
               </div>
             )}
             <input ref={fileRef} type="file" accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"

@@ -623,6 +623,45 @@ border-radius: 3px;
 border: 1px solid var(--accent-border);
 }
 
+/* Floating canvas toolbar */
+.canvasTools {
+position: absolute;
+top: 12px;
+left: 50%;
+transform: translateX(-50%);
+display: flex;
+align-items: center;
+gap: 1px;
+padding: 3px;
+background: var(--bg-elev);
+border: 1px solid var(--border);
+border-radius: 4px;
+box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+z-index: 10;
+}
+.toolBtn {
+width: 25px;
+height: 25px;
+display: grid;
+place-items: center;
+border-radius: 3px;
+color: var(--text-dim);
+background: none;
+border: none;
+cursor: pointer;
+font-family: inherit;
+}
+.toolBtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.toolBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.toolBtnOn { color: var(--accent); background: var(--accent-soft); }
+.toolZoomLabel {
+min-width: 42px;
+text-align: center;
+font-size: 10.5px;
+color: var(--text-dim);
+}
+.toolSep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; }
+
 /* Stats */
 .statsPanel {
   width: 180px;
