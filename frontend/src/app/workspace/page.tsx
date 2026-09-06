@@ -1630,23 +1630,6 @@ export default function Workspace() {
                     <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
                   </button>
                 </section>
-                <section>
-                  {/*[ACTION]- show/hide masks */}
-                  <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
-                    onClick={() => seg.setMasksVisible(v => !v)}>
-                    {seg.masksVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                    {seg.masksVisible ? "Hide Masks" : "Show Masks"}
-                  </button>
-                </section>
-                <section>
-                  {/*[ACTION]- show/hide yolo boxes */}
-                  <button type="button" className={styles.actionBtn}
-                    disabled={!seg.segDone || !seg.boxesUrl}
-                    onClick={() => seg.setBoxesVisible(v => !v)}>
-                    <BoxSelect size={14} />
-                    {seg.boxesVisible ? "Hide Boxes" : "Show Boxes"}
-                  </button>
-                </section>
                 {seg.segDone && seg.masksVisible && (
                   <div style={{ marginBottom: 8 }}>
                     <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
@@ -2909,8 +2892,15 @@ export default function Workspace() {
                 </button>
                 <span className={styles.toolSep} />
                 <button type="button"
+                  className={`${styles.toolBtn}${seg.masksVisible ? ` ${styles.toolBtnOn}` : ""}`}
+                  title={seg.masksVisible ? "Hide masks" : "Show masks"}
+                  disabled={!seg.segDone}
+                  onClick={() => seg.setMasksVisible(!seg.masksVisible)}>
+                  <Eye size={13} />
+                </button>
+                <button type="button"
                   className={`${styles.toolBtn}${seg.boxesVisible ? ` ${styles.toolBtnOn}` : ""}`}
-                  title="Show / hide boxes"
+                  title={seg.boxesVisible ? "Hide boxes" : "Show boxes"}
                   disabled={!seg.segDone}
                   onClick={() => seg.setBoxesVisible(!seg.boxesVisible)}>
                   <Square size={13} />
