@@ -1903,8 +1903,16 @@ export default function Workspace() {
                           Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
                         </p>
                       </ExpandableHint>
+                      {/* brush size: wheel on-canvas and this slider both write
+                          rfBgBrushSize, so they stay in sync */}
+                      <p className={styles.sidebarHint}>
+                        Brush: {rfBgBrushSize}px
+                      </p>
+                      <input type="range" min={6} max={400} value={rfBgBrushSize}
+                        onChange={e => setRfBgBrushSize(Number(e.target.value))}
+                        style={{ width: "100%", accentColor: "#7ee8a2" }} />
                       <p className={styles.sidebarShortcuts}>
-                        · [scroll]: resize brush 
+                        · [scroll]: resize brush
                       </p>
                     </>
                   ) : (
