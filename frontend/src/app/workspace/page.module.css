@@ -762,21 +762,6 @@ border-bottom: 1px solid var(--border-soft);
 }
 
 
-.zoomReset {
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 100px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.zoomReset:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
 /* Footer statusbar */
 .statusbar {
 display: flex;

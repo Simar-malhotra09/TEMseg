@@ -1543,11 +1543,6 @@ export default function Workspace() {
               </button>
               {activityOpen && <StatusPanel onClose={() => setActivityOpen(false)} />}
             </div>
-            {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
-              <button type="button" className={styles.zoomReset} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
-                {Math.round(zoom * 100)}% ✕
-              </button>
-            )}
             <button type="button"
               className={`${styles.iconBtn} ${styles.themeBtn}`}
               onClick={toggleTheme}
