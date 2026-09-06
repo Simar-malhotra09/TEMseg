@@ -166,7 +166,18 @@ export default function Workspace() {
   // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
   const [encoderDepth, setEncoderDepth] = useState<number>(12);
   const [depthDropdownOpen, setDepthDropdownOpen] = useState(false);
-  useEffect(() => { if (models.length > 0) setSelectedModel(models[0]); }, [models]); // by def load YoloSAM 
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const depthDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (models.length > 0) setSelectedModel(models[0]); }, [models]); // by def load YoloSAM
+  useEffect(() => {
+    const closeOnOutsidePress = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!modelDropdownRef.current?.contains(t)) setModelDropdownOpen(false);
+      if (!depthDropdownRef.current?.contains(t)) setDepthDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    return () => document.removeEventListener("mousedown", closeOnOutsidePress);
+  }, []); 
 
   // session 
   const [sessionId, setSessionId] = useState<string | null>(null); // server return sessionId from uploadImage
@@ -1475,7 +1486,7 @@ export default function Workspace() {
               Segment sidebar). Depth: 12 = full (default), 8 = early-exit.
               Only YoloSAM/FasterYoloSAM support depth — hidden for MaskRCNN. */}
           <div className={styles.topbarCentre}>
-            <div className={styles.dropdownWrap}>
+            <div className={styles.dropdownWrap} ref={modelDropdownRef}>
               <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
                 {selectedModel} <ChevronDown size={14} />
               </button>
@@ -1494,7 +1505,7 @@ export default function Workspace() {
               )}
             </div>
             {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
-              <div className={`${styles.dropdownWrap} ${styles.dropdownWrapDepth}`}>
+              <div className={`${styles.dropdownWrap} ${styles.dropdownWrapDepth}`} ref={depthDropdownRef}>
                 <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
                   n={encoderDepth} <ChevronDown size={14} />
                 </button>
