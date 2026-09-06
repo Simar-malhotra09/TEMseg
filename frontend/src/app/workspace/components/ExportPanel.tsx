@@ -165,7 +165,10 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats, 
         <div className={styles.panel}
           style={panelBelow ? { top: "calc(100% + 5px)", bottom: "auto", right: "auto", minWidth: 340 } : undefined}>
           <div className={styles.panelHeader}>
-            <span className={styles.panelTitle}>Export</span>
+            <div>
+              <p className={styles.panelTitle}>Export session</p>
+              <p className={styles.panelSub}>Bundle any combination into one ZIP</p>
+            </div>
             <button type="button" className={styles.closeBtn} onClick={() => setOpen(false)}>
               <X size={12} />
             </button>
@@ -193,7 +196,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats, 
 
           <div className={styles.panelFooter}>
             <button type="button" className={styles.selectAllBtn} onClick={selectAll}>
-              select all
+              Select all available
             </button>
             <button type="button"
               className={styles.downloadBtn}

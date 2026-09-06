@@ -3,10 +3,10 @@
   align-items: center;
   gap: 7px;
   padding: 7px 10px;
-  background: #161616;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #ccc;
+  color: var(--text);
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -14,78 +14,89 @@
   width: 100%;
 }
 .triggerBtn:hover:not(.triggerBtnDisabled) {
-  border-color: #7ee8a2;
-  color: #7ee8a2;
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .triggerBtnDisabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-/* panel — pops up above the button */
+/* panel — floating; drops above/below the trigger depending on context */
 .panel {
   position: absolute;
   bottom: calc(100% + 5px);
   left: 0;
   right: 0;
-  background: #111;
-  border: 1px solid #2a2a2a;
-  border-radius: 6px;
+  background: var(--bg-toast);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   z-index: 50;
   overflow: hidden;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   min-width: 200px;
 }
 
 .panelHeader {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 8px 10px 6px;
-  border-bottom: 1px solid #1e1e1e;
+  gap: 10px;
+  padding: 10px 12px 9px;
+  border-bottom: 1px solid var(--border-soft);
 }
 
 .panelTitle {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #555;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.panelSub {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
 }
 
 .closeBtn {
   background: none;
   border: none;
-  color: #444;
+  color: var(--text-ghost);
   cursor: pointer;
   padding: 2px;
   display: flex;
   align-items: center;
 }
-.closeBtn:hover { color: #888; }
+.closeBtn:hover { color: var(--text-dim); }
 
 .options {
   display: flex;
   flex-direction: column;
-  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 10px 10px 4px;
 }
 
 .option {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-soft);
   cursor: pointer;
   transition: background 0.1s;
 }
-.option:hover:not(.optionDisabled) { background: #1a1a1a; }
+.option:last-child { border-bottom: none; }
+.option:hover:not(.optionDisabled) { background: var(--bg-hover); }
 
 .optionDisabled {
-  opacity: 0.3;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .checkbox {
-  accent-color: #7ee8a2;
+  accent-color: var(--accent);
   width: 12px;
   height: 12px;
   flex-shrink: 0;
@@ -94,13 +105,13 @@
 
 .optionLabel {
   font-size: 12px;
-  color: #ccc;
+  color: var(--text);
   flex: 1;
 }
 
 .optionHint {
   font-size: 10px;
-  color: #444;
+  color: var(--text-faint);
   flex-shrink: 0;
 }
 
@@ -108,38 +119,40 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  border-top: 1px solid #1e1e1e;
+  padding: 8px 10px 10px;
   gap: 8px;
 }
 
 .selectAllBtn {
-  background: none;
-  border: none;
-  color: #555;
+  padding: 6px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
   font-size: 11px;
   cursor: pointer;
   font-family: inherit;
-  padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  transition: border-color 0.15s, color 0.15s;
 }
-.selectAllBtn:hover { color: #888; }
+.selectAllBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .downloadBtn {
   flex: 1;
   padding: 6px 10px;
-  background: #7ee8a2;
+  background: var(--accent);
   border: none;
   border-radius: 4px;
-  color: #0d0d0d;
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s;
 }
-.downloadBtn:hover:not(:disabled) { background: #9df0b6; }
+.downloadBtn:hover:not(:disabled) { background: var(--accent-hover); }
 .downloadBtn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
