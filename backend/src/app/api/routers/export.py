@@ -10,11 +10,10 @@ from PIL import Image
 from pydantic import BaseModel
 
 from app.logutils import Timer, get_logger, ui_event
+from app.api.utils import _session_dir
 
 logger = get_logger("export")
 router = APIRouter(prefix="/export", tags=["export"])
-
-SESSIONS_DIR = Path("sessions")
 
 
 class ExportRequest(BaseModel):
@@ -31,13 +30,6 @@ VALID_ITEMS = {
     "stats_csv",
     "coco_json",
 }
-
-
-def _session_dir(session_id: str) -> Path:
-    d = SESSIONS_DIR / session_id
-    if not d.exists():
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return d
 
 
 # curr we save the org file format (npy, tiff, png, jpg ) and
@@ -184,9 +176,7 @@ async def export_session(session_id: str, body: ExportRequest):
         if item == "original_image":
             path = _find_original_image(session_dir)
             if path is None:
-                logger.warning(
-                    f"original_image not found | session={session_id}"
-                )
+                logger.warning(f"original_image not found | session={session_id}")
                 continue
             entries.append(("original_image.png", path))
             logger.info(f"Adding original_image | {path.name}")
@@ -233,9 +223,7 @@ async def export_session(session_id: str, body: ExportRequest):
         elif item == "instances_json":
             path = session_dir / "instances.json"
             if not path.exists():
-                logger.warning(
-                    f"instances.json not found | session={session_id}"
-                )
+                logger.warning(f"instances.json not found | session={session_id}")
                 continue
             entries.append(("instances.json", path))
             logger.info("Adding instances_json")
@@ -345,9 +333,7 @@ async def export_histogram_csv(session_id: str, metric: str = "diameter"):
             detail=f"Invalid metric '{metric}'; use 'diameter' or 'area'",
         )
 
-    logger.info(
-        f"POST export histogram csv | session={session_id} | metric={metric}"
-    )
+    logger.info(f"POST export histogram csv | session={session_id} | metric={metric}")
 
     session_dir = _session_dir(session_id)
     stats_path = session_dir / "stats.json"
@@ -391,9 +377,7 @@ async def export_histogram_csv(session_id: str, metric: str = "diameter"):
             rows.append(f"Best fit,{fits['best_model']} ({params})")
 
     csv_bytes = (header + "\n".join(rows)).encode("utf-8")
-    logger.info(
-        f"histogram CSV ready | {len(particles)} particles | metric={metric}"
-    )
+    logger.info(f"histogram CSV ready | {len(particles)} particles | metric={metric}")
 
     return StreamingResponse(
         io.BytesIO(csv_bytes),

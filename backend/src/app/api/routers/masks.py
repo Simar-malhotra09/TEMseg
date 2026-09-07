@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Request
-from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Tuple
 import numpy as np
 import cv2 as cv
 import time
 from app.api.live_models import AvailableModels
-from app.api.utils import mask_iou
+from app.api.utils import mask_iou, _session_dir
+
 
 # from app.api.utils import extract_instances, rasterize_instances, save_debug_overlay
 from app.api.instances import (
@@ -24,14 +24,6 @@ from app.models.helpers.compute_stats import compute_stats_from_instances
 
 router = APIRouter(prefix="/masks")
 logger = get_logger("masks")
-SESSIONS_DIR = Path("sessions")
-
-
-def _session_dir(session_id: str) -> Path:
-    d = SESSIONS_DIR / session_id
-    if not d.exists():
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return d
 
 
 class Instance(BaseModel):

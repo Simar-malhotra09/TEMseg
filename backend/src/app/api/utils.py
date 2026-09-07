@@ -8,8 +8,11 @@ from fastapi import APIRouter
 from app.logutils import get_logger
 from app.models.base_model import SegmentationResult
 
+from fastapi import HTTPException
+
 router = APIRouter(prefix="/utils")
 logger = get_logger("utils")
+
 SESSIONS_DIR = Path("sessions")
 
 
@@ -25,6 +28,13 @@ class Stroke(BaseModel):
     id: str
     points: list[float]  # flat [x1, y1, x2, y2, ...] in image coordinates
     stroke_width: float = 24
+
+
+def _session_dir(session_id: str) -> Path:
+    d = SESSIONS_DIR / session_id
+    if not d.exists():
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return d
 
 
 def normalize_mask(mask) -> np.ndarray:
