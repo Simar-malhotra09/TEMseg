@@ -17,7 +17,13 @@ from fastapi import APIRouter
 from app.api.live_models import AvailableModels
 from app.logutils import Timer, get_logger
 from app.models.backends.base import SamEmbedding
-from app.models.backends.selection import choose_backends, coreml_available
+from app.models.backends.selection import (
+    choose_backends,
+    coreml_available,
+    device_allocated_bytes,
+    process_peak_rss_bytes,
+    ram_since,
+)
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
@@ -123,6 +129,10 @@ class YoloSam(Model):
                 if "vit_b" not in sam_model_registry:
                     raise ValueError("SAM registry missing 'vit_b'")
 
+                ram_before = (
+                    process_peak_rss_bytes(),
+                    device_allocated_bytes(self.device),
+                )
                 try:
                     sam = sam_model_registry["vit_b"](checkpoint=str(model_path))
                     logger.info(f"Loading SAM model from {model_path.name}")
@@ -137,6 +147,7 @@ class YoloSam(Model):
                         f"Failed to move SAM to device {self.device}: {e}"
                     ) from e
 
+                sam.ram_bytes = ram_since(ram_before, self.device)
                 components["sam"] = sam
 
             else:

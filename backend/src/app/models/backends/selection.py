@@ -38,6 +38,43 @@ DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head16_fp32.mlpackage"
 _backend_cache: dict[tuple, tuple[YoloBackend, SamBackend, SamBackend | None]] = {}
 
 
+def process_peak_rss_bytes() -> int | None:
+    # ru_maxrss is bytes on macOS, kilobytes on Linux.
+    try:
+        import resource
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return int(peak) if sys.platform == "darwin" else int(peak) * 1024
+    except Exception:
+        return None
+
+
+def device_allocated_bytes(device: str) -> int | None:
+    # MPS/CUDA weights live outside process RSS, so measure device-side too.
+    try:
+        import torch
+
+        if device == "mps" and torch.backends.mps.is_available():
+            return int(torch.mps.current_allocated_memory())
+        if device == "cuda" and torch.cuda.is_available():
+            return int(torch.cuda.memory_allocated())
+    except Exception:
+        return None
+    return None
+
+
+def ram_since(
+    before: tuple[int | None, int | None], device: str
+) -> int | None:
+    rss_after = process_peak_rss_bytes()
+    alloc_after = device_allocated_bytes(device)
+    if before[1] is not None and alloc_after is not None:
+        return max(0, alloc_after - before[1])
+    if before[0] is not None and rss_after is not None:
+        return max(0, rss_after - before[0])
+    return None
+
+
 def coreml_available() -> bool:
     if os.environ.get("TEMSEG_COREML", "").strip().lower() in ("0", "false", "no"):
         return False
@@ -79,7 +116,12 @@ def choose_backends(
         if key in _backend_cache:
             return _backend_cache[key]
         sam: SamBackend = CoreMLSamBackend(ENC_PKG, DEC_PKG, device)
+        # ram_bytes only makes sense for in-process backends: CoreML memory
+        # lives in the ANE driver process, so its RSS delta would be a lie.
+        # The torch sam's number is measured at the weight load site
+        # (yolosam components build) and stashed on the module itself.
         prompt_sam = TorchSamBackend(components["sam"], device)
+        prompt_sam.ram_bytes = getattr(components["sam"], "ram_bytes", None)
         cached = (yolo, sam, prompt_sam)
         _backend_cache[key] = cached
         return cached
@@ -88,6 +130,7 @@ def choose_backends(
         return _backend_cache[key]
     sam_cls = FasterTorchSamBackend if faster else TorchSamBackend
     sam = sam_cls(components["sam"], device)
+    sam.ram_bytes = getattr(components["sam"], "ram_bytes", None)
     cached = (yolo, sam, None)
     _backend_cache[key] = cached
     return cached
