@@ -337,6 +337,19 @@ export async function getSessionMetadata(
   return res.json();
 }
 
+export interface RecentSession {
+  session_id: string;
+  file_name: string;
+  last_updated_at: number;
+  file_size_bytes: number | null;
+}
+
+export async function getRecentSessions(): Promise<RecentSession[]> {
+  const res = await trackedFetch(`${BASE_URL}/sessions/recent`);
+  if (!res.ok) throw new Error(`getRecentSessions: ${res.status}`);
+  return res.json();
+}
+
 export async function updatePixelSize(
   sessionId: string,
   pixelSize: number,
@@ -359,15 +372,22 @@ export async function getStats(sessionId: string): Promise<StatsResult | null> {
   return res.json();
 }
 
+export interface SystemModel {
+  key: string;
+  name: string;
+  loaded: boolean;
+  engine: "coreml" | "onnx" | "torch" | null;
+  runs_on: string | null;
+  ram_bytes: number | null;
+  weights: { name: string; present: boolean; size_mb: number }[];
+}
+
 export interface SystemInfo {
   device: string;
   log_dir: string;
-  backends: {
-    yolo?: string;
-    sam?: string;
-    prompt_sam?: string | null;
-  };
-  weights: { filename: string; size_mb: number; present: boolean }[];
+  weights_dir: string;
+  peak_rss_bytes: number | null;
+  models: SystemModel[];
 }
 
 export async function getSystemInfo(): Promise<SystemInfo> {

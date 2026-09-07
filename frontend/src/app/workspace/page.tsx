@@ -7,10 +7,10 @@ import {
   Upload, Play, Sliders,
   Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
   Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
-  Maximize, Minus, Plus, Square,
+  Maximize, Minus, Plus, Square, File,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
 import { nextFreeId } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -41,7 +41,7 @@ interface ImgSize{
   height: number;
 }
 
-type SidebarTab = "segment" | "refine" | "augment" | "analysis" | "settings";
+type SidebarTab = "segment" | "refine" | "augment" | "analysis";
 type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
@@ -57,6 +57,21 @@ const TOAST_DURATION = 2500;
 const TOAST_CLASS: Record<ToastKind, string> = {
   ok: styles.toastOk, info: styles.toastInfo, warn: styles.toastWarn, err: styles.toastErr,
 };
+
+// "3.2 MB · 09-02 · 0003" — recents-row meta; size is null if the org file went missing.
+function formatRecentMeta(s: RecentSession): string {
+  const parts: string[] = [];
+  if (s.file_size_bytes != null) parts.push(`${(s.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`);
+  const d = new Date(s.last_updated_at * 1000);
+  parts.push(`${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  parts.push(s.session_id);
+  return parts.join(" · ");
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
 
 // Self-dismissing toast. Auto-dismisses after TOAST_DURATION; hovering pins
 // it (timer re-arms from the remaining time on mouse leave); clicking
@@ -191,6 +206,7 @@ export default function Workspace() {
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
   const [activityOpen, setActivityOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // transient toasts — push for things worth surfacing beyond the status pill
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -211,8 +227,8 @@ export default function Workspace() {
   // sidebar tab: which of the 3 action groups is showing
   const [activeTab, setActiveTab] = useState<SidebarTab>("segment");
 
-  // system info feeds the footer device chip and the Settings pane; the
-  // mount fetch covers the chip, the settings-tab fetch refreshes the pane.
+  // system info feeds the footer device chip and the Settings modal; the
+  // mount fetch covers the chip, the settings-open fetch refreshes the modal.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   useEffect(() => {
     getSystemInfo()
@@ -241,11 +257,11 @@ export default function Workspace() {
   const konvaContrast = Math.max(-100, Math.min(100, (contrast - 1) * 80));
 
   useEffect(() => {
-    if (activeTab !== "settings") return;
+    if (!settingsOpen) return;
     getSystemInfo()
       .then(setSystemInfo)
       .catch(err => console.error("getSystemInfo failed:", err));
-  }, [activeTab]);
+  }, [settingsOpen]);
 
   // which method is showing in the Point/Box/Similar sub-window
   const [augmentMethod, setAugmentMethod] = useState<AugmentMethod>("click");
@@ -353,6 +369,14 @@ export default function Workspace() {
       );
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // MRU sessions for the empty-state recents rows (backend returns newest-first).
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  useEffect(() => {
+    getRecentSessions()
+      .then(setRecentSessions)
+      .catch(() => setRecentSessions([]));
   }, []);
 
   // zoom/pan
@@ -1610,8 +1634,8 @@ export default function Workspace() {
             </button>
             <div className={styles.railSpacer} />
             <button type="button"
-              className={`${styles.railBtn} ${activeTab === "settings" ? styles.railBtnActive : ""}`}
-              onClick={() => switchTab("settings")}
+              className={`${styles.railBtn} ${settingsOpen ? styles.railBtnActive : ""}`}
+              onClick={() => setSettingsOpen(true)}
               title="Settings"
             >
               <Settings size={16} /><span className={styles.railLabel}>Settings</span>
@@ -1623,7 +1647,7 @@ export default function Workspace() {
           <aside className={styles.sidebar}>
 
             <p className={styles.paneHead}>
-              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis", settings: "Settings" }[activeTab]}
+              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis" }[activeTab]}
             </p>
 
             {activeTab === "segment" && (
@@ -2235,69 +2259,6 @@ export default function Workspace() {
               </>
             )}
 
-            {activeTab === "settings" && (
-              <>
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>Pipeline</p>
-                  {systemInfo ? (
-                    <div className={styles.subWindow}>
-                      <p className={styles.sidebarHint}>device · {systemInfo.device}</p>
-                      <p className={styles.sidebarHint}>yolo · {systemInfo.backends.yolo ?? "not loaded"}</p>
-                      <p className={styles.sidebarHint}>sam · {systemInfo.backends.sam ?? "not loaded"}</p>
-                      {systemInfo.backends.prompt_sam && (
-                        <p className={styles.sidebarHint}>prompts · {systemInfo.backends.prompt_sam}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className={styles.sidebarHint}>Loading pipeline info…</p>
-                  )}
-                </section>
-
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>Weights</p>
-                  {systemInfo && (
-                    <div className={styles.subWindow}>
-                      {(() => {
-                        const byPkg = new Map<string, { size: number; present: boolean }>();
-                        for (const w of systemInfo.weights) {
-                          const pkg = w.filename.split("/")[0];
-                          const cur = byPkg.get(pkg) ?? { size: 0, present: true };
-                          cur.size += w.size_mb;
-                          cur.present = cur.present && w.present;
-                          byPkg.set(pkg, cur);
-                        }
-                        return Array.from(byPkg.entries()).map(([pkg, s]) => (
-                          <p key={pkg} className={styles.sidebarHint}>
-                            {s.present ? "✓" : "✗"} {pkg} · {s.size.toFixed(0)} MB
-                          </p>
-                        ));
-                      })()}
-                    </div>
-                  )}
-                </section>
-
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>Shortcuts</p>
-                  <div className={styles.subWindow}>
-                    <p className={styles.sidebarHint}>wheel / pinch — zoom at cursor</p>
-                    <p className={styles.sidebarHint}>space + drag — pan</p>
-                    <p className={styles.sidebarHint}>[ / ] — mask opacity</p>
-                    <p className={styles.sidebarHint}>refine — drag vertices, delete/backspace removes selection</p>
-                  </div>
-                </section>
-
-                <section className={styles.sidebarSection}>
-                  <p className={styles.sidebarLabel}>App</p>
-                  <div className={styles.subWindow}>
-                    {systemInfo && (
-                      <p className={styles.sidebarHint}>logs · {systemInfo.log_dir}</p>
-                    )}
-                    <p className={styles.sidebarHint}>version · 0.1.0</p>
-                  </div>
-                </section>
-              </>
-            )}
-
           </aside>
 
           {/* canvas */}
@@ -2311,15 +2272,27 @@ export default function Workspace() {
                 onClick={() => fileRef.current?.click()}
               >
                 <div className={styles.emptyInner}>
-                  <svg className={styles.emptyMark} viewBox="0 0 32 32" aria-hidden="true">
-                    <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--accent)" opacity=".9" />
-                    <circle cx="12.5" cy="12" r="4.6" fill="#fff" opacity=".95" />
-                    <circle cx="20" cy="19" r="3.2" fill="#fff" opacity=".8" />
-                    <circle cx="22.5" cy="11.5" r="2.2" fill="#fff" opacity=".6" />
-                  </svg>
-                  <h2 className={styles.emptyTitle}>Open an image</h2>
-                  <p className={styles.dropLabel}>Drop image here or click to upload</p>
-                  <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+                  <div className={styles.dropBox}>
+                    <Upload size={32} strokeWidth={1.5} />
+                    <p className={styles.dropLabel}>Drop image here or click to upload</p>
+                    <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+                  </div>
+                  {recentSessions.length > 0 && (
+                    <div className={styles.recents} onClick={e => e.stopPropagation()}>
+                      <div className={styles.recentsHead}><span>Recent</span><span>session dir</span></div>
+                      {recentSessions.map(s => (
+                        <button
+                          key={s.session_id}
+                          className={styles.recentRow}
+                          onClick={() => window.location.assign(`/workspace?session=${s.session_id}`)}
+                        >
+                          <File size={13} className={styles.recentIco} />
+                          <span className={styles.recentName}>{s.file_name}</span>
+                          <span className={styles.recentMeta}>{formatRecentMeta(s)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -2954,6 +2927,72 @@ export default function Workspace() {
           </span>
         </footer>
 
+        {settingsOpen && (
+          <div className={styles.modalRoot}>
+            <div className={styles.modalBackdrop} onClick={() => setSettingsOpen(false)} />
+            <div className={styles.modal}>
+              <div className={styles.modalHead}>
+                <div>
+                  <h3>Settings</h3>
+                </div>
+                <button type="button" className={styles.modalClose} onClick={() => setSettingsOpen(false)}>✕</button>
+              </div>
+              <div className={styles.modalBody}>
+                {systemInfo ? (
+                  <>
+                    <div className={styles.settingsGroup}>
+                      <p className={styles.settingsGroupLabel}>models</p>
+                      {systemInfo.models.map(m => (
+                        <div key={m.key}>
+                          <div className={styles.settingsRow}>
+                            <span className={m.loaded ? styles.settingsDotOn : styles.settingsDot} />
+                            <span className={styles.settingsName}>{m.name}</span>
+                            <span className={styles.settingsMeta}>
+                              {m.loaded && m.engine
+                                ? `${m.engine} · ${m.runs_on}${m.ram_bytes ? ` · ${formatBytes(m.ram_bytes)}` : ""}`
+                                : "not loaded"}
+                            </span>
+                          </div>
+                          {m.weights.map(w => (
+                            <div key={w.name} className={styles.settingsWeight}>
+                              <span className={styles.settingsWeightName} title={w.name}>{w.name}</span>
+                              <span className={styles.settingsWeightSize}>
+                                {w.present ? `${Math.round(w.size_mb)} MB` : "missing"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      <p className={styles.settingsPath} title={systemInfo.weights_dir}>{systemInfo.weights_dir}</p>
+                    </div>
+
+                    <div className={styles.settingsGroup}>
+                      <p className={styles.settingsGroupLabel}>app</p>
+                      <div className={styles.settingsRow}>
+                        <span className={styles.settingsKey}>logs</span>
+                        <span className={`${styles.settingsVal} ${styles.settingsValPath}`} title={systemInfo.log_dir}>
+                          {systemInfo.log_dir}
+                        </span>
+                      </div>
+                      {systemInfo.peak_rss_bytes != null && (
+                        <div className={styles.settingsRow}>
+                          <span className={styles.settingsKey}>ram (peak)</span>
+                          <span className={styles.settingsVal}>{formatBytes(systemInfo.peak_rss_bytes)}</span>
+                        </div>
+                      )}
+                      <div className={styles.settingsRow}>
+                        <span className={styles.settingsKey}>version</span>
+                        <span className={styles.settingsVal}>0.1.0</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className={styles.sidebarHint}>loading model info…</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {helpOpen && (
           <div className={styles.modalRoot}>
             <div className={styles.modalBackdrop} onClick={() => setHelpOpen(false)} />

@@ -149,6 +149,10 @@ border-bottom: 1px solid var(--border);
 background: var(--bg);
 flex-shrink: 0;
 gap: 16px;
+/* sit above the empty-state dropZone (z-5): it otherwise covers and eats
+   clicks meant for the model/depth dropdown lists, which open below the bar.
+   Stays under modal (90) and toast (100). */
+z-index: 20;
 }
 .topbarLeft { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .topbarCentre {
@@ -369,6 +373,75 @@ margin-bottom: 2px;
 }
 .modalClose:hover { background: var(--bg-hover); color: var(--text); }
 .modalBody { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+.settingsGroup { display: flex; flex-direction: column; gap: 2px; }
+.settingsGroup + .settingsGroup {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.settingsGroupLabel {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin-bottom: 5px;
+}
+.settingsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  min-width: 0;
+}
+.settingsDot,
+.settingsDotOn {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.settingsDot { background: var(--text-blast); }
+.settingsDotOn { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.settingsName { font-size: 11.5px; color: var(--text); white-space: nowrap; }
+.settingsMeta { margin-left: auto; font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+.settingsWeight {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1.5px 0 1.5px 14px;
+  min-width: 0;
+}
+.settingsWeightName {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.settingsWeightSize { margin-left: auto; font-size: 10px; color: var(--text-ghost); white-space: nowrap; }
+.settingsPath {
+  font-size: 10px;
+  color: var(--text-ghost);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  padding: 6px 0 2px 14px;
+}
+.settingsKey { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+.settingsVal {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.settingsValPath { direction: rtl; text-align: right; }
 
 .kbdRow {
   display: grid;
@@ -672,17 +745,78 @@ text-align: center;
 width: 460px;
 padding: 20px;
 }
-.emptyMark { width: 34px; height: 34px; border-radius: 8px; margin-bottom: 12px; }
-.emptyTitle {
-font-size: 14px;
-font-weight: 650;
-letter-spacing: 0.05em;
-text-transform: uppercase;
-color: var(--text-dim);
-margin: 0;
+.dropBox {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+gap: 10px;
+width: 380px;
+padding: 28px 16px;
+border: 1.5px dashed var(--border);
+border-radius: 8px;
+color: var(--text-ghost);
+transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
-.dropLabel { font-size: 12px; color: inherit; margin: 6px 0 0; }
-.dropHint { font-size: 11px; color: var(--text-blast); margin: 4px 0 0; }
+.dropBox:hover { border-color: var(--accent); color: var(--accent); }
+.dropZoneDragging .dropBox {
+border-color: var(--accent);
+color: var(--accent);
+background: var(--accent-soft);
+}
+.dropLabel { font-size: 12px; color: inherit; margin: 0; }
+.dropHint { font-size: 11px; color: var(--text-blast); margin: 0; }
+
+.recents {
+width: 100%;
+margin: 14px 0 4px;
+border: 1px solid var(--border);
+background: var(--bg-elev);
+cursor: default;
+text-align: left;
+}
+.recentsHead {
+display: flex;
+justify-content: space-between;
+padding: 4px 10px;
+font-size: 9px;
+font-weight: 700;
+letter-spacing: 0.11em;
+text-transform: uppercase;
+color: var(--text-ghost);
+background: var(--bg-hover);
+border-bottom: 1px solid var(--border);
+}
+.recentRow {
+display: flex;
+align-items: center;
+gap: 9px;
+width: 100%;
+padding: 6px 10px;
+border: none;
+border-bottom: 1px solid var(--border);
+background: transparent;
+color: var(--text-dim);
+font-family: inherit;
+text-align: left;
+cursor: pointer;
+}
+.recentRow:last-child { border-bottom: none; }
+.recentRow:hover { background: var(--bg-hover); color: var(--text); }
+.recentIco { flex-shrink: 0; color: var(--text-ghost); }
+.recentName {
+flex: 1;
+min-width: 0;
+font-size: 10.5px;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.recentMeta {
+flex-shrink: 0;
+font-size: 9.5px;
+color: var(--text-ghost);
+}
 
 .imageViewport {
 position: relative;
