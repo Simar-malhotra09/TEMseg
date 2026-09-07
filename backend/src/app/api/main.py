@@ -9,13 +9,28 @@ from typing import Dict
 from uuid import uuid4
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
-from app.api.routers import images, segment, ground_truths, masks, export, rf, config
+from app.api.routers import (
+    images,
+    segment,
+    ground_truths,
+    masks,
+    export,
+    rf,
+    config,
+    sessions,
+)
 from app.api.live_models import AvailableModels
 from app.api.model_registry import get_device, get_or_load_model
 
 from typing import List
 
-from app.logutils import get_logger, init_logging, set_request_id, ui_event, get_ui_events
+from app.logutils import (
+    get_logger,
+    init_logging,
+    set_request_id,
+    ui_event,
+    get_ui_events,
+)
 
 init_logging()
 log = get_logger("api")
@@ -97,6 +112,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
     log.error(f"Unhandled error on {request.url.path}: {exc!r}")
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
 app.include_router(images.router)
 app.include_router(segment.router)
 app.include_router(ground_truths.router)
@@ -104,6 +121,7 @@ app.include_router(masks.router)
 app.include_router(export.router)
 app.include_router(rf.router)
 app.include_router(config.router)
+app.include_router(sessions.router)
 
 
 @app.get("/")
@@ -122,50 +140,99 @@ def ui_events(since: int = 0):
     return {"events": get_ui_events(since)}
 
 
+def _engine_of(backend) -> str | None:
+    if backend is None:
+        return None
+    name = type(backend).__name__.lower()
+    if "coreml" in name:
+        return "coreml"
+    if "ort" in name or "onnx" in name:
+        return "onnx"
+    return "torch"
+
+
+def _weight_entry(path: Path) -> dict:
+    if path.is_dir():
+        size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    elif path.exists():
+        size = path.stat().st_size
+    else:
+        size = 0
+    return {
+        "name": path.name,
+        "present": path.exists(),
+        "size_mb": round(size / (1024 * 1024), 1),
+    }
+
+
 @app.get("/system/info")
 def system_info(request: Request):
-    """Active backends, device, weight presence and log dir — Settings pane."""
-    import json
-    import sys
-
+    """For settings panel in client"""
     from app.logutils import default_log_dir
+    from app.models.backends.selection import (
+        DEC_PKG,
+        ENC_PKG,
+        YOLO_PKG,
+        coreml_available,
+        process_peak_rss_bytes,
+    )
     from app.models.helpers.settings import settings
 
-    info = {
-        "device": get_device(),
-        "log_dir": str(default_log_dir()),
-        "backends": {},
-        "weights": [],
-    }
+    device = get_device()
     yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-    if yolosam is not None:
-        info["backends"] = {
-            "yolo": type(yolosam._yolo).__name__,
-            "sam": type(yolosam._sam).__name__,
-            "prompt_sam": (
-                type(yolosam._prompt_sam).__name__
-                if yolosam._prompt_sam is not None
-                else None
+    coreml = coreml_available()
+
+    def role(key, name, backend, weight_paths):
+        engine = _engine_of(backend)
+        return {
+            "key": key,
+            "name": name,
+            "loaded": backend is not None,
+            "engine": engine,
+            "runs_on": (
+                "apple neural engine" if engine == "coreml" else device
+            ) if backend is not None else None,
+            "ram_bytes": (
+                getattr(backend, "ram_bytes", None) if backend is not None else None
             ),
+            "weights": [_weight_entry(Path(p)) for p in weight_paths],
         }
-    if getattr(sys, "frozen", False):
-        manifest_path = Path(sys._MEIPASS) / "weight_manifest.json"
-    else:
-        manifest_path = Path(__file__).resolve().parents[4] / "weight_manifest.json"
-    if manifest_path.exists():
-        try:
-            data = json.load(open(manifest_path))
-            for entry in data.get("weights", []):
-                info["weights"].append(
-                    {
-                        "filename": entry["filename"],
-                        "size_mb": entry.get("size_mb"),
-                        "present": (settings.WEIGHTS_DIR / entry["filename"]).exists(),
-                    }
-                )
-        except Exception:
-            log.warning("Could not read weight manifest for /system/info")
-    return info
+
+    yolo_backend = yolosam._yolo if yolosam is not None else None
+    sam_backend = yolosam._sam if yolosam is not None else None
+    models = [
+        role(
+            "yolo",
+            "yolo",
+            yolo_backend,
+            [YOLO_PKG] if coreml else [settings.YOLO_MODEL_PATH],
+        ),
+        role(
+            "sam",
+            "sam",
+            sam_backend,
+            [ENC_PKG, DEC_PKG] if coreml else [settings.SAM_MODEL_PATH],
+        ),
+    ]
+    if coreml:
+        # classic path serves prompts from the same torch sam; only coreml
+        # keeps a separate prompt model
+        prompt_backend = yolosam._prompt_sam if yolosam is not None else None
+        models.append(
+            role(
+                "prompt_sam",
+                "sam (prompts)",
+                prompt_backend,
+                [settings.SAM_MODEL_PATH],
+            )
+        )
+    return {
+        "device": device,
+        "log_dir": str(default_log_dir()),
+        "weights_dir": str(settings.WEIGHTS_DIR),
+        "peak_rss_bytes": process_peak_rss_bytes(),
+        "models": models,
+    }
 
 
 def cleanup_old_sessions(max_age_hours: int = 24, force=False):

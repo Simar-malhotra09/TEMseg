@@ -9,6 +9,7 @@ import cv2 as cv
 import sys
 import os
 from app.logutils import get_logger, ui_event
+from app.api.routers.sessions import update_mru
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/images")
@@ -289,6 +290,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     logger.info(
         f"Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}"
     )
+    update_mru(session_id)
 
     fname = file.filename.lower()
     arr = None
@@ -379,6 +381,8 @@ async def get_image(session_id: str):
 
     if not files:
         return {"error": f"No file exists for session id: {session_id}"}
+
+    update_mru(session_id)
 
     file = files[0]
 
