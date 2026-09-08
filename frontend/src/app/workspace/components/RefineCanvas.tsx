@@ -297,6 +297,25 @@ export default function RefineCanvas({
               onMouseLeave={() => setHover(h => (h?.id === inst.id ? null : h))}
             />
 
+            {/* disconnected fragments of the same instance */}
+            {(inst.extra_contours ?? []).map((c, ci) => (
+              <polygon
+                key={`x-${inst.id}-${ci}`}
+                points={pointsStr(c)}
+                fill={color}
+                fillOpacity={polygonOpacity}
+                stroke={color}
+                strokeWidth={isSelected ? 2.5 * s2i : 1.5 * s2i}
+                opacity={isSelected ? 1 : 0.7}
+                style={{ cursor: splitMode ? "crosshair" : "pointer" }}
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!splitMode) onSelect(inst.id);
+                }}
+                pointerEvents="all"
+              />
+            ))}
+
             {isSelected && !splitMode && (
               <>
                 {/* wider invisible stroke over edges — click to insert vertex */}

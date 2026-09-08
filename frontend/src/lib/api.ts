@@ -264,6 +264,9 @@ export interface UploadResponse {
 export interface Instance {
   id: number;
   contour: [number, number][];
+  // disconnected fragments of the same instance (satellite blobs) — same
+  // polygon format as contour; drawn alongside it, never silently dropped
+  extra_contours?: [number, number][][];
   bbox: { x: number; y: number; w: number; h: number };
   area: number;
   // Optional: present on instances created via /from-points or /propose-similar

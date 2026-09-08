@@ -2825,6 +2825,17 @@ export default function Workspace() {
                           >
                             <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
                           </polygon>
+                          {(p.extra_contours ?? []).map((c, ci) => (
+                            <polygon
+                              key={`xp-${ci}`}
+                              points={c.map(([x, y]) => `${x},${y}`).join(" ")}
+                              fill="#ffd166"
+                              fillOpacity={0.18}
+                              stroke="#ffd166"
+                              strokeWidth={2}
+                              pointerEvents="none"
+                            />
+                          ))}
                         </g>
                       );
                     })}

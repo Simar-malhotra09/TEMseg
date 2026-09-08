@@ -81,6 +81,24 @@ export default function ParticleHighlight({
         className={styles.pulse}
       />
 
+      {/* disconnected fragments of the same particle */}
+      {(instance.extra_contours ?? []).map((c, ci) => {
+        const pts = c.map(([x, y]) => `${x},${y}`).join(" ");
+        return (
+          <g key={`x-${ci}`}>
+            <polygon points={pts} fill="#7ee8a2" fillOpacity={0.15} stroke="none" />
+            <polygon
+              points={pts}
+              fill="none"
+              stroke="#7ee8a2"
+              strokeWidth={strokeWidth}
+              filter="url(#highlight-glow)"
+              className={styles.pulse}
+            />
+          </g>
+        );
+      })}
+
       {/* ID label */}
       <circle cx={cx} cy={cy} r={labelR} fill="#0d0d0d" fillOpacity={0.8} stroke="#7ee8a2" strokeWidth={1} />
       <text

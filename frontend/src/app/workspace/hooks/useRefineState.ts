@@ -43,7 +43,10 @@ export function useRefineState({
   // rotation state applies to selected instance or clipboard preview
   const [rotationDeg, setRotationDeg] = useState(0);
   // original contour before rotation starts (for handle-based rotation)
-  const [rotateOriginal, setRotateOriginal] = useState<[number, number][] | null>(null);
+  const [rotateOriginal, setRotateOriginal] = useState<{
+    contour: [number, number][];
+    extra?: [number, number][][];
+  } | null>(null);
 
   // global polygon fill opacity in refine mode
   const [polygonOpacity, setPolygonOpacity] = useState(0.2);
@@ -212,6 +215,9 @@ export function useRefineState({
     const newInstance: Instance = {
       id: nextFreeId(instancesRef.current.map(i => i.id)),
       contour: shiftedContour,
+      extra_contours: (clipboard.extra_contours ?? []).map(c =>
+        c.map(([x, y]) => [x + (px - cx), y + (py - cy)] as [number, number])
+      ),
       bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
       area: clipboard.area,
     };
@@ -226,7 +232,7 @@ export function useRefineState({
     if (selectedId === null) return;
     const inst = instancesRef.current.find(i => i.id === selectedId);
     if (!inst) return;
-    setRotateOriginal(inst.contour);
+    setRotateOriginal({ contour: inst.contour, extra: inst.extra_contours });
   }, [selectedId]);
 
   // during rotation drag — compute angle from centroid to mouse, rotate original contour
@@ -234,8 +240,8 @@ export function useRefineState({
     if (selectedId === null || !rotateOriginal) return;
     const [mx, my] = mousePos;
 
-    const cx = rotateOriginal.reduce((s, [x]) => s + x, 0) / rotateOriginal.length;
-    const cy = rotateOriginal.reduce((s, [, y]) => s + y, 0) / rotateOriginal.length;
+    const cx = rotateOriginal.contour.reduce((s, [x]) => s + x, 0) / rotateOriginal.contour.length;
+    const cy = rotateOriginal.contour.reduce((s, [, y]) => s + y, 0) / rotateOriginal.contour.length;
 
     const deg = (Math.atan2(my - cy, mx - cx) * 180) / Math.PI - 90;
     setRotationDeg(deg);
@@ -244,11 +250,14 @@ export function useRefineState({
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
 
-    const rotated = rotateOriginal.map(([x, y]) => {
+    const rotatePts = (pts: [number, number][]) => pts.map(([x, y]) => {
       const dx = x - cx;
       const dy = y - cy;
       return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as [number, number];
     });
+
+    const rotated = rotatePts(rotateOriginal.contour);
+    const rotatedExtras = (rotateOriginal.extra ?? []).map(rotatePts);
 
     const xs = rotated.map(p => p[0]);
     const ys = rotated.map(p => p[1]);
@@ -258,7 +267,7 @@ export function useRefineState({
     commit(
       instancesRef.current.map(i =>
         i.id === selectedId
-          ? { ...i, contour: rotated, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } }
+          ? { ...i, contour: rotated, extra_contours: rotatedExtras, bbox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } }
           : i
       )
     );

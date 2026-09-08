@@ -16,7 +16,7 @@ from app.api.utils import (
     colorize_components_inplace,
     batch_seg_patches,
 )
-from app.api.instances import extract_instances
+from app.api.instances import extract_instances, colorize_labeled_mask
 from app.logutils import Timer, get_logger, ui_event
 
 
@@ -200,8 +200,6 @@ async def segment(req: SegmentRequest, request: Request):
                     "warning": "No particles were detected! ",
                 }
 
-            save_mask = colorize_components_inplace(mask) if req.colorize else mask
-
         if mask is None or mask.size == 0:
             ui_event(
                 "SEGMENT_FAILED",
@@ -210,19 +208,6 @@ async def segment(req: SegmentRequest, request: Request):
                 level="error",
             )
             return {"error": "Mask is empty"}
-
-        with t.step("save"):
-            mask_path = session_dir / "mask.png"
-            success = cv.imwrite(str(mask_path), save_mask)
-
-        if not success:
-            ui_event(
-                "SEGMENT_FAILED",
-                "Segmentation finished, but the result could not be saved. "
-                "Check that the app has disk access and try again.",
-                level="error",
-            )
-            return {"error": "Failed to save mask"}
 
         # ── save YOLO debug boxes overlay ────────────────────────────
         debug_boxes_url = None
@@ -283,6 +268,31 @@ async def segment(req: SegmentRequest, request: Request):
         except Exception as e:
             # non-fatal — instances can be recomputed on demand in GET /masks/.../instances
             logger.warning(f"Particle extraction skipped (non-fatal): {e}")
+
+        with t.step("save"):
+            # YoloSAM-family masks colour per instance; touching particles get
+            # distinct hues. Other models fall back to per-component colours.
+            if (
+                req.colorize
+                and labeled is not None
+                and getattr(result, "instance_labels", None) is not None
+            ):
+                save_mask = colorize_labeled_mask(labeled)
+            elif req.colorize:
+                save_mask = colorize_components_inplace(mask)
+            else:
+                save_mask = mask
+            mask_path = session_dir / "mask.png"
+            success = cv.imwrite(str(mask_path), save_mask)
+
+        if not success:
+            ui_event(
+                "SEGMENT_FAILED",
+                "Segmentation finished, but the result could not be saved. "
+                "Check that the app has disk access and try again.",
+                level="error",
+            )
+            return {"error": "Failed to save mask"}
 
         # comute stats
         import json

@@ -140,6 +140,14 @@ async def get_instances(session_id: str):
     return {"instances": instances}
 
 
+def _same_geometry(old: dict, new: dict) -> bool:
+    """True when both instances describe the same outline(s)."""
+    return (
+        old.get("contour") == new.get("contour")
+        and (old.get("extra_contours") or []) == (new.get("extra_contours") or [])
+    )
+
+
 @router.put("/{session_id}/instances")
 async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     t = Timer(logger, "save instances")
@@ -147,9 +155,10 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
 
     cached = load_instances(session_dir)
     if cached is not None:
-        _, labeled_old = cached
+        instances_old, labeled_old = cached
         shape = labeled_old.shape
     else:
+        instances_old = None
         # No prior instances — happens when user is annotating from scratch
         # (zero-detection case). Prefer mask.png if /segment was run, else fall
         # back to original_preview.png which is always present post-upload.
@@ -171,7 +180,24 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
                 detail="No mask or preview found to infer image shape",
             )
 
-    labeled = rasterize_instances(req.instances, shape)
+    if instances_old is None:
+        labeled = rasterize_instances(req.instances, shape)
+    else:
+        # Merge instead of full rebuild: unedited instances keep their
+        # original pixels from instances.npy, so saving without edits is a
+        # no-op and can't degrade the mask; only edited ones re-rasterise
+        old_by_id = {inst["id"]: inst for inst in instances_old}
+        n_rasterized = 0
+        labeled = np.zeros(shape, dtype=np.uint16)
+        for inst in req.instances:
+            old = old_by_id.get(inst["id"])
+            if old is not None and _same_geometry(old, inst):
+                labeled[labeled_old == inst["id"]] = inst["id"]
+            else:
+                piece = rasterize_instances([inst], shape)
+                labeled[piece > 0] = piece[piece > 0]
+                n_rasterized += 1
+        t.field("rasterized", n_rasterized)
     save_instances(session_dir, req.instances, labeled)
 
     colored = colorize_labeled_mask(labeled)

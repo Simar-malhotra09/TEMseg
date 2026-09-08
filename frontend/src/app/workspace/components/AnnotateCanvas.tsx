@@ -260,14 +260,25 @@ export default function AnnotateCanvas({
         if (!inst.contour || inst.contour.length < 3) return null;
         const pts = inst.contour.map(([x, y]) => `${x},${y}`).join(" ");
         return (
-          <polygon
-            key={`existing-${inst.id}`}
-            points={pts}
-            fill="rgba(126, 232, 162, 0.10)"
-            stroke="#7ee8a2"
-            strokeWidth={strokeW * 0.7}
-            pointerEvents="none"
-          />
+          <g key={`existing-${inst.id}`}>
+            <polygon
+              points={pts}
+              fill="rgba(126, 232, 162, 0.10)"
+              stroke="#7ee8a2"
+              strokeWidth={strokeW * 0.7}
+              pointerEvents="none"
+            />
+            {(inst.extra_contours ?? []).map((c, ci) => (
+              <polygon
+                key={`xe-${ci}`}
+                points={c.map(([x, y]) => `${x},${y}`).join(" ")}
+                fill="rgba(126, 232, 162, 0.10)"
+                stroke="#7ee8a2"
+                strokeWidth={strokeW * 0.7}
+                pointerEvents="none"
+              />
+            ))}
+          </g>
         );
       })}
       {/* pending proposals  */}

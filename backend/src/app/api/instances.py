@@ -18,6 +18,9 @@ MIN_INSTANCE_AREA = 50
 MIN_EPSILON_FRAC = 0.005  # applied to instances at/above SIZE_REF_AREA_FRAC
 MAX_EPSILON_FRAC = 0.035  # applied to vanishingly small instances
 SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
+# Without a cap, a fraction of a large perimeter grows into several pixels and
+# the polygon cuts convex corners, silently shaving ~5% off the true area
+EPSILON_CAP_PX = 1.2
 
 
 def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> float:
@@ -27,7 +30,26 @@ def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> flo
     epsilon_frac = (
         MAX_EPSILON_FRAC - (MAX_EPSILON_FRAC - MIN_EPSILON_FRAC) * significance
     )
-    return epsilon_frac * perimeter
+    return min(epsilon_frac * perimeter, EPSILON_CAP_PX)
+
+
+def _simplify_blob(
+    blob: np.ndarray,
+    offset: np.ndarray,
+    area: int,
+    image_area: int,
+    epsilon_scale: float,
+) -> list | None:
+    """Simplify one contour and shift it to full-image coords.
+
+    Returns None when approximation collapses the blob below a triangle —
+    callers drop that blob, never the whole instance."""
+    perimeter = cv.arcLength(blob, True)
+    epsilon = _simplification_epsilon(perimeter, area, image_area) * epsilon_scale
+    approx = cv.approxPolyDP(blob, epsilon, True).squeeze()
+    if approx.ndim < 2 or len(approx) < 3:
+        return None
+    return (approx + offset).tolist()
 
 
 def extract_instances(
@@ -51,7 +73,7 @@ def extract_instances(
 
     If save=True, writes:
       - instances.npy  : labeled integer mask (uint16), pixel value = instance ID
-      - instances.json : list of {id, contour, bbox, area} dicts
+      - instances.json : list of {id, contour, bbox, area, extra_contours} dicts
 
     epsilon_scale relaxes (value < 1.0) or tightens (value > 1.0) polygon
     simplification. SAM masks are typically high quality, so YOLO-SAM uses a
@@ -88,28 +110,36 @@ def extract_instances(
             continue
 
         area = int(np.sum(component))
-        perimeter = cv.arcLength(contours[0], True)
-        epsilon = _simplification_epsilon(perimeter, area, image_area) * epsilon_scale
-        approx = cv.approxPolyDP(contours[0], epsilon, True)
-
-        # squeeze to [[x,y], ...], then shift back from crop-local to full-image coords
-        contour = approx.squeeze()
-        if contour.ndim < 2 or len(contour) < 3:
-            skipped += 1
-            continue
-        contour = contour + np.array([x_off, y_off])
-
-        x, y, w, h = cv.boundingRect(contours[0])
-        x, y = x + x_off, y + y_off
         if area < MIN_INSTANCE_AREA:
             skipped += 1
             continue
+
+        # findContours returns one contour per connected blob inside the
+        # label; the largest is the main outline, every other sizable blob is
+        # kept in extra_contours so no part of the instance is dropped
+        blobs = sorted(contours, key=cv.contourArea, reverse=True)
+        offset = np.array([x_off, y_off])
+        main = _simplify_blob(blobs[0], offset, area, image_area, epsilon_scale)
+        if main is None:
+            skipped += 1
+            continue
+        extras = []
+        for blob in blobs[1:]:
+            if cv.contourArea(blob) < MIN_INSTANCE_AREA:
+                continue
+            simplified = _simplify_blob(blob, offset, area, image_area, epsilon_scale)
+            if simplified is not None:
+                extras.append(simplified)
+
+        x, y, w, h = cv.boundingRect(blobs[0])
+        x, y = x + x_off, y + y_off
         instances.append(
             {
                 "id": inst_id,
-                "contour": contour.tolist(),
+                "contour": main,
                 "bbox": {"x": x, "y": y, "w": w, "h": h},
                 "area": area,
+                "extra_contours": extras,
             }
         )
 
@@ -178,6 +208,8 @@ def rasterize_instances(instances: list[dict], shape: tuple[int, int]) -> np.nda
     for inst in instances:
         contour = np.array(inst["contour"], dtype=np.int32)
         cv.fillPoly(labeled, [contour], color=inst["id"])
+        for extra in inst.get("extra_contours") or []:
+            cv.fillPoly(labeled, [np.array(extra, dtype=np.int32)], color=inst["id"])
     return labeled
 
 
