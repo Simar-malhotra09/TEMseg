@@ -502,6 +502,12 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
         # incidentally clips a neighbor (typical in tight clumps).
         cx = (x0 + x1) / 2.0
         cy = (y0 + y1) / 2.0
+
+        # box centred on an already-segmented particle can only produce a
+        # duplicate — reject before paying for a SAM call
+        if existing_mask[int(cy), int(cx)]:
+            rejected.append({"index": i, "reason": "already segmented"})
+            continue
         try:
             masks, scores, _ = predictor.predict(
                 point_coords=np.array([[cx, cy]]),
@@ -712,6 +718,12 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         px, py = float(point[0]), float(point[1])
         if not (0 <= px < w_img and 0 <= py < h_img):
             rejected.append({"index": i, "reason": "point out of bounds"})
+            continue
+
+        # click on an already-segmented particle can only produce a duplicate
+        # — reject before paying for a SAM call
+        if existing_mask[int(py), int(px)]:
+            rejected.append({"index": i, "reason": "already segmented"})
             continue
 
         constrained: np.ndarray | None = None

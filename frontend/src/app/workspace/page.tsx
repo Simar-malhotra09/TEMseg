@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
-import { nextFreeId } from "@/lib/utils";
+import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
 import { BlackoutRect }  from "./components/BlackOutCanvas";
@@ -651,7 +651,7 @@ export default function Workspace() {
     try {
       const res = await fromPoints(sessionId, [[imgX, imgY]], pendingProposals);
       if (res.proposals.length === 0) {
-        const reason = res.rejected[0]?.reason ?? "unknown";
+        const reason = describeRejection(res.rejected[0]?.reason ?? "unknown");
         setStatus(`Click rejected: ${reason}`);
         pushToast("warn", "Click rejected", reason);
         return;
@@ -770,7 +770,7 @@ export default function Workspace() {
     try {
       const res = await fromBoxes(sessionId, [box], pendingProposals);
       if (res.proposals.length === 0) {
-        const reason = res.rejected[0]?.reason ?? "unknown";
+        const reason = describeRejection(res.rejected[0]?.reason ?? "unknown");
         setStatus(`Box rejected: ${reason}`);
         pushToast("warn", "Box rejected", reason);
         return;
@@ -2009,6 +2009,23 @@ export default function Workspace() {
                   )}
                 </div>
 
+                {/* mask opacity, same control as the segment tab — here so the
+                    user can see what's already segmented while adding more */}
+                {seg.segDone && seg.masksVisible && (
+                  <div className={styles.subWindow}>
+                    <p className={styles.subWindowTitle}>Display</p>
+                    <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
+                    <input
+                      type="range"
+                      min={5}
+                      max={100}
+                      value={Math.round(polygonOpacity * 100)}
+                      onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                )}
+
                 <div className={styles.subWindow}>
                   <p className={styles.subWindowTitle}>RF Recovery</p>
 
@@ -2481,8 +2498,10 @@ export default function Workspace() {
                       position: "absolute", top: 0, left: 0,
                       width: "100%", height: "100%",
                       cursor: bootstrapBusy ? "wait" : "crosshair",
-                      // subtle tint so the user knows the mode is active
-                      background: "rgba(108, 99, 255, 0.06)",
+                      // thin accent outline so the user knows the mode is
+                      // active — no colour wash over the image itself
+                      boxShadow: "inset 0 0 0 2px rgba(126, 232, 162, 0.5)",
+                      borderRadius: 2,
                       pointerEvents: "auto",
                     }}
                   />

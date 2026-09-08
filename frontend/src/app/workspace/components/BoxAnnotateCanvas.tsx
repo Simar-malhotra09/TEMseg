@@ -203,7 +203,6 @@ export default function BoxAnnotateCanvas({
         width: viewportWidth,
         height: viewportHeight,
         cursor: busy ? "wait" : panHeld ? "grab" : "crosshair",
-        background: "rgba(255, 209, 102, 0.04)",
         userSelect: "none",
         pointerEvents: "auto",
         zIndex: 12,
@@ -224,6 +223,18 @@ export default function BoxAnnotateCanvas({
         height={imgHeight}
         preserveAspectRatio="none"
         style={{ filter: imageFilter }}
+      />
+      {/* thin accent outline so the user knows box mode is active — no
+          colour wash over the image itself */}
+      <rect
+        x={0}
+        y={0}
+        width={imgWidth}
+        height={imgHeight}
+        fill="none"
+        stroke="rgba(126, 232, 162, 0.5)"
+        strokeWidth={2 * zoomScale}
+        pointerEvents="none"
       />
       {existingInstances.map(inst => {
         if (!inst.contour || inst.contour.length < 3) return null;
