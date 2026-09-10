@@ -2,6 +2,11 @@
 One entry per week (dated by the Monday) or in case of majorish additions. Weeks with nothing worth noting are skipped.
 
 ### 2026-09-02
+- Porting weights to Core ML. We use ARM Macs' [MPS](https://developer.apple.com/metal/pytorch/) PyTorch backend to provide GPU support for Apple Silicon Macs. Apple also has a framework called [Core ML](https://developer.apple.com/documentation/coreml), which is designed to make on-device inference faster. We port weights from `.pth`/ONNX to Core ML's `.mlmodelc` format and use them if the device supports it, with an optional fallback to ONNX. This ensures we squeeze out as much performance as possible. The appropriate weights should be downloaded automatically on first startup. In addition, you can manually override this and download the ONNX weights as well.
+- Reducing the PyTorch dependency on ARM Macs. Using Core ML has the additional benefit of reducing the number of PyTorch operations we use. If we can find a way for SAM prompting to work with Core ML, and handwrite some not-so-complex kernels, we should be able to remove it as a dependency altogether, saving about 250 MB in the final bundle.
+- UI updates like brightness/contrast sliders, light/dark themes, a "Recently Opened" component, and live RSS.
+
+### 2026-09-02
 - New variant: FasterYoloSAM: same output as YoloSAM with a faster SAM decode (fused mask union, faster attention), available in the model list and the batch API. It shares its YOLO session and SAM weights with YoloSAM, so loading both costs one set of weights.
 - SAM encoder depth option: Full (12 layers) or Truncation (first 8 layers) for a faster encode (up to 1.4x over 42 images). [Fixed: see edit] Some quality degradation, mostly seen in terms of instance-level separation. Available with both YoloSAM and FasterYoloSAM.
 - Backend warms YOLO up while the server starts, so the first segmentation after launch skips the one-time ~6 s model compile on MPS (replaces warming on image upload).
