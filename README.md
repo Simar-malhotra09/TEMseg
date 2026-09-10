@@ -1,7 +1,7 @@
 ## Status Log
 One entry per week (dated by the Monday) or in case of majorish additions. Weeks with nothing worth noting are skipped.
 
-### 2026-09-02
+### 2026-09-10
 - Porting weights to Core ML. We use ARM Macs' [MPS](https://developer.apple.com/metal/pytorch/) PyTorch backend to provide GPU support for Apple Silicon Macs. Apple also has a framework called [Core ML](https://developer.apple.com/documentation/coreml), which is designed to make on-device inference faster. We port weights from `.pth`/ONNX to Core ML's `.mlmodelc` format and use them if the device supports it, with an optional fallback to ONNX. This ensures we squeeze out as much performance as possible. The appropriate weights should be downloaded automatically on first startup. In addition, you can manually override this and download the ONNX weights as well.
 - Reducing the PyTorch dependency on ARM Macs. Using Core ML has the additional benefit of reducing the number of PyTorch operations we use. If we can find a way for SAM prompting to work with Core ML, and handwrite some not-so-complex kernels, we should be able to remove it as a dependency altogether, saving about 250 MB in the final bundle.
 - UI updates like brightness/contrast sliders, light/dark themes, a "Recently Opened" component, and live RSS.
