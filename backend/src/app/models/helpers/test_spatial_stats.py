@@ -71,10 +71,15 @@ def test_nearest_neighbor_and_border():
         assert nn is not None, f"particle {pid}: expected NN distance"
         assert abs(nn - expected_nn) < 0.01, f"particle {pid}: NN {nn} != {expected_nn}"
 
-    # rect 1: x in [20, 49], y in [50, 89] -> min(20, 511-49, 50, 511-89) = 20
+    assert by_id[1]["nearest_neighbor_id"] == 2
+    assert by_id[2]["nearest_neighbor_id"] == 1
+
+    # rect 1: x in [20, 49], y in [50, 89] -> distances T=50, B=422, L=20, R=462
     assert by_id[1]["border_distance_px"] == 20.0
-    # rect 2: x in [300, 329], y in [60, 99] -> min(300, 182, 60, 412) = 60
+    assert by_id[1]["border_edge"] == "L"
+    # rect 2: x in [300, 329], y in [60, 99] -> T=60, B=412, L=300, R=182
     assert by_id[2]["border_distance_px"] == 60.0
+    assert by_id[2]["border_edge"] == "T"
 
     # no scale given -> no real-unit fields
     assert "nearest_neighbor_real" not in by_id[1]
@@ -131,9 +136,16 @@ def test_three_in_a_row():
     assert abs(by_id[1]["nearest_neighbor_px"] - nn12) < 0.01
     assert abs(by_id[2]["nearest_neighbor_px"] - nn12) < 0.01
     assert by_id[3]["nearest_neighbor_px"] == 70.0
+    # corner particle ties T and L at 0; documented tie order is T first
     assert by_id[1]["border_distance_px"] == 0.0
+    assert by_id[1]["border_edge"] == "T"
     assert by_id[2]["border_distance_px"] == 40.0
+    assert by_id[2]["border_edge"] == "T"
     assert by_id[3]["border_distance_px"] == 40.0
+    assert by_id[3]["border_edge"] == "T"
+    assert by_id[1]["nearest_neighbor_id"] == 2
+    assert by_id[2]["nearest_neighbor_id"] == 1
+    assert by_id[3]["nearest_neighbor_id"] == 2
 
     print("  ✓ PASSED")
 
@@ -153,8 +165,11 @@ def test_fallback_without_labeled_mask():
     stats = compute_stats_from_instances(instances, mask, labeled_mask=None)
     by_id = {p["id"]: p for p in stats["particles"]}
     assert abs(by_id[1]["nearest_neighbor_px"] - 80.0) < 0.01
+    assert by_id[1]["nearest_neighbor_id"] == 2
     assert by_id[1]["border_distance_px"] == 20.0
+    assert by_id[1]["border_edge"] == "L"
     assert by_id[2]["border_distance_px"] == 50.0
+    assert by_id[2]["border_edge"] == "T"
 
     print("  ✓ PASSED")
 

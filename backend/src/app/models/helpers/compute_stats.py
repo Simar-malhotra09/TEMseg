@@ -60,33 +60,42 @@ def _fit_ellipse_safe(cnt):
 
 def _border_distance_px(
     component: np.ndarray, sl: tuple, width: int, height: int
-) -> float:
-    """Min distance from any pixel of the component to the nearest image edge.
+) -> tuple[float, str]:
+    """Min distance from any pixel of the component to the nearest image edge,
+    and which edge it is ("T"/"B"/"L"/"R").
 
     Exact for a rectangular boundary: for each pixel the distance to the
     boundary is min(x, W-1-x, y, H-1-y), and the minimum over the component
-    is reached at one of its four bbox extremes. `sl` carries the component's
-    offset inside the full image.
+    is reached at one of its four bbox extremes. Ties break in T, B, L, R order.
+    `sl` carries the component's offset inside the full image.
     """
     ys, xs = np.nonzero(component)
     if len(xs) == 0:
-        return 0.0
+        return 0.0, "T"
     x0 = sl[1].start + int(xs.min())
     x1 = sl[1].start + int(xs.max())
     y0 = sl[0].start + int(ys.min())
     y1 = sl[0].start + int(ys.max())
-    return float(min(x0, y0, width - 1 - x1, height - 1 - y1))
+    distances = {"T": y0, "B": height - 1 - y1, "L": x0, "R": width - 1 - x1}
+    edge = min(distances, key=lambda k: distances[k])
+    return float(distances[edge]), edge
 
 
-def _contour_border_distance_px(cnt: np.ndarray, width: int, height: int) -> float:
-    """Min distance from any contour point (full-image coords) to the nearest edge."""
+def _contour_border_distance_px(
+    cnt: np.ndarray, width: int, height: int
+) -> tuple[float, str]:
+    """Min distance from any contour point (full-image coords) to the nearest
+    edge, and which edge it is. Ties break in T, B, L, R order."""
     xs = cnt[:, 0, 0] if cnt.ndim == 3 else cnt[:, 0]
     ys = cnt[:, 0, 1] if cnt.ndim == 3 else cnt[:, 1]
-    return float(
-        np.minimum(
-            np.minimum(xs, width - 1 - xs), np.minimum(ys, height - 1 - ys)
-        ).min()
-    )
+    distances = {
+        "T": int(ys.min()),
+        "B": int(height - 1 - ys.max()),
+        "L": int(xs.min()),
+        "R": int(width - 1 - xs.max()),
+    }
+    edge = min(distances, key=lambda k: distances[k])
+    return float(distances[edge]), edge
 
 
 def _component_centroid(component: np.ndarray, sl: tuple) -> tuple[float, float]:
@@ -374,12 +383,14 @@ def compute_stats_from_instances(
         # centroid of the pixel set (exact mask) or of the polygon (fallback)
         if component_sl is not None:
             cx, cy = _component_centroid(component, component_sl)
-            border_px = _border_distance_px(
+            border_px, border_edge = _border_distance_px(
                 component, component_sl, img_width, img_height
             )
         else:
             cx, cy = _polygon_centroid(cnt)
-            border_px = _contour_border_distance_px(cnt, img_width, img_height)
+            border_px, border_edge = _contour_border_distance_px(
+                cnt, img_width, img_height
+            )
 
         diameter_px = _equivalent_diameter_px(area_px)
 
@@ -450,7 +461,9 @@ def compute_stats_from_instances(
             "shape": shape,
             "bbox": inst["bbox"],
             "border_distance_px": float(border_px),
+            "border_edge": border_edge,
             "nearest_neighbor_px": None,  # filled after the loop, needs all centroids
+            "nearest_neighbor_id": None,
         }
 
         if has_scale:
@@ -471,10 +484,12 @@ def compute_stats_from_instances(
     # Single particle has no neighbor, so the field stays null rather than 0.
     if count >= 2:
         tree = cKDTree(np.array(centroids, dtype=float))
-        nn_px, _ = tree.query(tree.data, k=2)
+        nn_px, nn_idx = tree.query(tree.data, k=2)
         nn_px = nn_px[:, 1]
-        for p, d in zip(particles, nn_px):
+        nn_idx = nn_idx[:, 1]
+        for p, d, j in zip(particles, nn_px, nn_idx):
             p["nearest_neighbor_px"] = float(d)
+            p["nearest_neighbor_id"] = particles[int(j)]["id"]
             if has_scale:
                 p["nearest_neighbor_real"] = float(d) * scale
 
