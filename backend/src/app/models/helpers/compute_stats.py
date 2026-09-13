@@ -104,12 +104,14 @@ def _polygon_centroid(cnt: np.ndarray) -> tuple[float, float]:
     """Area centroid of a polygon via the shoelace formula (full-image coords)."""
     xs = cnt[:, 0, 0] if cnt.ndim == 3 else cnt[:, 0]
     ys = cnt[:, 0, 1] if cnt.ndim == 3 else cnt[:, 1]
-    cross = xs[:-1] * ys[1:] - xs[1:] * ys[:-1]
+    x_next = np.roll(xs, -1)
+    y_next = np.roll(ys, -1)
+    cross = xs * y_next - x_next * ys
     twice_area = float(cross.sum())
     if abs(twice_area) < 1e-12:
         return float(xs.mean()), float(ys.mean())
-    cx = float(np.sum((xs[:-1] + xs[1:]) * cross)) / (3.0 * twice_area)
-    cy = float(np.sum((ys[:-1] + ys[1:]) * cross)) / (3.0 * twice_area)
+    cx = float(np.sum((xs + x_next) * cross)) / (3.0 * twice_area)
+    cy = float(np.sum((ys + y_next) * cross)) / (3.0 * twice_area)
     return cx, cy
 
 

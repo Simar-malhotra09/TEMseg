@@ -138,12 +138,34 @@ def test_three_in_a_row():
     print("  ✓ PASSED")
 
 
+def test_fallback_without_labeled_mask():
+    print("\n=== fallback path: no labeled mask, polygon centroid + contour border ===")
+    mask = np.zeros((512, 512), dtype=np.uint8)
+    sq1 = [[20, 50], [40, 50], [40, 70], [20, 70]]  # centroid (30, 60), border 20
+    sq2 = [[100, 50], [120, 50], [120, 70], [100, 70]]  # centroid (110, 60), border 50
+    for s in (sq1, sq2):
+        cv.fillPoly(mask, [np.array(s, dtype=np.int32)], 255)
+    instances = [
+        {"id": 1, "contour": sq1, "bbox": {"x": 20, "y": 50, "w": 20, "h": 20}, "area": 400.0},
+        {"id": 2, "contour": sq2, "bbox": {"x": 100, "y": 50, "w": 20, "h": 20}, "area": 400.0},
+    ]
+
+    stats = compute_stats_from_instances(instances, mask, labeled_mask=None)
+    by_id = {p["id"]: p for p in stats["particles"]}
+    assert abs(by_id[1]["nearest_neighbor_px"] - 80.0) < 0.01
+    assert by_id[1]["border_distance_px"] == 20.0
+    assert by_id[2]["border_distance_px"] == 50.0
+
+    print("  ✓ PASSED")
+
+
 def run_all():
     tests = [
         test_nearest_neighbor_and_border,
         test_real_units_scale,
         test_single_particle_has_no_neighbor,
         test_three_in_a_row,
+        test_fallback_without_labeled_mask,
     ]
     passed = 0
     failed = 0
