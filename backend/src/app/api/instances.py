@@ -52,6 +52,41 @@ def _simplify_blob(
     return (approx + offset).tolist()
 
 
+def _relabel_spatially(labeled: np.ndarray) -> np.ndarray:
+    """Renumber instance labels so ids increase top-to-bottom, then left-to-right.
+
+    Order key is each component's centroid (y, then x). The lowest id goes to
+    the highest (topmost) particle, ties broken left-to-right, so a user can
+    guess roughly where an id lives in the image instead of ids scattering
+    by detection order.
+    """
+    present = [int(v) for v in np.unique(labeled) if v != 0]
+    if len(present) <= 1:
+        return labeled
+    slices = ndimage.find_objects(labeled)
+    keys = []
+    for old in present:
+        sl = slices[old - 1]  # find_objects indexes by label-1
+        if sl is None:
+            continue
+        component = labeled[sl] == old
+        if not np.any(component):
+            continue
+        ys, xs = np.nonzero(component)
+        keys.append(
+            (
+                sl[0].start + float(ys.mean()),
+                sl[1].start + float(xs.mean()),
+                old,
+            )
+        )
+    keys.sort()
+    remap = np.zeros(max(present) + 1, dtype=labeled.dtype)
+    for new_id, (_, _, old) in enumerate(keys, start=1):
+        remap[old] = new_id
+    return remap[labeled]
+
+
 def extract_instances(
     mask: np.ndarray,
     session_dir: Path,
@@ -71,6 +106,9 @@ def extract_instances(
     out (e.g. threads removed by morphological cleanup stay removed). When
     omitted, falls back to connected-component labeling.
 
+    Whatever the source, labels are renumbered spatially: id 1 is the
+    topmost-leftmost particle and ids increase top-to-bottom, left-to-right.
+
     If save=True, writes:
       - instances.npy  : labeled integer mask (uint16), pixel value = instance ID
       - instances.json : list of {id, contour, bbox, area, extra_contours} dicts
@@ -88,6 +126,7 @@ def extract_instances(
         labeled = np.where(binary > 0, labels.astype(np.int32), 0)
     else:
         labeled, n_components = ndimage.label(binary)
+    labeled = _relabel_spatially(labeled)
     image_area = binary.shape[0] * binary.shape[1]
 
     # bounding-box slice per label, so each component is scanned/compared
