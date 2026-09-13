@@ -259,7 +259,7 @@ async def export_session(session_id: str, body: ExportRequest):
             unit = stats.get("unit", "px")
             has_scale = stats.get("has_scale", False)
 
-            header = f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape\n"
+            header = f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape,nearest_neighbor_{unit},border_distance_{unit}\n"
             rows = []
             for p in particles:
                 area = p.get("area_real", p["area_px"]) if has_scale else p["area_px"]
@@ -273,10 +273,13 @@ async def export_session(session_id: str, body: ExportRequest):
                     if has_scale
                     else p["perimeter_px"]
                 )
+                nn = p.get("nearest_neighbor_real", p.get("nearest_neighbor_px")) if has_scale else p.get("nearest_neighbor_px")
+                border = p.get("border_distance_real", p.get("border_distance_px")) if has_scale else p.get("border_distance_px")
                 rows.append(
                     f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
                     f"{p['circularity']:.4f},{p.get('solidity', 0):.4f},"
-                    f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']}\n"
+                    f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']},"
+                    f"{(f'{nn:.4f}' if nn is not None else '')},{(f'{border:.4f}' if border is not None else '')}\n"
                 )
 
             csv_bytes = (header + "".join(rows)).encode("utf-8")
