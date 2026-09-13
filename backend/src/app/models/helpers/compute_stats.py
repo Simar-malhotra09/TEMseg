@@ -11,6 +11,7 @@ import numpy as np
 from app.models.helpers.settings import settings
 from scipy import ndimage
 from scipy import stats as sp_stats
+from scipy.spatial import cKDTree
 
 ShapeMetric = Literal["circularity", "aspect_ratio", "solidity", "n_vertices"]
 SHAPE_METRICS = get_args(
@@ -55,6 +56,61 @@ def _fit_ellipse_safe(cnt):
     major = max(axes)
     minor = min(axes)
     return (major, minor)
+
+
+def _border_distance_px(
+    component: np.ndarray, sl: tuple, width: int, height: int
+) -> float:
+    """Min distance from any pixel of the component to the nearest image edge.
+
+    Exact for a rectangular boundary: for each pixel the distance to the
+    boundary is min(x, W-1-x, y, H-1-y), and the minimum over the component
+    is reached at one of its four bbox extremes. `sl` carries the component's
+    offset inside the full image.
+    """
+    ys, xs = np.nonzero(component)
+    if len(xs) == 0:
+        return 0.0
+    x0 = sl[1].start + int(xs.min())
+    x1 = sl[1].start + int(xs.max())
+    y0 = sl[0].start + int(ys.min())
+    y1 = sl[0].start + int(ys.max())
+    return float(min(x0, y0, width - 1 - x1, height - 1 - y1))
+
+
+def _contour_border_distance_px(cnt: np.ndarray, width: int, height: int) -> float:
+    """Min distance from any contour point (full-image coords) to the nearest edge."""
+    xs = cnt[:, 0, 0] if cnt.ndim == 3 else cnt[:, 0]
+    ys = cnt[:, 0, 1] if cnt.ndim == 3 else cnt[:, 1]
+    return float(
+        np.minimum(
+            np.minimum(xs, width - 1 - xs), np.minimum(ys, height - 1 - ys)
+        ).min()
+    )
+
+
+def _component_centroid(component: np.ndarray, sl: tuple) -> tuple[float, float]:
+    """Centroid of a binary component, offset back to full-image coords."""
+    m = cv.moments(component, binaryImage=True)
+    if m["m00"] <= 0:
+        return 0.0, 0.0
+    return (
+        sl[1].start + float(m["m10"] / m["m00"]),
+        sl[0].start + float(m["m01"] / m["m00"]),
+    )
+
+
+def _polygon_centroid(cnt: np.ndarray) -> tuple[float, float]:
+    """Area centroid of a polygon via the shoelace formula (full-image coords)."""
+    xs = cnt[:, 0, 0] if cnt.ndim == 3 else cnt[:, 0]
+    ys = cnt[:, 0, 1] if cnt.ndim == 3 else cnt[:, 1]
+    cross = xs[:-1] * ys[1:] - xs[1:] * ys[:-1]
+    twice_area = float(cross.sum())
+    if abs(twice_area) < 1e-12:
+        return float(xs.mean()), float(ys.mean())
+    cx = float(np.sum((xs[:-1] + xs[1:]) * cross)) / (3.0 * twice_area)
+    cy = float(np.sum((ys[:-1] + ys[1:]) * cross)) / (3.0 * twice_area)
+    return cx, cy
 
 
 # single conditon
@@ -271,6 +327,8 @@ def compute_stats_from_instances(
     coverage = foreground_pixels / total_pixels if total_pixels > 0 else 0.0
 
     particles = []
+    centroids: list[tuple[float, float]] = []
+    img_height, img_width = mask.shape[:2]
 
     # load shape classification rules once, outside the per-instance loop
     shape_config = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
@@ -288,10 +346,13 @@ def compute_stats_from_instances(
 
         # get contour: prefer exact pixels from labeled mask
         exact_contours = []
+        component_sl: tuple | None = None
         if labeled_slices is not None and inst_id <= len(labeled_slices):
             sl = labeled_slices[inst_id - 1]
             if sl is not None:
                 component = (labeled_mask[sl] == inst_id).astype(np.uint8)
+                if np.any(component):
+                    component_sl = sl
                 exact_contours, _ = cv.findContours(
                     component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
                 )
@@ -307,6 +368,16 @@ def compute_stats_from_instances(
 
         if area_px < 1 or len(cnt) < 3:
             continue
+
+        # centroid of the pixel set (exact mask) or of the polygon (fallback)
+        if component_sl is not None:
+            cx, cy = _component_centroid(component, component_sl)
+            border_px = _border_distance_px(
+                component, component_sl, img_width, img_height
+            )
+        else:
+            cx, cy = _polygon_centroid(cnt)
+            border_px = _contour_border_distance_px(cnt, img_width, img_height)
 
         diameter_px = _equivalent_diameter_px(area_px)
 
@@ -376,6 +447,8 @@ def compute_stats_from_instances(
             "n_vertices": n_vertices,
             "shape": shape,
             "bbox": inst["bbox"],
+            "border_distance_px": float(border_px),
+            "nearest_neighbor_px": None,  # filled after the loop, needs all centroids
         }
 
         if has_scale:
@@ -384,10 +457,24 @@ def compute_stats_from_instances(
             p["diameter_real"] = diameter_px * scale
             p["major_axis_real"] = float(major_px) * scale
             p["minor_axis_real"] = float(minor_px) * scale
+            p["border_distance_real"] = float(border_px) * scale
+            p["nearest_neighbor_real"] = None
 
         particles.append(p)
+        centroids.append((cx, cy))
 
     count = len(particles)
+
+    # nearest-neighbor distance between particle centroids (center-to-center).
+    # Single particle has no neighbor, so the field stays null rather than 0.
+    if count >= 2:
+        tree = cKDTree(np.array(centroids, dtype=float))
+        nn_px, _ = tree.query(tree.data, k=2)
+        nn_px = nn_px[:, 1]
+        for p, d in zip(particles, nn_px):
+            p["nearest_neighbor_px"] = float(d)
+            if has_scale:
+                p["nearest_neighbor_real"] = float(d) * scale
 
     if count == 0:
         return {
