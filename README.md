@@ -2,7 +2,8 @@
 One entry per week (dated by the Monday) or in case of majorish additions. Weeks with nothing worth noting are skipped.
 
 ### 2026-09-12
-- Per-particle spatial stats: nearest-neighbor distance (NNI) between particle centroids and border distance to the nearest image edge, in pixel and calibrated units. Available in the refine-mode hover tooltip, the per-particle table, and exported automatically in stats.csv.
+- Per-particle spatial stats: nearest-neighbor distance (NNI) between particle centroids and border distance to the nearest image edge, in pixel and calibrated units. Each value is grounded with a reference: NNI shows the neighbor's id (`#18`), border distance shows which edge (T/B/L/R). Available in the refine-mode hover tooltip, the per-particle table, and exported automatically in stats.csv.
+- Particle ids are now spatially ordered: id 1 is the topmost-leftmost particle, ids increase top-to-bottom then left-to-right, so an id gives a rough sense of where the particle lives.
 
 ### 2026-09-10
 - Porting weights to Core ML. We use ARM Macs' [MPS](https://developer.apple.com/metal/pytorch/) PyTorch backend to provide GPU support for Apple Silicon Macs. Apple also has a framework called [Core ML](https://developer.apple.com/documentation/coreml), which is designed to make on-device inference faster. We port weights from `.pth`/ONNX to Core ML's `.mlmodelc` format and use them if the device supports it, with an optional fallback to ONNX. This ensures we squeeze out as much performance as possible. The appropriate weights should be downloaded automatically on first startup. In addition, you can manually override this and download the ONNX weights as well.
