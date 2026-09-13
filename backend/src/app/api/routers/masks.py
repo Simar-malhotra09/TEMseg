@@ -416,6 +416,28 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     mask_path = session_dir / "mask.png"
     cv.imwrite(str(mask_path), colored)
 
+    # refresh stats so exports/UI reflect the new particle set
+    pixel_size = None
+    pixel_unit = None
+    meta_path = session_dir / "metadata.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = json.load(f)
+        pixel_size = meta.get("pixel_size")
+        pixel_unit = meta.get("pixel_unit")
+
+    binary = (labeled > 0).astype(np.uint8)
+    stats = compute_stats_from_instances(
+        updated_instances,
+        binary,
+        pixel_size=pixel_size,
+        pixel_unit=pixel_unit,
+        labeled_mask=labeled,
+    )
+    stats_path = session_dir / "stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(stats, f)
+
     t.field("created", len(new_instances))
     t.stop()
 
