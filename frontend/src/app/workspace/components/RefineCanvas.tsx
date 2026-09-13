@@ -63,6 +63,16 @@ function formatTooltipField(key: ParticleMetricField, p: ParticleStats, hasScale
     case "aspect_ratio": return `Asp. Ratio: ${p.aspect_ratio.toFixed(2)}`;
     case "n_vertices": return `Vertices: ${p.n_vertices}`;
     case "shape": return `Shape: ${p.shape}`;
+    case "nearest_neighbor": {
+      const v = hasScale && p.nearest_neighbor_real != null ? p.nearest_neighbor_real : p.nearest_neighbor_px;
+      if (v == null) return "NNI: —";
+      return `NNI: ${v.toFixed(2)} ${hasScale ? unit : "px"}`;
+    }
+    case "border_distance": {
+      const v = hasScale && p.border_distance_real != null ? p.border_distance_real : p.border_distance_px;
+      if (v == null) return "Border dist: —";
+      return `Border dist: ${v.toFixed(2)} ${hasScale ? unit : "px"}`;
+    }
   }
 }
 

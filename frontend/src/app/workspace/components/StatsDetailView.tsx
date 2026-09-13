@@ -50,6 +50,8 @@ function columnLabel(key: SortKey, hasScale: boolean, unit: string): string {
     case "aspect_ratio": return "Asp. Ratio";
     case "n_vertices": return "Vertices";
     case "shape": return "Shape";
+    case "nearest_neighbor": return `NNI (${hasScale ? unit : "px"})`;
+    case "border_distance": return `Border Dist. (${hasScale ? unit : "px"})`;
   }
 }
 
@@ -329,6 +331,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
         case "shape": va = a.shape; vb = b.shape; break;
         case "solidity": va = a.solidity ?? 1; vb = b.solidity ?? 1; break;
         case "n_vertices": va = a.n_vertices ?? 0; vb = b.n_vertices ?? 0; break;
+        case "nearest_neighbor": va = a.nearest_neighbor_real ?? a.nearest_neighbor_px ?? Infinity; vb = b.nearest_neighbor_real ?? b.nearest_neighbor_px ?? Infinity; break;
+        case "border_distance": va = a.border_distance_real ?? a.border_distance_px ?? Infinity; vb = b.border_distance_real ?? b.border_distance_px ?? Infinity; break;
       }
       if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va);
       return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number);
@@ -669,14 +673,17 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
               </tr>
             </thead>
             <tbody>
-              {sortedParticles.map(p => (
-                <tr
-                  key={p.index}
-                  className={`${styles.tr} ${onLocateParticle ? styles.trClickable : ""} ${hoveredRow === p.index ? styles.trHighlighted : ""}`}
-                  onMouseEnter={() => setHoveredRow(p.index)}
-                  onMouseLeave={() => setHoveredRow(null)}
-                  onClick={() => onLocateParticle?.(p.index - 1)}
-                >
+              {sortedParticles.map(p => {
+                const nn = hasScale && p.nearest_neighbor_real != null ? p.nearest_neighbor_real : p.nearest_neighbor_px;
+                const bd = hasScale && p.border_distance_real != null ? p.border_distance_real : p.border_distance_px;
+                return (
+                  <tr
+                    key={p.index}
+                    className={`${styles.tr} ${onLocateParticle ? styles.trClickable : ""} ${hoveredRow === p.index ? styles.trHighlighted : ""}`}
+                    onMouseEnter={() => setHoveredRow(p.index)}
+                    onMouseLeave={() => setHoveredRow(null)}
+                    onClick={() => onLocateParticle?.(p.index - 1)}
+                  >
                   <td className={styles.td}>
                     <span className={styles.particleId}>{p.index}</span>
                   </td>
@@ -698,8 +705,11 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                       {p.shape}
                     </span>
                   </td>
+                  <td className={styles.td}>{nn != null ? fmt(nn) : "—"}</td>
+                  <td className={styles.td}>{bd != null ? fmt(bd) : "—"}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

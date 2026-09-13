@@ -147,6 +147,13 @@ export interface ParticleStats {
   n_vertices: number;
   shape: string;
   bbox: { x: number; y: number; w: number; h: number };
+  // center-to-center distance to the closest other particle; null when the
+  // particle is alone in the image. Real-unit variant only when a scale exists.
+  nearest_neighbor_px?: number | null;
+  nearest_neighbor_real?: number | null;
+  // min distance from the particle edge to the nearest image edge
+  border_distance_px?: number | null;
+  border_distance_real?: number | null;
 }
 
 // Client side source of truth for which computed metrics are selectable in
@@ -160,6 +167,8 @@ export const PARTICLE_METRIC_FIELDS = [
   "aspect_ratio",
   "n_vertices",
   "shape",
+  "nearest_neighbor",
+  "border_distance",
 ] as const;
 export type ParticleMetricField = (typeof PARTICLE_METRIC_FIELDS)[number];
 
