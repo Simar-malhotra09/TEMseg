@@ -134,7 +134,7 @@ def _write_stats_csv(stats: dict, image_output_dir: Path) -> None:
     header = (
         f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},"
         f"perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape,"
-        f"nearest_neighbor_{unit},border_distance_{unit}\n"
+        f"nearest_neighbor_{unit},nearest_neighbor_id,border_distance_{unit},border_edge\n"
     )
     rows = []
     for p in particles:
@@ -152,16 +152,19 @@ def _write_stats_csv(stats: dict, image_output_dir: Path) -> None:
             if has_scale
             else p.get("nearest_neighbor_px")
         )
+        nn_id = p.get("nearest_neighbor_id")
         border = (
             p.get("border_distance_real", p.get("border_distance_px"))
             if has_scale
             else p.get("border_distance_px")
         )
+        border_edge = p.get("border_edge", "")
         rows.append(
             f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
             f"{p['circularity']:.4f},{p.get('solidity', 0):.4f},"
             f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']},"
-            f"{(f'{nn:.4f}' if nn is not None else '')},{(f'{border:.4f}' if border is not None else '')}\n"
+            f"{(f'{nn:.4f}' if nn is not None else '')},{nn_id if nn_id is not None else ''},"
+            f"{(f'{border:.4f}' if border is not None else '')},{border_edge}\n"
         )
 
     (image_output_dir / "stats.csv").write_text(header + "".join(rows))
