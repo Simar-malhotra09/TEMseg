@@ -66,12 +66,14 @@ function formatTooltipField(key: ParticleMetricField, p: ParticleStats, hasScale
     case "nearest_neighbor": {
       const v = hasScale && p.nearest_neighbor_real != null ? p.nearest_neighbor_real : p.nearest_neighbor_px;
       if (v == null) return "NNI: —";
-      return `NNI: ${v.toFixed(2)} ${hasScale ? unit : "px"}`;
+      const idPart = p.nearest_neighbor_id != null ? ` (#${p.nearest_neighbor_id})` : "";
+      return `NNI: ${v.toFixed(2)} ${hasScale ? unit : "px"}${idPart}`;
     }
     case "border_distance": {
       const v = hasScale && p.border_distance_real != null ? p.border_distance_real : p.border_distance_px;
       if (v == null) return "Border dist: —";
-      return `Border dist: ${v.toFixed(2)} ${hasScale ? unit : "px"}`;
+      const edge = p.border_edge ? ` (${p.border_edge})` : "";
+      return `Border dist: ${v.toFixed(2)} ${hasScale ? unit : "px"}${edge}`;
     }
   }
 }

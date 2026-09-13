@@ -151,9 +151,13 @@ export interface ParticleStats {
   // particle is alone in the image. Real-unit variant only when a scale exists.
   nearest_neighbor_px?: number | null;
   nearest_neighbor_real?: number | null;
+  // id of that closest particle, so the number can be traced to a shape
+  nearest_neighbor_id?: number | null;
   // min distance from the particle edge to the nearest image edge
   border_distance_px?: number | null;
   border_distance_real?: number | null;
+  // which edge that is
+  border_edge?: "T" | "B" | "L" | "R" | null;
 }
 
 // Client side source of truth for which computed metrics are selectable in

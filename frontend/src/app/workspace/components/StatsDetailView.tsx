@@ -705,8 +705,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                       {p.shape}
                     </span>
                   </td>
-                  <td className={styles.td}>{nn != null ? fmt(nn) : "—"}</td>
-                  <td className={styles.td}>{bd != null ? fmt(bd) : "—"}</td>
+                  <td className={styles.td}>{nn != null ? `${fmt(nn)}${p.nearest_neighbor_id != null ? ` (#${p.nearest_neighbor_id})` : ""}` : "—"}</td>
+                  <td className={styles.td}>{bd != null ? `${fmt(bd)}${p.border_edge ? ` (${p.border_edge})` : ""}` : "—"}</td>
                 </tr>
                 );
               })}
