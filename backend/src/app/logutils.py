@@ -150,8 +150,13 @@ class Timer:
             yield
         finally:
             dt = time.perf_counter() - t0
-            self._steps.append((name, dt))
-            self._log.debug("step=%s dt=%s", name, fmt_duration(dt))
+            self.record(name, dt)
+
+    def record(self, name: str, dt: float) -> None:
+        """Step entry + debug line for work timed outside a `with` block
+        (e.g. summed across loop iterations)."""
+        self._steps.append((name, dt))
+        self._log.debug("step=%s dt=%s", name, fmt_duration(dt))
 
     def field(self, key: str, value) -> None:
         """Attach `key=value` to the summary line (counts, shapes, ...)."""

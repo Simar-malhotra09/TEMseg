@@ -19,7 +19,7 @@ from app.api.instances import (
 )
 
 import json
-from app.logutils import Timer, fmt_duration, get_logger, ui_event
+from app.logutils import Timer, get_logger, ui_event
 from app.models.helpers.compute_stats import compute_stats_from_instances
 
 router = APIRouter(prefix="/masks")
@@ -312,22 +312,19 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     # ── 3. run SAM for each point ─────────────────────────────────────────────
     new_masks = []
     for i, (px, py) in enumerate(body.points):
-        t_pred = time.perf_counter()
-
         point_coords = np.array([[px, py]])
         point_labels = np.array([1])  # 1 = foreground
 
-        masks, scores, _ = predictor.predict(
-            point_coords=point_coords,
-            point_labels=point_labels,
-            multimask_output=True,  # SAM returns 3 masks, we take best
-        )
+        with t.step("prompt-point"):
+            masks, scores, _ = predictor.predict(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                multimask_output=True,  # SAM returns 3 masks, we take best
+            )
 
         # take highest-scoring mask
         best_idx = int(np.argmax(scores))
         raw_mask = masks[best_idx].astype(np.uint8)
-
-        pred_dt = time.perf_counter() - t_pred
 
         # ── 4. constrain to original blob ────────────────────────────────────
         constrained = cv.bitwise_and(raw_mask, blob_mask)
@@ -340,8 +337,8 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
             continue
 
         logger.debug(
-            f"split point {i + 1}/{len(body.points)} predicted={fmt_duration(pred_dt)} "
-            f"({pixel_count}px after constraint)"
+            f"split point {i + 1}/{len(body.points)}: "
+            f"{pixel_count}px after constraint"
         )
         new_masks.append(constrained)
 
@@ -557,12 +554,13 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
             rejected.append({"index": i, "reason": "already segmented"})
             continue
         try:
-            masks, scores, _ = predictor.predict(
-                point_coords=np.array([[cx, cy]]),
-                point_labels=np.array([1]),
-                box=np.array([x0, y0, x1, y1]),
-                multimask_output=False,
-            )
+            with t.step("prompt-box"):
+                masks, scores, _ = predictor.predict(
+                    point_coords=np.array([[cx, cy]]),
+                    point_labels=np.array([1]),
+                    box=np.array([x0, y0, x1, y1]),
+                    multimask_output=False,
+                )
         except Exception as e:
             logger.warning(f"SAM prediction failed for box {i}: {e}")
             rejected.append({"index": i, "reason": f"SAM error: {e}"})
@@ -789,12 +787,13 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                 x1 = min(float(w_img - 1), px + half)
                 y1 = min(float(h_img - 1), py + half)
                 try:
-                    masks, scores, _ = predictor.predict(
-                        point_coords=np.array([[px, py]]),
-                        point_labels=np.array([1]),
-                        box=np.array([x0, y0, x1, y1]),
-                        multimask_output=False,
-                    )
+                    with t.step("prompt-box"):
+                        masks, scores, _ = predictor.predict(
+                            point_coords=np.array([[px, py]]),
+                            point_labels=np.array([1]),
+                            box=np.array([x0, y0, x1, y1]),
+                            multimask_output=False,
+                        )
                 except Exception as e:
                     logger.warning(
                         f"SAM prediction failed for click {i} at box size {k}: {e}"
@@ -818,11 +817,12 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         else:
             # No prior exists. fall back to the original multimask + smallest-in-window pick.
             try:
-                masks, scores, _ = predictor.predict(
-                    point_coords=np.array([[px, py]]),
-                    point_labels=np.array([1]),
-                    multimask_output=True,
-                )
+                with t.step("prompt-point"):
+                    masks, scores, _ = predictor.predict(
+                        point_coords=np.array([[px, py]]),
+                        point_labels=np.array([1]),
+                        multimask_output=True,
+                    )
             except Exception as e:
                 logger.warning(f"SAM prediction failed for click {i}: {e}")
                 rejected.append({"index": i, "reason": f"SAM error: {e}"})
@@ -1196,6 +1196,8 @@ async def propose_similar(
     image_area = float(h_img * w_img)
     max_area = body.max_image_fraction * image_area
     log_median = np.log(max(median_area, 1.0))
+    sam_prompt_total = 0.0
+    sam_prompt_count = 0
 
     for i, (py, px) in enumerate(peaks):
         point_coords = np.array([[float(px), float(py)]])
@@ -1215,6 +1217,7 @@ async def propose_similar(
             x1 = min(float(w_img - 1), px + half)
             y1 = min(float(h_img - 1), py + half)
             box = np.array([x0, y0, x1, y1])
+            t0 = time.perf_counter()
             try:
                 masks, scores, _ = predictor.predict(
                     point_coords=point_coords,
@@ -1227,6 +1230,9 @@ async def propose_similar(
                     f"SAM prediction failed for candidate {i} at box size {k}: {e}"
                 )
                 continue
+            finally:
+                sam_prompt_total += time.perf_counter() - t0
+                sam_prompt_count += 1
             m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
             a = int(m.sum())
             if a < min_area or a > max_area:
@@ -1342,6 +1348,9 @@ async def propose_similar(
         except Exception as e:
             logger.warning(f"Could not save proposal debug overlay: {e}")
 
+    if sam_prompt_count:
+        t.record("prompt-box", sam_prompt_total)
+        t.field("prompts", sam_prompt_count)
     t.field("proposals", len(proposals))
     t.field("candidates", len(peaks))
     t.stop()
