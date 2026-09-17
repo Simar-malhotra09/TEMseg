@@ -156,17 +156,18 @@ export default function AnnotateCanvas({
   }
 
   function handleMouseMove(e: React.MouseEvent) {
-    if (panHeld && panOriginRef.current && svgRef.current) {
+    const origin = panOriginRef.current;
+    if (panHeld && origin && svgRef.current) {
       const rect = svgRef.current.getBoundingClientRect();
       const scaleX = viewBox.w / rect.width;
       const scaleY = viewBox.h / rect.height;
-      const dx = (e.clientX - panOriginRef.current.cx) * scaleX;
-      const dy = (e.clientY - panOriginRef.current.cy) * scaleY;
+      const dx = (e.clientX - origin.cx) * scaleX;
+      const dy = (e.clientY - origin.cy) * scaleY;
       setViewBox(prev =>
         clampViewBox({
           ...prev,
-          x: panOriginRef.current!.vx - dx,
-          y: panOriginRef.current!.vy - dy,
+          x: origin.vx - dx,
+          y: origin.vy - dy,
         }),
       );
       return;
