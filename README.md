@@ -1,5 +1,4 @@
 ## Status Log
-One entry per week (dated by the Monday) or in case of majorish additions. Weeks with nothing worth noting are skipped.
 
 ### 2026-09-12
 - Add spatial stats for each particel. Specifically, nearest-neighbor distance (NNI) between particle centroids and border distance to the nearest image edge. NNI shows the distance to it's closest neighbor and the neighbor's id (`53nm (#18)`), border distance shows which edge (T(op)/B(ottom)/L(eft)/R(right)). Available in the refine-mode hover tooltip, the per-particle table, and exported in stats.csv.
@@ -121,3 +120,9 @@ One entry per week (dated by the Monday) or in case of majorish additions. Weeks
 ### 2026-02-16
 - First working version: FastAPI server, Next.js workspace, per-image sessions, and the YoloSAM pipeline (YOLO detection + SAM masks).
 - Custom Mask-RCNN model added alongside, with the client fetching the list of available models from the server.
+
+
+## Todo: 
+- [ ] Being able to load multiple images at once; 'session' needs to be redefined. 
+    - [ ] Computing stats across a subset of images.
+- [ ] Making switching weights easier. 
