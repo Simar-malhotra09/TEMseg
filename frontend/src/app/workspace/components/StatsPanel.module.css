@@ -129,6 +129,8 @@
   width: 56px;
   text-transform: capitalize;
   flex-shrink: 0;
+  overflow-wrap: break-word;
+  line-height: 1.2;
 }
 
 .shapeBarOuter {
