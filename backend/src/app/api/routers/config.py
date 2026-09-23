@@ -78,16 +78,16 @@ def _rules_from_request(req: ShapeRulesUpdate) -> ShapeClassificationConfig:
     )
 
 
-_PRESET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]*$")
+_PRESET_NAME_RE = re.compile(r"^[^/\\\x00-\x1f]+$")
 
 
 def _preset_path(name: str) -> Path:
-    if not _PRESET_NAME_RE.fullmatch(name):
+    if not name.strip() or name in (".", "..") or not _PRESET_NAME_RE.fullmatch(name):
         raise HTTPException(
             status_code=400,
-            detail="Preset names may only contain letters, numbers, spaces, dots, dashes, and underscores",
+            detail="Preset names can't be empty or contain path separators",
         )
-    return app_support_shape_configs_dir() / f"{name}.toml"
+    return app_support_shape_configs_dir() / f"{name.strip()}.toml"
 
 
 @router.get("/shape-rules/presets")
