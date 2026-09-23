@@ -161,6 +161,18 @@
   padding-top: 10px;
 }
 
+.presetRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 10px;
+}
+
+.presetRow .resetBtn {
+  white-space: nowrap;
+}
+
 .footerRight {
   display: flex;
   gap: 6px;

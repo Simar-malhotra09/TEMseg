@@ -250,6 +250,41 @@ export async function reclassify(
   return res.json();
 }
 
+export async function listShapeRulePresets(): Promise<{ presets: string[] }> {
+  const res = await trackedFetch(`${BASE_URL}/config/shape-rules/presets`);
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
+// Store rules under a name without touching the active rules.
+export async function saveShapeRulePreset(
+  name: string,
+  rules: ShapeRule[],
+): Promise<ShapeRulesConfig> {
+  const res = await trackedFetch(
+    `${BASE_URL}/config/shape-rules/presets/${encodeURIComponent(name)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules }),
+    },
+  );
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
+// Copy a named preset into the active slot.
+export async function loadShapeRulePreset(
+  name: string,
+): Promise<ShapeRulesConfig> {
+  const res = await trackedFetch(
+    `${BASE_URL}/config/shape-rules/presets/${encodeURIComponent(name)}/load`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(await shapeRulesErrorMessage(res));
+  return res.json();
+}
+
 export interface Metadata {
   file_path: string;
   file_name: string;

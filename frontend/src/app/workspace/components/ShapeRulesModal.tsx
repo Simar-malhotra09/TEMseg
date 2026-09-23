@@ -12,6 +12,9 @@ import {
   updateShapeRules,
   resetShapeRules,
   reclassify,
+  listShapeRulePresets,
+  saveShapeRulePreset,
+  loadShapeRulePreset,
 } from "@/lib/api";
 
 interface Props {
@@ -28,6 +31,9 @@ function blankCondition(metric: string, op: string): ShapeCondition {
 export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdate }: Props) {
   const [config, setConfig] = useState<ShapeRulesConfig | null>(null);
   const [rules, setRules] = useState<ShapeRule[]>([]);
+  const [presets, setPresets] = useState<string[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState("");
+  const [presetName, setPresetName] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,9 +42,13 @@ export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdat
     setLoading(true);
     setError(null);
     try {
-      const cfg = await getShapeRules();
+      const [cfg, pres] = await Promise.all([
+        getShapeRules(),
+        listShapeRulePresets(),
+      ]);
       setConfig(cfg);
       setRules(cfg.rules);
+      setPresets(pres.presets);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load shape rules");
     } finally {
@@ -136,6 +146,40 @@ export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdat
       .catch(() => {});
   }
 
+  async function handleSavePreset() {
+    const name = presetName.trim();
+    if (!name) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveShapeRulePreset(name, rules);
+      const pres = await listShapeRulePresets();
+      setPresets(pres.presets);
+      setSelectedPreset(name);
+      setPresetName("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save preset");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleLoadPreset() {
+    if (!selectedPreset) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const cfg = await loadShapeRulePreset(selectedPreset);
+      setConfig(cfg);
+      setRules(cfg.rules);
+      reclassifyCurrentSession();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load preset");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className={styles.backdrop} onClick={onClose}>
       <div className={styles.panel} onClick={e => e.stopPropagation()}>
@@ -229,6 +273,45 @@ export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdat
               <Plus size={12} /> Add Rule
             </button>
           </>
+        )}
+
+        {!loading && config && (
+          <div className={styles.presetRow}>
+            <select
+              className={styles.select}
+              value={selectedPreset}
+              onChange={e => setSelectedPreset(e.target.value)}
+              disabled={saving}
+            >
+              <option value="">Saved presets…</option>
+              {presets.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={styles.resetBtn}
+              disabled={!selectedPreset || saving}
+              onClick={handleLoadPreset}
+            >
+              Load
+            </button>
+            <input
+              className={styles.labelInput}
+              placeholder="preset name"
+              value={presetName}
+              onChange={e => setPresetName(e.target.value)}
+              disabled={saving}
+            />
+            <button
+              type="button"
+              className={styles.resetBtn}
+              disabled={!presetName.trim() || saving}
+              onClick={handleSavePreset}
+            >
+              Save As
+            </button>
+          </div>
         )}
 
         <div className={styles.footer}>
