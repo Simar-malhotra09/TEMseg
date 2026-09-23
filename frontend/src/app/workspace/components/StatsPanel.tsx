@@ -29,6 +29,7 @@ interface Props {
   scaleBarPixels: number | null;
   onViewDetails?: () => void;
   onMetadataUpdate?: (metadata: Metadata, stats?: StatsResult) => void;
+  onStatsUpdate?: (stats: StatsResult) => void;
   onToggleScaleBar?: () => void;
   onScaleBarCancel?: () => void;
 }
@@ -129,6 +130,7 @@ export default function StatsPanel({
   scaleBarPixels,
   onViewDetails,
   onMetadataUpdate,
+  onStatsUpdate,
   onToggleScaleBar,
   onScaleBarCancel,
 }: Props) {
@@ -415,6 +417,8 @@ export default function StatsPanel({
       <ShapeRulesModal
         open={shapeRulesOpen}
         onClose={() => setShapeRulesOpen(false)}
+        sessionId={sessionId}
+        onStatsUpdate={onStatsUpdate}
       />
     </div>
   );

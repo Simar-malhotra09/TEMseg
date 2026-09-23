@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Tuple
+from pathlib import Path
 import numpy as np
 import cv2 as cv
 import time
@@ -148,6 +149,55 @@ def _same_geometry(old: dict, new: dict) -> bool:
     )
 
 
+def _recompute_stats(
+    session_dir: Path, instances: list[dict], labeled: np.ndarray
+) -> dict:
+    """Recompute + persist stats.json for the current instances and shape rules."""
+    pixel_size = None
+    pixel_unit = None
+    meta_path = session_dir / "metadata.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = json.load(f)
+        pixel_size = meta.get("pixel_size")
+        pixel_unit = meta.get("pixel_unit")
+
+    binary = (labeled > 0).astype(np.uint8)
+    stats = compute_stats_from_instances(
+        instances,
+        binary,
+        pixel_size=pixel_size,
+        pixel_unit=pixel_unit,
+        labeled_mask=labeled,
+    )
+    stats_path = session_dir / "stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(stats, f)
+    return stats
+
+
+@router.post("/{session_id}/reclassify")
+async def reclassify(session_id: str):
+    """Recompute stats.json under the current shape rules, geometry untouched.
+    Called by the client after shape-rule edits so classifications update
+    without a re-segmentation."""
+    session_dir = _session_dir(session_id)
+    cached = load_instances(session_dir)
+    if cached is None:
+        raise HTTPException(
+            status_code=404, detail="No particles — run segmentation first"
+        )
+    instances, labeled = cached
+    stats = _recompute_stats(session_dir, instances, labeled)
+    logger.info(f"Reclassified {len(instances)} particle(s) for session {session_id}")
+    ui_event(
+        "RECLASSIFIED",
+        "Particles reclassified with updated shape rules.",
+        level="info",
+    )
+    return {"stats": stats}
+
+
 @router.put("/{session_id}/instances")
 async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     t = Timer(logger, "save instances")
@@ -210,27 +260,7 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     rf_cache.evict(session_id)
 
     # recompute stats from updated instances
-    pixel_size = None
-    pixel_unit = None
-    meta_path = session_dir / "metadata.json"
-    if meta_path.exists():
-        with open(meta_path) as f:
-            meta = json.load(f)
-        pixel_size = meta.get("pixel_size")
-        pixel_unit = meta.get("pixel_unit")
-
-    binary = (labeled > 0).astype(np.uint8)
-    stats = compute_stats_from_instances(
-        req.instances,
-        binary,
-        pixel_size=pixel_size,
-        pixel_unit=pixel_unit,
-        labeled_mask=labeled,
-    )
-    # save new stats
-    stats_path = session_dir / "stats.json"
-    with open(stats_path, "w") as f:
-        json.dump(stats, f)
+    stats = _recompute_stats(session_dir, req.instances, labeled)
 
     t.field("particles", len(req.instances))
     t.field("total", stats["particle_count"])

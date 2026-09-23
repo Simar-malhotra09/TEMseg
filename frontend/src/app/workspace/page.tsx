@@ -2978,6 +2978,7 @@ export default function Workspace() {
             scaleBarPixels={scaleBarPixels}
             onViewDetails={() => setShowStatsDetail(true)}
             onMetadataUpdate={handleMetadataUpdate}
+            onStatsUpdate={seg.setStats}
             onToggleScaleBar={handleToggleScaleBar}
             onScaleBarCancel={handleScaleBarCancel}
           />

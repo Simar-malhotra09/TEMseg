@@ -7,21 +7,25 @@ import {
   ShapeRule,
   ShapeCondition,
   ShapeRulesConfig,
+  StatsResult,
   getShapeRules,
   updateShapeRules,
   resetShapeRules,
+  reclassify,
 } from "@/lib/api";
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  sessionId: string | null;
+  onStatsUpdate?: (stats: StatsResult) => void;
 }
 
 function blankCondition(metric: string, op: string): ShapeCondition {
   return { metric, op, value: 0 };
 }
 
-export default function ShapeRulesModal({ open, onClose }: Props) {
+export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdate }: Props) {
   const [config, setConfig] = useState<ShapeRulesConfig | null>(null);
   const [rules, setRules] = useState<ShapeRule[]>([]);
   const [loading, setLoading] = useState(false);
@@ -101,6 +105,7 @@ export default function ShapeRulesModal({ open, onClose }: Props) {
       const cfg = await updateShapeRules(rules);
       setConfig(cfg);
       setRules(cfg.rules);
+      reclassifyCurrentSession();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save shape rules");
     } finally {
@@ -115,11 +120,20 @@ export default function ShapeRulesModal({ open, onClose }: Props) {
       const cfg = await resetShapeRules();
       setConfig(cfg);
       setRules(cfg.rules);
+      reclassifyCurrentSession();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reset shape rules");
     } finally {
       setSaving(false);
     }
+  }
+
+  // No-op when nothing is segmented yet; next /segment picks the rules up anyway.
+  function reclassifyCurrentSession() {
+    if (!sessionId) return;
+    reclassify(sessionId)
+      .then(r => onStatsUpdate?.(r.stats))
+      .catch(() => {});
   }
 
   return (
@@ -142,8 +156,8 @@ export default function ShapeRulesModal({ open, onClose }: Props) {
           <>
             <p className={styles.hint}>
               Checked top to bottom — first full match wins. Unmatched particles get{" "}
-              <strong>{config.default_shape}</strong>. Changes apply on the next segmentation
-              or refine save.
+              <strong>{config.default_shape}</strong>. Saving reclassifies already
+              segmented particles.
             </p>
 
             <div className={styles.rules}>

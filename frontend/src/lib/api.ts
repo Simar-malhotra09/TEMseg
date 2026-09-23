@@ -238,6 +238,18 @@ export async function resetShapeRules(): Promise<ShapeRulesConfig> {
   return res.json();
 }
 
+// Recompute classifications for an already-segmented session under the
+// freshly saved shape rules. 404s when the session has no particles yet.
+export async function reclassify(
+  sessionId: string,
+): Promise<{ stats: StatsResult }> {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/reclassify`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error("Failed to reclassify particles");
+  return res.json();
+}
+
 export interface Metadata {
   file_path: string;
   file_name: string;
