@@ -1,8 +1,9 @@
 import json
 import time
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.api.utils import SESSIONS_DIR
 from app.logutils import get_logger
@@ -11,6 +12,7 @@ logger = get_logger("sessions")
 router = APIRouter(tags=["sessions"])
 
 MRU_K_SESSIONS_FILE = Path("mru_k_sessions.json")
+GROUPS_FILE = Path("groups.json")
 MRU_K_VAL = 10
 
 
@@ -53,3 +55,71 @@ def recent_sessions() -> list[dict]:
             "file_size_bytes": org_file.stat().st_size if org_file else None,
         })
     return entries
+
+
+def _read_groups() -> list[dict]:
+    try:
+        return json.loads(GROUPS_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def create_group(name: str, session_ids: list[str]) -> dict:
+    """Record an ordered group of session ids; sessions themselves stay flat."""
+    groups = _read_groups()
+    group = {
+        "id": uuid.uuid4().hex[:6],
+        "name": name,
+        "created_at": time.time(),
+        "session_ids": session_ids,
+    }
+    groups.insert(0, group)
+    GROUPS_FILE.write_text(json.dumps(groups, indent=2))
+    return group
+
+
+def _group_sessions(g: dict) -> list[dict]:
+    """Session rows for a group; drops sessions whose dir no longer exists."""
+    rows = []
+    for sid in g["session_ids"]:
+        d = SESSIONS_DIR / sid
+        if not d.exists():
+            continue
+        file_name = sid
+        meta_path = d / "metadata.json"
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text())
+            except json.JSONDecodeError:
+                meta = {}
+            file_name = str(meta.get("file_name", sid))
+            if meta.get("original_format"):
+                file_name = f"{file_name}.{meta['original_format']}"
+        rows.append({
+            "session_id": sid,
+            "file_name": file_name,
+            "preview_url": f"/images/{sid}/preview",
+        })
+    return rows
+
+
+def _group_response(g: dict) -> dict:
+    sessions = _group_sessions(g)
+    return {
+        **g,
+        "sessions": sessions,
+        "session_count": len(sessions),
+    }
+
+
+@router.get("/groups")
+def list_groups() -> list[dict]:
+    return [_group_response(g) for g in _read_groups()]
+
+
+@router.get("/groups/{group_id}")
+def get_group(group_id: str):
+    for g in _read_groups():
+        if g["id"] == group_id:
+            return _group_response(g)
+    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")

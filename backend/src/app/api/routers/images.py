@@ -1,15 +1,16 @@
 import json
 import uuid
+import re
 import shutil
 from pathlib import Path
-from fastapi import APIRouter, File, UploadFile, Request
+from fastapi import APIRouter, File, UploadFile, Request, Form, HTTPException
 from fastapi.responses import FileResponse
 import numpy as np
 import cv2 as cv
 import sys
 import os
 from app.logutils import get_logger, ui_event
-from app.api.routers.sessions import update_mru
+from app.api.routers.sessions import update_mru, create_group
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/images")
@@ -17,6 +18,8 @@ logger = get_logger("images")
 logger_rsciio = get_logger("images", sub="rsciio")
 logger_meta = get_logger("images", sub="meta")
 SESSIONS_DIR = Path("sessions")
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".npy", ".emd"}
 
 
 class UpdateMetadataRequest(BaseModel):
@@ -271,9 +274,9 @@ async def update_metadata(session_id: str, req: UpdateMetadataRequest):
     return {"metadata": meta}
 
 
-@router.post("/upload")
-async def upload_image(request: Request, file: UploadFile = File(...)):
-    session_id = str(uuid.uuid4())[:4]
+def _save_uploaded_image(file: UploadFile, session_id: str) -> dict:
+    """Persist one uploaded file into its session dir; returns preview + info.
+    Returns {"error": ...} when the format can't be loaded."""
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
 
@@ -287,16 +290,10 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     meta_path = session_dir / "metadata.json"
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
-    logger.info(
-        f"Metadata saved: pixel_size={metadata.get('pixel_size')}, unit={metadata.get('pixel_unit')}"
-    )
-    update_mru(session_id)
 
     fname = file.filename.lower()
     arr = None
     preview_url = f"/images/{session_id}/file"
-
-    logger.info(f"preview url: {preview_url}")
 
     if fname.endswith(".npy"):
         arr = np.load(str(dest))
@@ -343,17 +340,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
         cv.imwrite(str(preview_path), display)
         preview_url = f"/images/{session_id}/preview"
 
-    # YOLO is warmed at backend startup (see api/main.py lifespan) — the ONNX
-    # graph is static-shape so warming against the uploaded image buys nothing.
-
-    ui_event(
-        "IMAGE_LOADED",
-        "Image loaded — ready to segment.",
-        level="info",
-    )
-
     return {
-        "session_id": session_id,
         "filename": file.filename,
         "preview_url": preview_url,
         "image_info": {
@@ -365,6 +352,70 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
             "pixel_unit": metadata.get("pixel_unit"),
         },
     }
+
+
+@router.post("/upload")
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    session_id = uuid.uuid4().hex[:8]
+    result = _save_uploaded_image(file, session_id)
+    if "error" in result:
+        return result
+    update_mru(session_id)
+    # YOLO is warmed at backend startup (see api/main.py lifespan) — the ONNX
+    # graph is static-shape so warming against the uploaded image buys nothing.
+    ui_event(
+        "IMAGE_LOADED",
+        "Image loaded — ready to segment.",
+        level="info",
+    )
+    return {"session_id": session_id, **result}
+
+
+def _natural_name_key(upload: UploadFile) -> list:
+    name = upload.filename or ""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+@router.post("/upload-many")
+async def upload_many_images(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    group_name: str | None = Form(None),
+):
+    """One session per file, plus a group tying them together in filename order.
+    Unloadable files are skipped and reported in `warnings`."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files received")
+
+    sessions: list[dict] = []
+    warnings: list[dict] = []
+    for f in sorted(files, key=_natural_name_key):
+        ext = Path(f.filename or "").suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            warnings.append({"filename": f.filename, "error": "unsupported file type"})
+            continue
+        session_id = uuid.uuid4().hex[:8]
+        result = _save_uploaded_image(f, session_id)
+        if "error" in result:
+            warnings.append({"filename": f.filename, "error": result["error"]})
+            continue
+        sessions.append({"session_id": session_id, **result})
+
+    if not sessions:
+        return {"error": "No loadable images in upload", "warnings": warnings}
+
+    group = None
+    if group_name and group_name.strip():
+        group = create_group(group_name.strip(), [s["session_id"] for s in sessions])
+
+    update_mru(sessions[0]["session_id"])
+    ui_event(
+        "IMAGES_LOADED",
+        f"Loaded {len(sessions)} image(s)"
+        + (f" into group {group['name']!r}" if group else ""),
+        level="info",
+    )
+    return {"group": group, "sessions": sessions, "warnings": warnings}
 
 
 """ 
