@@ -11,10 +11,13 @@ from app.models.helpers.compute_stats import (
 )
 from app.models.helpers.settings import (
     app_support_shape_config_path,
+    app_support_shape_configs_dir,
     bundled_shape_config_path,
     settings,
 )
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+import re
+from pathlib import Path
 from pydantic import BaseModel, Field
 
 from app.logutils import get_logger
@@ -57,6 +60,72 @@ def _config_response(config: ShapeClassificationConfig, is_default: bool) -> dic
     }
 
 
+def _rules_from_request(req: ShapeRulesUpdate) -> ShapeClassificationConfig:
+    """Build a config from the editable rule list, keeping the active default_shape."""
+    current = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
+    return ShapeClassificationConfig(
+        default_shape=current.default_shape,
+        rules=[
+            ShapeRule(
+                label=rule.label,
+                conditions=[
+                    ShapeCondition(metric=c.metric, op=c.op, value=c.value)
+                    for c in rule.conditions
+                ],
+            )
+            for rule in req.rules
+        ],
+    )
+
+
+_PRESET_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]*$")
+
+
+def _preset_path(name: str) -> Path:
+    if not _PRESET_NAME_RE.fullmatch(name):
+        raise HTTPException(
+            status_code=400,
+            detail="Preset names may only contain letters, numbers, spaces, dots, dashes, and underscores",
+        )
+    return app_support_shape_configs_dir() / f"{name}.toml"
+
+
+@router.get("/shape-rules/presets")
+async def list_shape_rule_presets():
+    """Names of saved presets, alphabetical."""
+    presets_dir = app_support_shape_configs_dir()
+    if not presets_dir.exists():
+        return {"presets": []}
+    return {"presets": sorted(p.stem for p in presets_dir.glob("*.toml"))}
+
+
+@router.post("/shape-rules/presets/{name}")
+async def save_shape_rule_preset(name: str, req: ShapeRulesUpdate):
+    """Store the given rules under a name; active rules are left untouched."""
+    config = _rules_from_request(req)
+    path = _preset_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_shape_classification_config(config))
+    logger.info(f"Saved shape-rule preset {name!r}")
+    return _config_response(config, is_default=False)
+
+
+@router.post("/shape-rules/presets/{name}/load")
+async def load_shape_rule_preset(name: str):
+    """Copy a named preset into the active override slot."""
+    preset_path = _preset_path(name)
+    if not preset_path.exists():
+        raise HTTPException(
+            status_code=404, detail=f"No shape-rule preset named {name!r}"
+        )
+    config = load_shape_classification_config(preset_path)
+    override_path = app_support_shape_config_path()
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    override_path.write_text(dump_shape_classification_config(config))
+    logger.info(f"Loaded shape-rule preset {name!r}")
+    return _config_response(config, is_default=False)
+
+
 @router.get("/shape-rules")
 async def get_shape_rules():
     """actively override if one exists, else the bundled default."""
@@ -72,20 +141,7 @@ async def update_shape_rules(req: ShapeRulesUpdate):
     and only the ordered rule list is editable from the client. Written to the app-support
     override path; the bundled shape_config.toml is never modified.
     """
-    current = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
-    updated = ShapeClassificationConfig(
-        default_shape=current.default_shape,
-        rules=[
-            ShapeRule(
-                label=rule.label,
-                conditions=[
-                    ShapeCondition(metric=c.metric, op=c.op, value=c.value)
-                    for c in rule.conditions
-                ],
-            )
-            for rule in req.rules
-        ],
-    )
+    updated = _rules_from_request(req)
     override_path = app_support_shape_config_path()
     override_path.parent.mkdir(parents=True, exist_ok=True)
     override_path.write_text(dump_shape_classification_config(updated))

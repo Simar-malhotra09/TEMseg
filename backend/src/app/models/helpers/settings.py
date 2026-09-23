@@ -42,6 +42,11 @@ def app_support_shape_config_path() -> Path:
     return app_data_dir() / "shape_config.toml"
 
 
+def app_support_shape_configs_dir() -> Path:
+    """Directory holding named shape-rule presets (one <name>.toml each)."""
+    return app_data_dir() / "shape_configs"
+
+
 def bundled_shape_config_path() -> Path:
     """Default shape_config.toml shipped next to compute_stats.py."""
     return Path(__file__).resolve().parent / "shape_config.toml"
