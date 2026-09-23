@@ -10,10 +10,13 @@ import json
 import hashlib
 import os
 import platform
+import re
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
+import uuid
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -483,6 +486,70 @@ class Api:
             dest = save_path if isinstance(save_path, str) else save_path[0]
             Path(dest).write_bytes(zip_bytes)
             return {"success": True, "path": dest}
+
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def import_folder(self) -> dict:
+        """
+        Called from JS: window.pywebview.api.import_folder()
+        Opens a native folder dialog, POSTs every image file in it to the
+        backend /images/upload-many endpoint (group name = folder name),
+        and returns the backend's response to the page.
+        """
+        try:
+            folder = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+            if not folder:
+                return {"success": False, "error": "cancelled"}
+            folder = Path(folder[0] if isinstance(folder, (list, tuple)) else folder)
+
+            exts = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".npy", ".emd"}
+            files = []
+            for p in folder.iterdir():
+                if p.is_file() and p.suffix.lower() in exts:
+                    files.append(p)
+            if not files:
+                return {"success": False, "error": "No image files in that folder"}
+            files.sort(
+                key=lambda p: [
+                    int(t) if t.isdigit() else t.lower()
+                    for t in re.split(r"(\d+)", p.name)
+                ]
+            )
+
+            boundary = f"----temseg{uuid.uuid4().hex}"
+            body = bytearray()
+            for p in files:
+                ascii_name = p.name.encode("ascii", "replace").decode()
+                disp = (
+                    f'form-data; name="files"; filename="{ascii_name}"; '
+                    f"filename*=UTF-8''{urllib.parse.quote(p.name)}"
+                )
+                body += (
+                    f"--{boundary}\r\n"
+                    f"Content-Disposition: {disp}\r\n"
+                    f"Content-Type: application/octet-stream\r\n\r\n"
+                ).encode()
+                body += p.read_bytes()
+                body += b"\r\n"
+            group_disp = (
+                f'form-data; name="group_name"\r\n\r\n{folder.name}\r\n'
+            )
+            body += f"--{boundary}\r\nContent-Disposition: {group_disp}".encode()
+            body += f"--{boundary}--\r\n".encode()
+
+            url = f"http://localhost:{BACKEND_PORT}/images/upload-many"
+            req = urllib.request.Request(
+                url,
+                data=bytes(body),
+                headers={
+                    "Content-Type": f"multipart/form-data; boundary={boundary}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                result = json.loads(resp.read())
+            return {"success": True, **result}
 
         except Exception as e:
             return {"success": False, "error": str(e)}
