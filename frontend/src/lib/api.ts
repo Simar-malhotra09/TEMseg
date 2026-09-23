@@ -413,6 +413,73 @@ export async function getRecentSessions(): Promise<RecentSession[]> {
   return res.json();
 }
 
+export interface GroupSession {
+  session_id: string;
+  file_name: string;
+  preview_url: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  created_at: number;
+  sessions: GroupSession[];
+  session_count: number;
+}
+
+export async function getGroups(): Promise<Group[]> {
+  const res = await trackedFetch(`${BASE_URL}/groups`);
+  if (!res.ok) throw new Error(`getGroups: ${res.status}`);
+  return res.json();
+}
+
+export async function getGroup(groupId: string): Promise<Group> {
+  const res = await trackedFetch(`${BASE_URL}/groups/${groupId}`);
+  if (!res.ok) throw new Error(`getGroup: ${res.status}`);
+  return res.json();
+}
+
+export interface UploadManyResult {
+  group: { id: string; name: string } | null;
+  sessions: {
+    session_id: string;
+    filename: string;
+    preview_url: string;
+    image_info: Metadata;
+  }[];
+  warnings: { filename: string; error: string }[];
+  error?: string;
+}
+
+export async function uploadManyImages(
+  files: File[],
+  groupName: string,
+): Promise<UploadManyResult> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  form.append("group_name", groupName);
+  const res = await trackedFetch(`${BASE_URL}/images/upload-many`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`upload-many failed: ${res.status}`);
+  return res.json();
+}
+
+/** Open a folder via the PyWebView native dialog; the launcher uploads it. */
+export function isFolderImportAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!(window as any).pywebview?.api?.import_folder
+  );
+}
+
+export async function importFolderViaPyWebView(): Promise<
+  UploadManyResult & { success: boolean }
+> {
+  return (window as any).pywebview.api.import_folder();
+}
+
 export async function updatePixelSize(
   sessionId: string,
   pixelSize: number,

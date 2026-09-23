@@ -818,6 +818,65 @@ font-size: 9.5px;
 color: var(--text-ghost);
 }
 
+.folderBtn {
+display: inline-flex;
+align-items: center;
+gap: 6px;
+margin-top: 10px;
+padding: 7px 14px;
+background: var(--bg-elev);
+border: 1px solid var(--border);
+border-radius: 4px;
+color: var(--accent);
+font-family: inherit;
+font-size: 11px;
+cursor: pointer;
+transition: border-color 0.15s;
+}
+.folderBtn:hover { border-color: var(--accent); }
+
+.groupSessionRow { padding-left: 24px; }
+
+.groupThumb {
+width: 26px;
+height: 26px;
+object-fit: cover;
+border-radius: 2px;
+flex-shrink: 0;
+background: var(--bg-hover);
+}
+
+.groupNav {
+display: inline-flex;
+align-items: center;
+gap: 4px;
+margin-left: 8px;
+padding: 2px 6px;
+border: 1px solid var(--border);
+border-radius: 4px;
+background: var(--bg-elev);
+}
+
+.navBtn {
+display: inline-flex;
+align-items: center;
+justify-content: center;
+background: none;
+border: none;
+color: var(--text-dim);
+cursor: pointer;
+padding: 2px;
+border-radius: 3px;
+}
+.navBtn:hover:not(:disabled) { color: var(--accent); }
+.navBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.groupPos {
+font-size: 9.5px;
+color: var(--text-dim);
+font-variant-numeric: tabular-nums;
+}
+
 .imageViewport {
 position: relative;
 max-width: 100%;

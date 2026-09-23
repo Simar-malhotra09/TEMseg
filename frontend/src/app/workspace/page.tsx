@@ -5,12 +5,12 @@ import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 // import {Image} from "next/Image"
 import {
   Upload, Play, Sliders,
-  Eye, EyeOff, Trash2, ChevronDown, AlertTriangle,
+  Eye, EyeOff, Trash2, ChevronDown, ChevronLeft, ChevronRight, AlertTriangle,
   Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
-  Maximize, Minus, Plus, Square, File,
+  Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -330,8 +330,12 @@ export default function Workspace() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const restored = params.get("session");
+    const restoredGroup = params.get("group");
     if (!restored) return;
     (async () => {
+      if (restoredGroup) {
+        getGroup(restoredGroup).then(setGroupCtx).catch(() => {});
+      }
       const meta = await getSessionMetadata(restored).catch(() => null);
       if (!meta) {
         window.history.replaceState(null, "", "/workspace");
@@ -374,10 +378,18 @@ export default function Workspace() {
 
   // MRU sessions for the empty-state recents rows (backend returns newest-first).
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  // multi-image groups for the empty-state groups panel
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  // group context for the active session (prev/next navigation)
+  const [groupCtx, setGroupCtx] = useState<Group | null>(null);
   useEffect(() => {
     getRecentSessions()
       .then(setRecentSessions)
       .catch(() => setRecentSessions([]));
+    getGroups()
+      .then(setGroups)
+      .catch(() => setGroups([]));
   }, []);
 
   // zoom/pan
@@ -541,8 +553,7 @@ export default function Workspace() {
   }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.polygonOpacity, refine.setPolygonOpacity]);
 
   // image upload
-  async function handleFile(file: File) {
-    setStatus("Uploading...");
+  function resetForNewImage() {
     seg.reset();
     setRefineMode(false);
     setMetadata(null);
@@ -560,6 +571,38 @@ export default function Workspace() {
     setAnglePoints([]);
     setAngleMeasurements([]);
     setAngleCursor(null);
+  }
+
+  function applyUploadResult(result: UploadManyResult) {
+    const first = result.sessions[0];
+    setSessionId(first.session_id);
+    setImage(`${BASE_URL}${first.preview_url}`);
+    if (first.image_info) setMetadata(first.image_info);
+    setGroupCtx(
+      result.group
+        ? {
+            id: result.group.id,
+            name: result.group.name,
+            created_at: Date.now() / 1000,
+            sessions: result.sessions.map(s => ({
+              session_id: s.session_id,
+              file_name: s.filename,
+              preview_url: s.preview_url,
+            })),
+            session_count: result.sessions.length,
+          }
+        : null,
+    );
+    const query = result.group
+      ? `?group=${result.group.id}&session=${first.session_id}`
+      : `?session=${first.session_id}`;
+    // Use query string so /workspace stays a real Next.js route across refreshes.
+    window.history.replaceState(null, "", `/workspace${query}`);
+  }
+
+  async function handleFile(file: File) {
+    setStatus("Uploading...");
+    resetForNewImage();
     try {
       const result = await uploadImage(file);
       if (result.error) {
@@ -567,11 +610,16 @@ export default function Workspace() {
         pushToast("err", "Upload failed", result.error);
         return;
       }
-      setSessionId(result.session_id);
-      setImage(`${BASE_URL}${result.preview_url}`);
-      if (result.image_info) setMetadata(result.image_info);
-      // Use query string so /workspace stays a real Next.js route across refreshes.
-      window.history.replaceState(null, "", `/workspace?session=${result.session_id}`);
+      applyUploadResult({
+        group: null,
+        sessions: [{
+          session_id: result.session_id,
+          filename: result.filename,
+          preview_url: result.preview_url,
+          image_info: result.image_info,
+        }],
+        warnings: [],
+      });
       setStatus(`Loaded: ${file.name} — ready to segment.`);
     } catch (err) {
       console.error("upload failed:", err);
@@ -580,9 +628,71 @@ export default function Workspace() {
     }
   }
 
+  // multi-file upload: every file becomes a session inside one group
+  async function handleFiles(files: File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    if (list.length === 1) {
+      handleFile(list[0]);
+      return;
+    }
+    setStatus(`Uploading ${list.length} images…`);
+    resetForNewImage();
+    try {
+      const groupName = list[0].name.replace(/\.[^.]*$/, "") || "Batch";
+      const result = await uploadManyImages(list, groupName);
+      if (result.error || !result.sessions?.length) {
+        setStatus(result.error ?? "Upload failed");
+        pushToast("err", "Upload failed", result.error ?? "No loadable images");
+        return;
+      }
+      applyUploadResult(result);
+      if (result.warnings?.length) {
+        pushToast("warn", `${result.warnings.length} file(s) skipped`, result.warnings.map(w => w.filename).join(", "));
+      }
+      setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
+    } catch (err) {
+      console.error("multi-upload failed:", err);
+      setStatus(`Upload failed: ${(err as Error).message}`);
+      pushToast("err", "Upload failed", (err as Error).message);
+    }
+  }
+
+  // folder import via the PyWebView native dialog (launcher uploads the folder)
+  async function handleFolderImport() {
+    setStatus("Opening folder…");
+    resetForNewImage();
+    try {
+      const result = await importFolderViaPyWebView();
+      if (!result.success) {
+        if (result.error === "cancelled") {
+          setStatus("Folder import cancelled.");
+          return;
+        }
+        setStatus(result.error ?? "Folder import failed");
+        pushToast("err", "Folder import failed", result.error ?? "Unknown error");
+        return;
+      }
+      if (result.error || !result.sessions?.length) {
+        setStatus(result.error ?? "Folder import failed");
+        pushToast("err", "Folder import failed", result.error ?? "No loadable images");
+        return;
+      }
+      applyUploadResult(result);
+      if (result.warnings?.length) {
+        pushToast("warn", `${result.warnings.length} file(s) skipped`, result.warnings.map(w => w.filename).join(", "));
+      }
+      setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
+    } catch (err) {
+      console.error("folder import failed:", err);
+      setStatus(`Folder import failed: ${(err as Error).message}`);
+      pushToast("err", "Folder import failed", (err as Error).message);
+    }
+  }
+
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    const files = e.target.files;
+    if (files && files.length > 0) handleFiles(Array.from(files));
     e.target.value = "";
   }
 
@@ -602,8 +712,8 @@ export default function Workspace() {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) handleFiles(Array.from(files));
   }
 
 
@@ -1505,6 +1615,34 @@ export default function Workspace() {
                 data-src={seg.isSegmenting ? "busy" : seg.segDone ? "ready-after-run" : "idle"} />
               {sessionId ? `session · ${sessionId.slice(0, 8)}` : "upload image to start"}
             </span>
+            {groupCtx && sessionId && (() => {
+              const idx = groupCtx.sessions.findIndex(s => s.session_id === sessionId);
+              const prev = idx > 0 ? groupCtx.sessions[idx - 1] : null;
+              const next = idx >= 0 && idx < groupCtx.sessions.length - 1 ? groupCtx.sessions[idx + 1] : null;
+              return (
+                <span className={styles.groupNav} title={groupCtx.name}>
+                  <button
+                    type="button"
+                    className={styles.navBtn}
+                    disabled={!prev}
+                    title={prev?.file_name ?? ""}
+                    onClick={() => prev && window.location.assign(`/workspace?group=${groupCtx.id}&session=${prev.session_id}`)}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className={styles.groupPos}>{idx >= 0 ? `${idx + 1}/${groupCtx.session_count}` : "–"}</span>
+                  <button
+                    type="button"
+                    className={styles.navBtn}
+                    disabled={!next}
+                    title={next?.file_name ?? ""}
+                    onClick={() => next && window.location.assign(`/workspace?group=${groupCtx.id}&session=${next.session_id}`)}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </span>
+              );
+            })()}
           </div>
 
           {/* model + SAM depth selectors live in the top bar (moved from the
@@ -2292,9 +2430,47 @@ export default function Workspace() {
                 <div className={styles.emptyInner}>
                   <div className={styles.dropBox}>
                     <Upload size={32} strokeWidth={1.5} />
-                    <p className={styles.dropLabel}>Drop image here or click to upload</p>
-                    <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported</p>
+                    <p className={styles.dropLabel}>Drop images here or click to upload</p>
+                    <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported — multiple files become a group</p>
                   </div>
+                  {isFolderImportAvailable() && (
+                    <button
+                      type="button"
+                      className={styles.folderBtn}
+                      onClick={e => { e.stopPropagation(); handleFolderImport(); }}
+                    >
+                      <FolderOpen size={14} /> Open Folder
+                    </button>
+                  )}
+                  {groups.length > 0 && (
+                    <div className={styles.recents} onClick={e => e.stopPropagation()}>
+                      <div className={styles.recentsHead}><span>Groups</span><span>images</span></div>
+                      {groups.map(g => (
+                        <div key={g.id}>
+                          <button
+                            type="button"
+                            className={styles.recentRow}
+                            onClick={() => setExpandedGroup(e => (e === g.id ? null : g.id))}
+                          >
+                            <Folder size={13} className={styles.recentIco} />
+                            <span className={styles.recentName}>{g.name}</span>
+                            <span className={styles.recentMeta}>{g.session_count}</span>
+                          </button>
+                          {expandedGroup === g.id && g.sessions.map(s => (
+                            <button
+                              type="button"
+                              key={s.session_id}
+                              className={`${styles.recentRow} ${styles.groupSessionRow}`}
+                              onClick={() => window.location.assign(`/workspace?group=${g.id}&session=${s.session_id}`)}
+                            >
+                              <img src={`${BASE_URL}${s.preview_url}`} className={styles.groupThumb} alt="" />
+                              <span className={styles.recentName}>{s.file_name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {recentSessions.length > 0 && (
                     <div className={styles.recents} onClick={e => e.stopPropagation()}>
                       <div className={styles.recentsHead}><span>Recent</span><span>session dir</span></div>
@@ -2961,7 +3137,7 @@ export default function Workspace() {
                 </button>
               </div>
             )}
-            <input ref={fileRef} type="file" accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
+            <input ref={fileRef} type="file" multiple accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
               hidden onChange={onFileChange} />
           </main>
 
