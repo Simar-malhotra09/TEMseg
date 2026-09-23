@@ -467,11 +467,11 @@ export default function Workspace() {
   // /segment it would be empty even though the disk state is current.
   useEffect(() => {
     if (!sessionId) return;
-    if (!annotateMode && !boxMode) return;
+    if (!annotateMode && !boxMode && !bootstrapMode) return;
     getInstances(sessionId)
       .then(r => setLoadedInstances(r.instances ?? []))
       .catch(() => {});
-  }, [annotateMode, boxMode, sessionId]);
+  }, [annotateMode, boxMode, bootstrapMode, sessionId]);
 
 
   // segmentation hook
@@ -2493,19 +2493,58 @@ export default function Workspace() {
 
                 {/* bootstrap click capture.sits on top, transparent, catches clicks */}
                 {bootstrapMode && !refineMode && imgSize.width > 0 && (
-                  <div
-                    onClick={handleBootstrapClick}
-                    style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
-                      cursor: bootstrapBusy ? "wait" : "crosshair",
-                      // thin accent outline so the user knows the mode is
-                      // active — no colour wash over the image itself
-                      boxShadow: "inset 0 0 0 2px rgba(126, 232, 162, 0.5)",
-                      borderRadius: 2,
-                      pointerEvents: "auto",
-                    }}
-                  />
+                  <>
+                    {/* already-segmented boundaries as green context */}
+                    <svg
+                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                      preserveAspectRatio="none"
+                      style={{
+                        position: "absolute", top: 0, left: 0,
+                        width: "100%", height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 11,
+                      }}
+                    >
+                      {loadedInstances.map(inst => {
+                        if (!inst.contour || inst.contour.length < 3) return null;
+                        const pts = inst.contour.map(([x, y]) => `${x},${y}`).join(" ");
+                        return (
+                          <g key={`existing-${inst.id}`}>
+                            <polygon
+                              points={pts}
+                              fill="rgba(126, 232, 162, 0.10)"
+                              stroke="#7ee8a2"
+                              strokeWidth={1.5}
+                              pointerEvents="none"
+                            />
+                            {(inst.extra_contours ?? []).map((c, ci) => (
+                              <polygon
+                                key={`xe-${ci}`}
+                                points={c.map(([x, y]) => `${x},${y}`).join(" ")}
+                                fill="rgba(126, 232, 162, 0.10)"
+                                stroke="#7ee8a2"
+                                strokeWidth={1.5}
+                                pointerEvents="none"
+                              />
+                            ))}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    <div
+                      onClick={handleBootstrapClick}
+                      style={{
+                        position: "absolute", top: 0, left: 0,
+                        width: "100%", height: "100%",
+                        cursor: bootstrapBusy ? "wait" : "crosshair",
+                        // thin accent outline so the user knows the mode is
+                        // active — no colour wash over the image itself
+                        boxShadow: "inset 0 0 0 2px rgba(126, 232, 162, 0.5)",
+                        borderRadius: 2,
+                        pointerEvents: "auto",
+                      }}
+                    />
+                  </>
                 )}
 
                 {/* scale bar line. rendered under the mouse capture overlay */}
