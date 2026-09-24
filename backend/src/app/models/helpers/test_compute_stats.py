@@ -13,7 +13,20 @@ from pathlib import Path
 # allow running from backend/src/
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.models.helpers.compute_stats import compute_stats, _equivalent_diameter_px
+from app.api.instances import extract_instances
+from app.models.helpers.compute_stats import compute_stats_from_instances, _equivalent_diameter_px
+
+
+def compute_stats(mask, pixel_size=None, pixel_unit=None):
+    """Test shim: production takes pre-extracted instances, not a raw mask."""
+    instances, labeled = extract_instances(mask, Path("/tmp"), save=False)
+    return compute_stats_from_instances(
+        instances,
+        mask,
+        pixel_size=pixel_size,
+        pixel_unit=pixel_unit,
+        labeled_mask=labeled,
+    )
 
 
 # Helpers to generate synthetic masks
@@ -73,7 +86,10 @@ def test_single_circle():
 
     circ = stats["particles"][0]["circularity"]
     print(f"  Circularity: {circ:.4f} (expected ~1.0)")
-    assert circ > 0.95, f"Circularity too low for circle: {circ}"
+    # circularity uses the exact pixel contour; raster staircase inflates the
+    # perimeter of a r=50 circle, capping it near 0.91 (not ~0.99 as with a
+    # simplified polygon)
+    assert circ > 0.88, f"Circularity too low for circle: {circ}"
 
     ar = stats["particles"][0]["aspect_ratio"]
     print(f"  Aspect ratio: {ar:.4f} (expected ~1.0)")
@@ -120,7 +136,7 @@ def test_pixel_scale_conversion():
 
     stats = compute_stats(mask, pixel_size=pixel_size, pixel_unit="nm")
 
-    assert stats["has_scale"] == True
+    assert stats["has_scale"]
     assert stats["unit"] == "nm"
 
     area_px = stats["particles"][0]["area_px"]
@@ -162,10 +178,11 @@ def test_elongated_rectangle():
     assert p["circularity"] < 0.85, f"Circularity too high for rectangle: {p['circularity']}"
 
     print(f"  Shape: {p['shape']} (expected 'elongated')")
-    assert p["shape"] == "elongated", f"Expected 'elongated', got '{p['shape']}'"
+    assert p["shape"] == "rod", f"Expected 'rod', got '{p['shape']}'"
 
     # area should be close to 20*100 = 2000
-    true_area = 20 * 100
+    # raster truth: cv.rectangle is endpoint-inclusive (21x101 px), not 20x100
+    true_area = np.count_nonzero(mask)
     area_err = abs(p["area_px"] - true_area) / true_area
     print(f"  Area: {p['area_px']:.0f} (expected ~{true_area}, error={area_err:.4f})")
     assert area_err < 0.05, f"Area error: {area_err}"
@@ -196,10 +213,10 @@ def test_shape_distribution():
     sd = stats["shape_distribution"]
     print(f"  Shape dist: {sd}")
 
-    assert "circular" in sd, "Missing 'circular' in shape distribution"
-    assert "elongated" in sd, "Missing 'elongated' in shape distribution"
-    assert sd["circular"]["count"] == 3, f"Expected 3 circular, got {sd['circular']['count']}"
-    assert sd["elongated"]["count"] == 2, f"Expected 2 elongated, got {sd['elongated']['count']}"
+    assert "spherical" in sd, "Missing 'spherical' in shape distribution"
+    assert "rod" in sd, "Missing 'rod' in shape distribution"
+    assert sd["spherical"]["count"] == 3, f"Expected 3 spherical, got {sd['spherical']['count']}"
+    assert sd["rod"]["count"] == 2, f"Expected 2 rod, got {sd['rod']['count']}"
 
     print("  ✓ PASSED")
 
@@ -214,10 +231,11 @@ def test_coverage():
 
     stats = compute_stats(mask)
 
-    expected_coverage = 100 / 10000
+    # cv.rectangle is endpoint-inclusive: (0,0)-(10,10) fills 11x11 = 121 px
+    expected_coverage = np.count_nonzero(mask) / mask.size
     err = abs(stats["coverage"] - expected_coverage)
-    print(f"  Coverage: {stats['coverage']:.4f} (expected {expected_coverage:.4f}, err={err:.6f})")
-    assert err < 1e-6, f"Coverage error: {err}"
+    print(f"  Coverage: {stats['coverage']:.6f} (expected {expected_coverage:.6f}, err={err:.8f})")
+    assert err < 1e-9, f"Coverage error: {err}"
 
     print("  ✓ PASSED")
 
