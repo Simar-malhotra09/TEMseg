@@ -3,13 +3,12 @@
 ### 2026-09-24
 - Fix YoloMaskRCNN output. Instead of keeping  instance identity, it was unioning all YOLO box masks into one binary blob and re-deriving instances with connected components. Each pasted mask now claims its pixels in a uint16 label map instead, so counts match YoloSAM and masks colour per instance. 
 - Refine saves with no edits are instant: posted instances are compared against what's on disk and, when identical (with an mtime guard so stale stats still rebuild), the whole rasterize/colorize/recompute chain is skipped **4.8 s → 0.03 s at 335 particles**, and it doesn't grow with particle count. 
-- Groups added. Users can now upload multiple files/whole folders. 
 - Rename/delete for groups and sessions. Note: For now, renaming edits the display name only, not the file on disk is untouched. Deleting a session prunes it from the MRU and any group, dropping groups left empty; deleting a group keeps its sessions as individual images.
 - Equivalent-diameter overlay in refine mode: with the Diameter tooltip field enabled, the hovered particle gets a dashed reference circle plus a capped diameter line. 
 - Fixes: masks always come back visible when leaving refine mode (Esc/save/mode-switch forgot to restore them); folder upload works in a plain browser via a native directory picker, not just the desktop dialog; segment requests without a `regions` field no longer crash.
 
 ### 2026-09-23
-- Multi-image upload with groups: drop/select several files (or import a folder) and each becomes its own session, tied together in an ordered, nameable group — name prompt on upload, blank falls back to the folder name. Sessions stay flat; groups are just an id list. The empty state gains a Groups panel with expandable thumbnails, prev/next navigation inside a group, the group name in Image Info, and a 10-row budget across Groups + Recent (at most 5 groups, the rest MRU images). 8-char session ids, and unsupported files are skipped with a warning instead of failing the batch.
+- Multi-image upload with groups: Users can now upload multiple files/whole folders. Sessions stay flat; groups are just an id list. The empty state gains a Groups panel with expandable thumbnails, prev/next navigation inside a group, the group name in Image Info.
 - Shape rules: preset picker in the rules modal; loading a preset reclassifies the stats immediately. Preset names may contain punctuation.
 
 ### 2026-09-12
