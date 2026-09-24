@@ -48,6 +48,10 @@ class SegmentationResult:
     segmentation_mask: np.ndarray
     model: str
     metadata: Dict[str, Any] | None = None
+    # detector boxes that produced the masks (overlay / debug display)
+    detection_boxes: np.ndarray | None = None
+    # uint16 per-pixel box-owner map: 0 = background, 1-based detector box index
+    instance_labels: np.ndarray | None = None
 
 
 class Particle(BaseModel):

@@ -145,6 +145,7 @@ class YoloMaskRCNN(Model):
                 segmentation_mask=np.zeros((h, w), dtype="uint8"),
                 metadata={"detections": 0},
                 model=self.model_id,
+                detection_boxes=np.zeros((0, 4), dtype=np.float32),
             )
 
         tensor = (
@@ -174,21 +175,29 @@ class YoloMaskRCNN(Model):
             mask_prob = maskrcnn_inference(mask_logits, labels)[0]
 
             # Chunked paste: pasting all boxes at full res at once can exceed
-            # MPS limits on large images (~10 GiB for many boxes). A running max
-            # over chunks is bit-identical since thresholding at a fixed cutoff
-            # commutes with max.
-            combined = torch.zeros((h, w), dtype=torch.float32, device=self.device)
+            # MPS limits on large images (~10 GiB for many boxes). Each pasted
+            # mask is thresholded and claimed in box order by a uint16 label map
+            # (first box wins a contested pixel). labels > 0 is exactly the old
+            # running-max-then-threshold union; keeping the box identity lets
+            # extract_instances count touching particles as separate instances
+            # instead of collapsing them into one connected component.
+            labels_np = np.zeros((h, w), dtype=np.uint16)
             CHUNK = 64
             for i in range(0, len(boxes), CHUNK):
                 chunk = paste_masks_in_image(mask_prob[i : i + CHUNK], yb[i : i + CHUNK], (h, w))
-                combined = torch.maximum(combined, chunk.squeeze(1).max(dim=0).values)
+                bin_np = (chunk > 0.5).squeeze(1).cpu().numpy()
+                for k in range(bin_np.shape[0]):
+                    m = bin_np[k]
+                    labels_np[m & (labels_np == 0)] = i + k + 1
                 if self.device == "mps":
                     torch.mps.empty_cache()
 
-        combined = (combined.cpu().numpy() > 0.5).astype("uint8")
+        combined = (labels_np > 0).astype("uint8")
 
         return SegmentationResult(
             segmentation_mask=combined,
             metadata={"detections": len(boxes)},
             model=self.model_id,
+            detection_boxes=np.asarray(boxes, dtype=np.float32),
+            instance_labels=labels_np,
         )
