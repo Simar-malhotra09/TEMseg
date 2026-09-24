@@ -827,7 +827,8 @@ def main():
             height=900,
             min_size=(900, 600),
         )
-        main_window.expose(Api(main_window).export_zip)
+        api = Api(main_window)
+        main_window.expose(api.export_zip, api.import_folder)
 
         # Close loading window after main is created
         loading_window.destroy()
