@@ -114,17 +114,18 @@ export default function RefineCanvas({
   // cursor is currently over, not what's selected for editing
   const [hover, setHover] = useState<{ id: number; x: number; y: number } | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null);
 
   // clamp the tooltip so it never spills outside the canvas viewport. 
   // flip to the opposite side of the cursor if the default offset would overflow
   useLayoutEffect(() => {
-    if (!hover || !tooltipRef.current) {
-      setTooltipPos(null);
+    const el = tooltipRef.current;
+    if (!el) return;
+    if (!hover) {
+      el.style.visibility = "hidden";
       return;
     }
-    const tw = tooltipRef.current.offsetWidth;
-    const th = tooltipRef.current.offsetHeight;
+    const tw = el.offsetWidth;
+    const th = el.offsetHeight;
     const OFFSET = 14;
     let left = hover.x + OFFSET;
     let top = hover.y + OFFSET;
@@ -132,7 +133,11 @@ export default function RefineCanvas({
     if (top + th > height) top = hover.y - OFFSET - th;
     left = Math.max(0, Math.min(left, width - tw));
     top = Math.max(0, Math.min(top, height - th));
-    setTooltipPos({ left, top });
+    // styles go straight to the node: the clamp needs the just-rendered
+    // DOM measure, and setState here would re-render for a pure position fix
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.visibility = "visible";
   }, [hover, width, height, visibleTooltipFields.length]);
 
   // scale factor: image pixels per screen pixel at current zoom
@@ -474,9 +479,9 @@ export default function RefineCanvas({
         ref={tooltipRef}
         style={{
           position: "absolute",
-          left: tooltipPos?.left ?? 0,
-          top: tooltipPos?.top ?? 0,
-          visibility: tooltipPos ? "visible" : "hidden",
+          left: 0,
+          top: 0,
+          visibility: "hidden",
           background: "#161616",
           border: "1px solid #2a2a2a",
           borderRadius: 4,

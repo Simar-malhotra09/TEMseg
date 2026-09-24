@@ -13,9 +13,9 @@ import ShapeRulesModal from "./ShapeRulesModal";
 import CalibrateSection from "./CalibrateSection";
 
 interface GTScores {
-  iou: number;
-  dice: number;
-  pixel_acc: number;
+  iou?: number;
+  dice?: number;
+  pixel_acc?: number;
 }
 
 interface Props {
@@ -336,7 +336,7 @@ export default function StatsPanel({
           {sizeOpen && (
             <>
               <MiniHistogram
-                values={stats.particles.map((p: any) =>
+                values={stats.particles.map(p =>
                   hasScale && p.diameter_real != null
                     ? p.diameter_real
                     : p.diameter_px,
@@ -408,7 +408,7 @@ export default function StatsPanel({
           {shapeOpen && (
             <div className={styles.shapeGrid}>
               {Object.entries(stats.shape_distribution).map(
-                ([shape, data]: [string, any]) => (
+                ([shape, data]) => (
                   <ShapeBar
                     key={shape}
                     label={shape}

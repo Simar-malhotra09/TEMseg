@@ -6,6 +6,7 @@ import {
   PieChart, Pie, Cell, ReferenceLine, CartesianGrid,
   ComposedChart, Line,
   ScatterChart, Scatter, ZAxis,
+  TooltipContentProps,
 } from "recharts";
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
@@ -15,9 +16,9 @@ import { PARTICLE_METRIC_FIELDS, exportHistogramCsv } from "@/lib/api";
 
 
 interface GTScores {
-  iou: number;
-  dice: number;
-  pixel_acc: number;
+  iou?: number;
+  dice?: number;
+  pixel_acc?: number;
 }
 
 interface Props {
@@ -98,7 +99,11 @@ function buildBins(values: number[], binCount = 20) {
 }
 
 // Custom tooltip for histogram 
-function HistTooltip({ active, payload, unit }: any) {
+function HistTooltip({ active, payload, unit }: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload: { binStart: number; binEnd: number; count: number } }>;
+  unit?: string;
+}) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -508,7 +513,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                 />
                 <ZAxis dataKey="solidity" range={[30, 150]} />
                 <Tooltip
-                  content={({ active, payload }: any) => {
+                  content={({ active, payload }: TooltipContentProps) => {
                     if (!active || !payload?.length) return null;
                     const d = payload[0].payload;
                     return (
@@ -523,7 +528,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                   cursor={{ strokeDasharray: "3 3" }}
                 />
                 {Object.entries(
-                  scatterData.reduce((acc: Record<string, any[]>, p) => {
+                  scatterData.reduce((acc: Record<string, (typeof scatterData)[number][]>, p) => {
                     const s = p.shape;
                     if (!acc[s]) acc[s] = [];
                     acc[s].push(p);
@@ -636,9 +641,9 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
           { label: "Avg Circularity", value: fmt(stats.avg_circularity) },
           { label: "Avg Aspect Ratio", value: fmt(stats.avg_aspect_ratio) },
           ...(groundTruthScore ? [
-            { label: "IoU", value: groundTruthScore.iou.toFixed(3) },
-            { label: "Dice", value: groundTruthScore.dice.toFixed(3) },
-            { label: "Pixel Acc", value: groundTruthScore.pixel_acc.toFixed(3) },
+            { label: "IoU", value: groundTruthScore.iou?.toFixed(3) ?? "—" },
+            { label: "Dice", value: groundTruthScore.dice?.toFixed(3) ?? "—" },
+            { label: "Pixel Acc", value: groundTruthScore.pixel_acc?.toFixed(3) ?? "—" },
           ] : []),
         ].map(card => (
           <div key={card.label} className={styles.card}>

@@ -1680,7 +1680,7 @@ export default function Workspace() {
           <StatsDetailView
             stats={seg.stats}
             metadata={metadata}
-            groundTruthScore={seg.groundTruthScore as any}
+            groundTruthScore={seg.groundTruthScore}
             sessionId={sessionId}
             onBack={() => setShowStatsDetail(false)}
             onLocateParticle={handleLocateParticle}
@@ -2738,7 +2738,7 @@ export default function Workspace() {
 
                 {/* yolo detection boxes overlay (full image + green boxes) */}
                 {!refineMode && seg.segDone && seg.boxesVisible && seg.boxesUrl && (
-                  <img src={seg.boxesUrl} style={{
+                  <img src={seg.boxesUrl} alt="" style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
                     pointerEvents: "none",
@@ -2747,7 +2747,7 @@ export default function Workspace() {
 
                 {/* seg mask overlay */}
                 {!refineMode && seg.segDone && seg.masksVisible && seg.maskUrl && (
-                  <img src={seg.maskUrl} style={{
+                  <img src={seg.maskUrl} alt="" style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
                     opacity: polygonOpacity, mixBlendMode: "screen",
@@ -3182,7 +3182,7 @@ export default function Workspace() {
 
                 {/* GT overlay */}
                 {seg.gtVisible && seg.gtUrl && (
-                  <img src={seg.gtUrl} style={{
+                  <img src={seg.gtUrl} alt="" style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
                     opacity: 0.5, mixBlendMode: "screen",
@@ -3207,7 +3207,7 @@ export default function Workspace() {
                   loadedInstances
                     .filter(inst => {
                       // find this instance's shape from stats
-                      const particle = seg.stats?.particles?.find((p: any) => p.id === inst.id);
+                      const particle = seg.stats?.particles?.find(p => p.id === inst.id);
                       return particle?.shape === highlightShape;
                     })
                     .map(inst => (
@@ -3281,7 +3281,7 @@ export default function Workspace() {
             metadata={metadata}
             stats={seg.stats}
             segDone={seg.segDone}
-            groundTruthScore={seg.groundTruthScore as any}
+            groundTruthScore={seg.groundTruthScore}
             scaleBarMode={scaleBarMode}
             scaleBarPixels={scaleBarPixels}
             onViewDetails={() => setShowStatsDetail(true)}

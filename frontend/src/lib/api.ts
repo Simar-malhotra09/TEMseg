@@ -334,11 +334,25 @@ export interface Instance {
   seed?: [number, number];
 }
 
+interface PyWebViewApi {
+  export_zip(
+    sessionId: string,
+    items: string[],
+  ): Promise<{ success: boolean; path?: string; error?: string }>;
+  import_folder(groupName: string): Promise<UploadManyResult & { success: boolean }>;
+}
+
+declare global {
+  interface Window {
+    pywebview?: { api?: PyWebViewApi };
+  }
+}
+
 /** True when running inside the PyWebView desktop window */
 export function isPyWebView(): boolean {
   return (
     typeof window !== "undefined" &&
-    !!(window as any).pywebview?.api?.export_zip
+    !!window.pywebview?.api?.export_zip
   );
 }
 
@@ -350,7 +364,7 @@ export async function exportViaPyWebView(
   sessionId: string,
   items: string[],
 ): Promise<{ success: boolean; path?: string; error?: string }> {
-  return (window as any).pywebview.api.export_zip(sessionId, items);
+  return window.pywebview!.api!.export_zip(sessionId, items);
 }
 
 export async function getModels(): Promise<string[]> {
@@ -497,14 +511,14 @@ export async function uploadManyImages(
 export function isFolderImportAvailable(): boolean {
   return (
     typeof window !== "undefined" &&
-    !!(window as any).pywebview?.api?.import_folder
+    !!window.pywebview?.api?.import_folder
   );
 }
 
 export async function importFolderViaPyWebView(
   groupName: string,
 ): Promise<UploadManyResult & { success: boolean }> {
-  return (window as any).pywebview.api.import_folder(groupName);
+  return window.pywebview!.api!.import_folder(groupName);
 }
 
 export async function updatePixelSize(
