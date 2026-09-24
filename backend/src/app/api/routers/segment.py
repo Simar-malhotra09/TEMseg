@@ -92,7 +92,7 @@ async def segment(req: SegmentRequest, request: Request):
     )
     logger.info(
         f"segment request: session={req.session_id}, model={req.model.value}, "
-        f"depth={req.encoder_depth}, regions={len(req.regions)}, mode={action}"
+        f"depth={req.encoder_depth}, regions={len(req.regions or [])}, mode={action}"
     )
 
     session_dir = SESSIONS_DIR / req.session_id
