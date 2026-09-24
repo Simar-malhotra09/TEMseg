@@ -801,7 +801,21 @@ font-family: inherit;
 text-align: left;
 cursor: pointer;
 }
-.recentRow:last-child { border-bottom: none; }
+.rowWrap { display: flex; align-items: center; }
+.rowWrap > .recentRow { flex: 1; min-width: 0; }
+.rowWrap:last-child .recentRow { border-bottom: none; }
+.rowActions { display: flex; gap: 2px; padding-right: 6px; opacity: 0; }
+.rowWrap:hover .rowActions, .rowActions:focus-within { opacity: 1; }
+.rowAction {
+display: flex;
+padding: 4px;
+border: none;
+background: transparent;
+color: var(--text-ghost);
+cursor: pointer;
+}
+.rowAction:hover { color: var(--text); }
+.dangerRowAction:hover { color: #e87e7e; }
 .recentRow:hover { background: var(--bg-hover); color: var(--text); }
 .recentIco { flex-shrink: 0; color: var(--text-ghost); }
 .recentName {

@@ -1,9 +1,11 @@
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.api.utils import SESSIONS_DIR
 from app.logutils import get_logger
@@ -14,6 +16,10 @@ router = APIRouter(tags=["sessions"])
 MRU_K_SESSIONS_FILE = Path("mru_k_sessions.json")
 GROUPS_FILE = Path("groups.json")
 MRU_K_VAL = 10
+
+
+class RenameRequest(BaseModel):
+    name: str
 
 
 def _read_mru() -> list[dict]:
@@ -52,6 +58,8 @@ def recent_sessions() -> list[dict]:
         org_file = next(d.glob("org_*"), None)
         entries.append({
             **e,
+            # rebuilt at read time so renames show up without a re-upload
+            "file_name": _session_display_name(e["session_id"]) or e["file_name"],
             "file_size_bytes": org_file.stat().st_size if org_file else None,
         })
     return entries
@@ -78,26 +86,30 @@ def create_group(name: str, session_ids: list[str]) -> dict:
     return group
 
 
+def _session_display_name(session_id: str) -> str | None:
+    """Current display name (with extension) from metadata.json, or None."""
+    meta_path = SESSIONS_DIR / session_id / "metadata.json"
+    if not meta_path.exists():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    name = str(meta.get("file_name") or session_id)
+    if meta.get("original_format"):
+        name = f"{name}.{meta['original_format']}"
+    return name
+
+
 def _group_sessions(g: dict) -> list[dict]:
     """Session rows for a group; drops sessions whose dir no longer exists."""
     rows = []
     for sid in g["session_ids"]:
-        d = SESSIONS_DIR / sid
-        if not d.exists():
+        if not (SESSIONS_DIR / sid).exists():
             continue
-        file_name = sid
-        meta_path = d / "metadata.json"
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text())
-            except json.JSONDecodeError:
-                meta = {}
-            file_name = str(meta.get("file_name", sid))
-            if meta.get("original_format"):
-                file_name = f"{file_name}.{meta['original_format']}"
         rows.append({
             "session_id": sid,
-            "file_name": file_name,
+            "file_name": _session_display_name(sid) or sid,
             "preview_url": f"/images/{sid}/preview",
         })
     return rows
@@ -123,3 +135,81 @@ def get_group(group_id: str):
         if g["id"] == group_id:
             return _group_response(g)
     raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+
+
+def _write_groups(groups: list[dict]) -> None:
+    GROUPS_FILE.write_text(json.dumps(groups, indent=2))
+
+
+def _clean_name(name: str) -> str:
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is empty")
+    return name
+
+
+@router.patch("/sessions/{session_id}")
+def rename_session(session_id: str, req: RenameRequest):
+    """Rename the display name in metadata.json; the file on disk is untouched."""
+    meta_path = SESSIONS_DIR / session_id / "metadata.json"
+    if not meta_path.exists():
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    meta = json.loads(meta_path.read_text())
+    name = _clean_name(req.name)
+    fmt = str(meta.get("original_format") or "").lower()
+    if fmt and name.lower().endswith(f".{fmt}"):
+        name = name[: -(len(fmt) + 1)]
+    name = _clean_name(name)
+    meta["file_name"] = name
+    meta_path.write_text(json.dumps(meta, indent=2))
+    return {"session_id": session_id, "file_name": name}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str):
+    """Remove the session dir and drop it from the MRU and every group.
+    A group left with no sessions is removed too."""
+    session_dir = SESSIONS_DIR / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    shutil.rmtree(session_dir)
+
+    mru = _read_mru()
+    kept_mru = [e for e in mru if e["session_id"] != session_id]
+    if len(kept_mru) != len(mru):
+        MRU_K_SESSIONS_FILE.write_text(json.dumps(kept_mru, indent=2))
+
+    changed = False
+    kept_groups = []
+    for g in _read_groups():
+        if session_id in g["session_ids"]:
+            g["session_ids"] = [s for s in g["session_ids"] if s != session_id]
+            changed = True
+            if not g["session_ids"]:
+                continue
+        kept_groups.append(g)
+    if changed:
+        _write_groups(kept_groups)
+    return {"session_id": session_id}
+
+
+@router.patch("/groups/{group_id}")
+def rename_group(group_id: str, req: RenameRequest):
+    groups = _read_groups()
+    for g in groups:
+        if g["id"] == group_id:
+            g["name"] = _clean_name(req.name)
+            _write_groups(groups)
+            return _group_response(g)
+    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+
+
+@router.delete("/groups/{group_id}")
+def delete_group(group_id: str):
+    """Drop the group record only; its sessions stay as individual sessions."""
+    groups = _read_groups()
+    kept = [g for g in groups if g["id"] != group_id]
+    if len(kept) == len(groups):
+        raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+    _write_groups(kept)
+    return {"deleted": group_id}

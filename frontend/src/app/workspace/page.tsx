@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -278,6 +278,7 @@ export default function Workspace() {
   const viewportRef = useRef<HTMLDivElement>(null); // we want to keep track of the size of the current view: the div where the image is displayed
   const [viewportSize, setViewportSize] = useState<ImgSize>({ width: 0, height: 0 });
   const fileRef = useRef<HTMLInputElement>(null); // org file uploaded
+  const folderRef = useRef<HTMLInputElement>(null); // browser-side folder pick
   const gtFileRef = useRef<HTMLInputElement>(null); // gt file uploaded
 
   useEffect(() => {
@@ -324,6 +325,59 @@ export default function Workspace() {
   const measureTextStroke = 3 / measureScale;
   const measureHitR = 10 / measureScale;
 
+  // Load a session into the workspace: image, metadata, and seg/instances
+  // rehydrated from disk. Shared by URL restore, group nav, and list rows.
+  // Returns false (touching nothing) when the session no longer exists.
+  async function openSession(sessionId: string, group: Group | null): Promise<boolean> {
+    const meta = await getSessionMetadata(sessionId).catch(() => null);
+    if (!meta) return false;
+    resetForNewImage();
+    setGroupCtx(group);
+    setSessionId(sessionId);
+    setImage(`${BASE_URL}/images/${sessionId}/preview`);
+    setMetadata(meta);
+
+    // Rehydrate seg state from disk in parallel. both calls return null on 404
+    // (i.e. no segmentation run yet for this session).
+    const [stats, instRes] = await Promise.all([
+      getStats(sessionId).catch(() => null),
+      getInstances(sessionId).catch(() => ({ instances: [] as Instance[] })),
+    ]);
+    if (stats) {
+      seg.setStats(stats);
+      seg.setSegDone(true);
+      // Cache-bust so the browser doesn't show a stale mask.png.
+      seg.setMaskUrl(`${BASE_URL}/images/${sessionId}/mask?t=${Date.now()}`);
+      seg.setMasksVisible(true);
+    }
+    if (instRes?.instances) {
+      setLoadedInstances(instRes.instances);
+      if (instRes.instances.length > 0) {
+        // detection boxes overlay exists whenever segmentation found particles
+        seg.setBoxesUrl(`${BASE_URL}/images/${sessionId}/yolo-boxes-debug?t=${Date.now()}`);
+      }
+    }
+    setStatus(
+      stats
+        ? `Loaded session ${sessionId.slice(0, 8)} — ${stats.particle_count} particles.`
+        : `Loaded session ${sessionId.slice(0, 8)} — ready.`,
+    );
+    const query = new URLSearchParams();
+    if (group) query.set("group", group.id);
+    query.set("session", sessionId);
+    // Use query string so /workspace stays a real Next.js route across refreshes.
+    window.history.replaceState(null, "", `/workspace?${query}`);
+    return true;
+  }
+
+  async function goToSession(sessionId: string, group: Group | null) {
+    const ok = await openSession(sessionId, group);
+    if (!ok) {
+      pushToast("err", "Session unavailable", `Session ${sessionId} no longer exists.`);
+      refreshLists();
+    }
+  }
+
   // Restore session from ?session=... on mount (e.g. after page refresh).
   // Validates by fetching metadata; on 404 we silently clear the query.
   // Also rehydrates seg state (mask + stats) so the UI shows what's on disk.
@@ -333,45 +387,11 @@ export default function Workspace() {
     const restoredGroup = params.get("group");
     if (!restored) return;
     (async () => {
-      if (restoredGroup) {
-        getGroup(restoredGroup).then(setGroupCtx).catch(() => {});
-      }
-      const meta = await getSessionMetadata(restored).catch(() => null);
-      if (!meta) {
+      const group = restoredGroup ? await getGroup(restoredGroup).catch(() => null) : null;
+      if (!(await openSession(restored, group))) {
         window.history.replaceState(null, "", "/workspace");
         setStatus("Previous session no longer available — upload an image to start.");
-        return;
       }
-      setSessionId(restored);
-      setImage(`${BASE_URL}/images/${restored}/preview`);
-      setMetadata(meta);
-
-      // Rehydrate seg state from disk in parallel. both calls return null on 404
-      // (i.e. no segmentation run yet for this session).
-      const [stats, instRes] = await Promise.all([
-        getStats(restored).catch(() => null),
-        getInstances(restored).catch(() => ({ instances: [] as Instance[] })),
-      ]);
-      if (stats) {
-        seg.setStats(stats);
-        seg.setSegDone(true);
-        // Cache-bust so the browser doesn't show a stale mask.png.
-        seg.setMaskUrl(`${BASE_URL}/images/${restored}/mask?t=${Date.now()}`);
-        seg.setMasksVisible(true);
-      }
-      if (instRes?.instances) {
-        setLoadedInstances(instRes.instances);
-        if (instRes.instances.length > 0) {
-          // detection boxes overlay exists whenever segmentation found particles
-          seg.setBoxesUrl(`${BASE_URL}/images/${restored}/yolo-boxes-debug?t=${Date.now()}`);
-        }
-      }
-
-      setStatus(
-        stats
-          ? `Restored session ${restored.slice(0, 8)} — ${stats.particle_count} particles.`
-          : `Restored session ${restored.slice(0, 8)} — ready.`,
-      );
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -391,6 +411,60 @@ export default function Workspace() {
       .then(setGroups)
       .catch(() => setGroups([]));
   }, []);
+
+  // Empty-state list budget: 10 rows total, at most 5 of them groups.
+  const groupsShown = groups.slice(0, 5);
+  const recentsShown = recentSessions.slice(0, 10 - groupsShown.length);
+
+  async function refreshLists() {
+    const [r, g] = await Promise.all([getRecentSessions(), getGroups()]);
+    setRecentSessions(r);
+    setGroups(g);
+  }
+
+  async function handleRenameSession(sessionId: string, current: string) {
+    const name = window.prompt("Rename image", current);
+    if (name === null || !name.trim() || name.trim() === current) return;
+    try {
+      await renameSession(sessionId, name.trim());
+      await refreshLists();
+    } catch (err) {
+      pushToast("err", "Rename failed", (err as Error).message);
+    }
+  }
+
+  async function handleDeleteSession(sessionId: string, label: string) {
+    if (!window.confirm(`Delete "${label}"? The session and its stats are removed permanently.`)) return;
+    try {
+      await deleteSession(sessionId);
+      await refreshLists();
+    } catch (err) {
+      pushToast("err", "Delete failed", (err as Error).message);
+    }
+  }
+
+  async function handleRenameGroup(g: Group) {
+    const name = window.prompt("Group name", g.name);
+    if (name === null || !name.trim() || name.trim() === g.name) return;
+    try {
+      await renameGroup(g.id, name.trim());
+      await refreshLists();
+      setGroupCtx(gc => (gc && gc.id === g.id ? { ...gc, name: name.trim() } : gc));
+    } catch (err) {
+      pushToast("err", "Rename failed", (err as Error).message);
+    }
+  }
+
+  async function handleDeleteGroup(g: Group) {
+    if (!window.confirm(`Delete group "${g.name}"? Its images stay as individual sessions.`)) return;
+    try {
+      await deleteGroup(g.id);
+      await refreshLists();
+      setGroupCtx(gc => (gc && gc.id === g.id ? null : gc));
+    } catch (err) {
+      pushToast("err", "Delete failed", (err as Error).message);
+    }
+  }
 
   // zoom/pan
   // only active in `normal` mode. (outside blackout/refine.. modes)
@@ -556,6 +630,12 @@ export default function Workspace() {
   function resetForNewImage() {
     seg.reset();
     setRefineMode(false);
+    setLoadedInstances([]);
+    setHighlightParticleIdx(null);
+    setBootstrapMode(false);
+    setPendingProposals([]);
+    setAnnotateMode(false);
+    setBoxMode(false);
     setMetadata(null);
     setZoom(1); // def zoom is the same size as img
     setPan({ x: 0, y: 0 });
@@ -1630,7 +1710,7 @@ export default function Workspace() {
                     className={styles.navBtn}
                     disabled={!prev}
                     title={prev?.file_name ?? ""}
-                    onClick={() => prev && window.location.assign(`/workspace?group=${groupCtx.id}&session=${prev.session_id}`)}
+                    onClick={() => prev && goToSession(prev.session_id, groupCtx)}
                   >
                     <ChevronLeft size={14} />
                   </button>
@@ -1640,7 +1720,7 @@ export default function Workspace() {
                     className={styles.navBtn}
                     disabled={!next}
                     title={next?.file_name ?? ""}
-                    onClick={() => next && window.location.assign(`/workspace?group=${groupCtx.id}&session=${next.session_id}`)}
+                    onClick={() => next && goToSession(next.session_id, groupCtx)}
                   >
                     <ChevronRight size={14} />
                   </button>
@@ -2437,57 +2517,87 @@ export default function Workspace() {
                     <p className={styles.dropLabel}>Drop images here or click to upload</p>
                     <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported — multiple files become a group</p>
                   </div>
-                  {isFolderImportAvailable() && (
-                    <button
-                      type="button"
-                      className={styles.folderBtn}
-                      onClick={e => { e.stopPropagation(); handleFolderImport(); }}
-                    >
-                      <FolderOpen size={14} /> Open Folder
-                    </button>
-                  )}
-                  {groups.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.folderBtn}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isFolderImportAvailable()) handleFolderImport();
+                      else folderRef.current?.click();
+                    }}
+                  >
+                    <FolderOpen size={14} /> Open Folder
+                  </button>
+                  {groupsShown.length > 0 && (
                     <div className={styles.recents} onClick={e => e.stopPropagation()}>
                       <div className={styles.recentsHead}><span>Groups</span><span>images</span></div>
-                      {groups.map(g => (
+                      {groupsShown.map(g => (
                         <div key={g.id}>
-                          <button
-                            type="button"
-                            className={styles.recentRow}
-                            onClick={() => setExpandedGroup(e => (e === g.id ? null : g.id))}
-                          >
-                            <Folder size={13} className={styles.recentIco} />
-                            <span className={styles.recentName}>{g.name}</span>
-                            <span className={styles.recentMeta}>{g.session_count}</span>
-                          </button>
-                          {expandedGroup === g.id && g.sessions.map(s => (
+                          <div className={styles.rowWrap}>
                             <button
                               type="button"
-                              key={s.session_id}
-                              className={`${styles.recentRow} ${styles.groupSessionRow}`}
-                              onClick={() => window.location.assign(`/workspace?group=${g.id}&session=${s.session_id}`)}
+                              className={styles.recentRow}
+                              onClick={() => setExpandedGroup(e => (e === g.id ? null : g.id))}
                             >
-                              <img src={`${BASE_URL}${s.preview_url}`} className={styles.groupThumb} alt="" />
-                              <span className={styles.recentName}>{s.file_name}</span>
+                              <Folder size={13} className={styles.recentIco} />
+                              <span className={styles.recentName}>{g.name}</span>
+                              <span className={styles.recentMeta}>{g.session_count}</span>
                             </button>
+                            <span className={styles.rowActions}>
+                              <button type="button" className={styles.rowAction} title="Rename group" onClick={() => handleRenameGroup(g)}>
+                                <Pencil size={11} />
+                              </button>
+                              <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete group (images kept)" onClick={() => handleDeleteGroup(g)}>
+                                <Trash2 size={11} />
+                              </button>
+                            </span>
+                          </div>
+                          {expandedGroup === g.id && g.sessions.map(s => (
+                            <div key={s.session_id} className={styles.rowWrap}>
+                              <button
+                                type="button"
+                                className={`${styles.recentRow} ${styles.groupSessionRow}`}
+                                onClick={() => goToSession(s.session_id, g)}
+                              >
+                                <img src={`${BASE_URL}${s.preview_url}`} className={styles.groupThumb} alt="" />
+                                <span className={styles.recentName}>{s.file_name}</span>
+                              </button>
+                              <span className={styles.rowActions}>
+                                <button type="button" className={styles.rowAction} title="Rename image" onClick={() => handleRenameSession(s.session_id, s.file_name)}>
+                                  <Pencil size={11} />
+                                </button>
+                                <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete image" onClick={() => handleDeleteSession(s.session_id, s.file_name)}>
+                                  <Trash2 size={11} />
+                                </button>
+                              </span>
+                            </div>
                           ))}
                         </div>
                       ))}
                     </div>
                   )}
-                  {recentSessions.length > 0 && (
+                  {recentsShown.length > 0 && (
                     <div className={styles.recents} onClick={e => e.stopPropagation()}>
                       <div className={styles.recentsHead}><span>Recent</span><span>session dir</span></div>
-                      {recentSessions.map(s => (
-                        <button
-                          key={s.session_id}
-                          className={styles.recentRow}
-                          onClick={() => window.location.assign(`/workspace?session=${s.session_id}`)}
-                        >
-                          <File size={13} className={styles.recentIco} />
-                          <span className={styles.recentName}>{s.file_name}</span>
-                          <span className={styles.recentMeta}>{formatRecentMeta(s)}</span>
-                        </button>
+                      {recentsShown.map(s => (
+                        <div key={s.session_id} className={styles.rowWrap}>
+                          <button
+                            className={styles.recentRow}
+                            onClick={() => goToSession(s.session_id, null)}
+                          >
+                            <File size={13} className={styles.recentIco} />
+                            <span className={styles.recentName}>{s.file_name}</span>
+                            <span className={styles.recentMeta}>{formatRecentMeta(s)}</span>
+                          </button>
+                          <span className={styles.rowActions}>
+                            <button type="button" className={styles.rowAction} title="Rename image" onClick={() => handleRenameSession(s.session_id, s.file_name)}>
+                              <Pencil size={11} />
+                            </button>
+                            <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete image" onClick={() => handleDeleteSession(s.session_id, s.file_name)}>
+                              <Trash2 size={11} />
+                            </button>
+                          </span>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -3143,6 +3253,15 @@ export default function Workspace() {
             )}
             <input ref={fileRef} type="file" multiple accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
               hidden onChange={onFileChange} />
+            <input ref={folderRef} type="file" multiple hidden
+              {...{ webkitdirectory: "", directory: "" }}
+              onChange={e => {
+                const files = Array.from(e.target.files ?? [])
+                  .filter(f => /\.(emd|tiff?|jpe?g|png|npy)$/i.test(f.name));
+                e.target.value = "";
+                if (files.length) handleFiles(files);
+                else setStatus("No supported images in that folder.");
+              }} />
           </main>
 
           {/* right panel */}

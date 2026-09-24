@@ -439,6 +439,35 @@ export async function getGroup(groupId: string): Promise<Group> {
   return res.json();
 }
 
+async function mutate(
+  path: string,
+  method: "PATCH" | "DELETE",
+  body?: object,
+): Promise<void> {
+  const res = await trackedFetch(`${BASE_URL}${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`${method} ${path}: ${res.status}`);
+}
+
+export async function renameSession(sessionId: string, name: string): Promise<void> {
+  await mutate(`/sessions/${sessionId}`, "PATCH", { name });
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await mutate(`/sessions/${sessionId}`, "DELETE");
+}
+
+export async function renameGroup(groupId: string, name: string): Promise<void> {
+  await mutate(`/groups/${groupId}`, "PATCH", { name });
+}
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  await mutate(`/groups/${groupId}`, "DELETE");
+}
+
 export interface UploadManyResult {
   group: { id: string; name: string } | null;
   sessions: {
