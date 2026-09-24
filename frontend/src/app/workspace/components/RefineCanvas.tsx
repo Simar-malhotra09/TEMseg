@@ -435,6 +435,35 @@ export default function RefineCanvas({
           <text x={x + 12 * s2i} y={y + 4 * s2i} fontSize={12 * s2i} fill="#fff">{i + 1}</text>
         </g>
       ))}
+
+      {/* Equivalent-diameter annotation for the hovered particle, gated on the
+          diameter tooltip checkbox. stats carry no boundary point pair
+          (diameter = 2*sqrt(area/pi)), so: dashed reference circle at the bbox
+          center + a capped diameter line through it — the line lives in the
+          particle interior, the accent color/dashes separate both from the
+          solid palette-colored boundary (which the circle may coincide with
+          for round particles). */}
+      {hoveredInstance && hoveredParticle && visibleTooltipFields.includes("diameter") && (() => {
+        const bb = hoveredParticle.bbox;
+        const cx = bb.x + bb.w / 2;
+        const cy = bb.y + bb.h / 2;
+        const r = hoveredParticle.diameter_px / 2;
+        const sw = 2.5 * s2i;
+        const dash = `${6 * s2i},${4 * s2i}`;
+        const cap = 7 * s2i;
+        return (
+          <g style={{ pointerEvents: "none" }}>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#7ee8a2"
+              strokeWidth={sw} strokeDasharray={dash} />
+            <line x1={cx - r} y1={cy} x2={cx + r} y2={cy}
+              stroke="#7ee8a2" strokeWidth={sw} />
+            <line x1={cx - r} y1={cy - cap} x2={cx - r} y2={cy + cap}
+              stroke="#7ee8a2" strokeWidth={sw} />
+            <line x1={cx + r} y1={cy - cap} x2={cx + r} y2={cy + cap}
+              stroke="#7ee8a2" strokeWidth={sw} />
+          </g>
+        );
+      })()}
     </svg>
 
     {/* hover ID tooltip. It lives outside SVG image-space so it's never
