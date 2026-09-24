@@ -62,7 +62,8 @@ export default function ShapeRulesModal({ open, onClose, sessionId, onStatsUpdat
 
   if (!open) return null;
 
-  const metrics = config?.available_metrics ?? [];
+  // vertices is a derived shape descriptor, not shown in the client
+  const metrics = (config?.available_metrics ?? []).filter(m => m !== "n_vertices");
   const ops = config?.available_operators ?? [];
 
   function updateRule(i: number, patch: Partial<ShapeRule>) {

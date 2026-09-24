@@ -48,7 +48,6 @@ function columnLabel(key: SortKey, hasScale: boolean, unit: string): string {
     case "circularity": return "Circ.";
     case "solidity": return "Solidity";
     case "aspect_ratio": return "Asp. Ratio";
-    case "n_vertices": return "Vertices";
     case "shape": return "Shape";
     case "nearest_neighbor": return `NNI (${hasScale ? unit : "px"})`;
     case "border_distance": return `Border Dist. (${hasScale ? unit : "px"})`;
@@ -330,7 +329,6 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
         case "aspect_ratio": va = a.aspect_ratio; vb = b.aspect_ratio; break;
         case "shape": va = a.shape; vb = b.shape; break;
         case "solidity": va = a.solidity ?? 1; vb = b.solidity ?? 1; break;
-        case "n_vertices": va = a.n_vertices ?? 0; vb = b.n_vertices ?? 0; break;
         case "nearest_neighbor": va = a.nearest_neighbor_real ?? a.nearest_neighbor_px ?? Infinity; vb = b.nearest_neighbor_real ?? b.nearest_neighbor_px ?? Infinity; break;
         case "border_distance": va = a.border_distance_real ?? a.border_distance_px ?? Infinity; vb = b.border_distance_real ?? b.border_distance_px ?? Infinity; break;
       }
@@ -692,7 +690,6 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                   <td className={styles.td}>{fmt(p.circularity)}</td>
                   <td className={styles.td}>{fmt(p.solidity ?? 1)}</td>
                   <td className={styles.td}>{fmt(p.aspect_ratio)}</td>
-                  <td className={styles.td}>{p.n_vertices ?? "—"}</td>
                   <td className={styles.td}>
                     <span
                       className={`${styles.shapeBadge} ${onLocateShape ? styles.shapeBadgeClickable : ""}`}

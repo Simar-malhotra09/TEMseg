@@ -144,7 +144,6 @@ export interface ParticleStats {
   convexity: number;
   rectangularity: number;
   aspect_ratio: number;
-  n_vertices: number;
   shape: string;
   bbox: { x: number; y: number; w: number; h: number };
   // center-to-center distance to the closest other particle; null when the
@@ -169,7 +168,6 @@ export const PARTICLE_METRIC_FIELDS = [
   "circularity",
   "solidity",
   "aspect_ratio",
-  "n_vertices",
   "shape",
   "nearest_neighbor",
   "border_distance",

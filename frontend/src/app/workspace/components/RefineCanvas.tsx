@@ -61,7 +61,6 @@ function formatTooltipField(key: ParticleMetricField, p: ParticleStats, hasScale
     case "circularity": return `Circ.: ${p.circularity.toFixed(2)}`;
     case "solidity": return `Solidity: ${p.solidity.toFixed(2)}`;
     case "aspect_ratio": return `Asp. Ratio: ${p.aspect_ratio.toFixed(2)}`;
-    case "n_vertices": return `Vertices: ${p.n_vertices}`;
     case "shape": return `Shape: ${p.shape}`;
     case "nearest_neighbor": {
       const v = hasScale && p.nearest_neighbor_real != null ? p.nearest_neighbor_real : p.nearest_neighbor_px;

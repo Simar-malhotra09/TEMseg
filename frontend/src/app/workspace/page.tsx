@@ -47,7 +47,7 @@ type AugmentMethod = "click" | "box" | "similar";
 // labels for the refine-mode hover tooltip field picker
 const TOOLTIP_FIELD_LABELS: Record<ParticleMetricField, string> = {
   diameter: "Diameter", area: "Area", circularity: "Circularity",
-  solidity: "Solidity", aspect_ratio: "Aspect Ratio", n_vertices: "Vertices", shape: "Shape",
+  solidity: "Solidity", aspect_ratio: "Aspect Ratio", shape: "Shape",
   nearest_neighbor: "Nearest Neighbor (NNI)", border_distance: "Border Distance",
 };
 
