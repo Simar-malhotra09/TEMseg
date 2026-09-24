@@ -475,7 +475,7 @@ class Api:
                 else f"temseg_export_{session_id[:8]}.zip"
             )
             save_path = self._window.create_file_dialog(
-                webview.SAVE_DIALOG,
+                webview.FileDialog.SAVE,
                 save_filename=save_filename,
                 file_types=("ZIP archive (*.zip)",),
             )
@@ -498,7 +498,7 @@ class Api:
         Blank group_name falls back to the folder name.
         """
         try:
-            folder = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+            folder = self._window.create_file_dialog(webview.FileDialog.FOLDER)
             if not folder:
                 return {"success": False, "error": "cancelled"}
             folder = Path(folder[0] if isinstance(folder, (list, tuple)) else folder)
@@ -728,6 +728,11 @@ def main():
     _apply_variant_defaults()
 
     headless = os.environ.get("TEMSEG_HEADLESS") == "1"
+
+    # Anchor <a download> clicks (histogram CSV/PNG/SVG) only reach pywebview's
+    # download delegate -> native Save panel when this is on; WKWebView has no
+    # download UI of its own, so without it those open inline instead.
+    webview.settings["ALLOW_DOWNLOADS"] = True
 
     # Phase 0: Windows-only — ensure WebView2 runtime exists
     # PyWebView's EdgeChromium backend silently fails without it on fresh
