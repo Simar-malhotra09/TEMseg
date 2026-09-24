@@ -563,6 +563,14 @@ export default function Workspace() {
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel, encoderDepth });
 
+  // entering refine hides the mask overlay (enterRefineMode) — restore it on
+  // every exit path (Esc, save, mode switches, locate-particle), not just the
+  // ones that remember to.
+  useEffect(() => {
+    if (!refineMode) seg.setMasksVisible(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refineMode]);
+
   // global polygon fill opacity
   const [polygonOpacity, setPolygonOpacity] = useState(0.2);
 
