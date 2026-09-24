@@ -265,13 +265,18 @@ def next_free_id(used_ids: set[int]) -> int:
 
 
 def colorize_labeled_mask(labeled: np.ndarray) -> np.ndarray:
-    """Convert a labeled integer mask to a colorized uint8 BGR image for saving as mask.png."""
-    colored = np.zeros((*labeled.shape, 3), dtype=np.uint8)
+    """Convert a labeled integer mask to a colorized uint8 BGR image for saving as mask.png.
+    One gather through a label->color LUT: same hues as a per-particle scan,
+    but O(HW) instead of O(particles·HW)."""
     ids = np.unique(labeled)
     ids = ids[ids > 0]
-    for inst_id in ids:
-        hue = int((inst_id * 37) % 180)  # spread hues
-        hsv_color = np.uint8([[[hue, 220, 220]]])
-        bgr = cv.cvtColor(hsv_color, cv.COLOR_HSV2BGR)[0][0]
-        colored[labeled == inst_id] = bgr
-    return colored
+    if ids.size == 0:
+        return np.zeros((*labeled.shape, 3), dtype=np.uint8)
+    hsv = np.zeros((ids.size, 1, 3), dtype=np.uint8)
+    hsv[:, 0, 0] = (ids * 37) % 180  # spread hues
+    hsv[:, 0, 1] = 220
+    hsv[:, 0, 2] = 220
+    bgr = cv.cvtColor(hsv, cv.COLOR_HSV2BGR)
+    lut = np.zeros((65536, 3), dtype=np.uint8)
+    lut[ids] = bgr[:, 0, :]
+    return lut[labeled]

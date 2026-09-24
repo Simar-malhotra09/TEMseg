@@ -207,6 +207,24 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
     if cached is not None:
         instances_old, labeled_old = cached
         shape = labeled_old.shape
+        # No-edit fast path: identical geometry means mask.png and stats.json
+        # on disk are already correct — skip rasterize/colorize/recompute.
+        if req.instances == instances_old:
+            stats_path = session_dir / "stats.json"
+            # Strict >: paired writers (segment/PUT/split) always dump stats
+            # after instances. The recompute-from-mask path writes instances
+            # without stats — declining the fast path there heals the staleness.
+            if (
+                stats_path.exists()
+                and stats_path.stat().st_mtime
+                > (session_dir / "instances.json").stat().st_mtime
+            ):
+                with open(stats_path) as f:
+                    stats = json.load(f)
+                t.field("particles", len(req.instances))
+                t.field("fast_path", "unchanged")
+                t.stop()
+                return {"mask_url": f"/images/{session_id}/mask", "stats": stats}
     else:
         instances_old = None
         # No prior instances — happens when user is annotating from scratch
