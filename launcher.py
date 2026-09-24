@@ -490,12 +490,12 @@ class Api:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def import_folder(self) -> dict:
+    def import_folder(self, group_name: str = "") -> dict:
         """
-        Called from JS: window.pywebview.api.import_folder()
+        Called from JS: window.pywebview.api.import_folder(group_name)
         Opens a native folder dialog, POSTs every image file in it to the
-        backend /images/upload-many endpoint (group name = folder name),
-        and returns the backend's response to the page.
+        backend /images/upload-many endpoint, and returns its response.
+        Blank group_name falls back to the folder name.
         """
         try:
             folder = self._window.create_file_dialog(webview.FOLDER_DIALOG)
@@ -533,7 +533,8 @@ class Api:
                 body += p.read_bytes()
                 body += b"\r\n"
             group_disp = (
-                f'form-data; name="group_name"\r\n\r\n{folder.name}\r\n'
+                f'form-data; name="group_name"\r\n\r\n'
+                f'{group_name.strip() or folder.name}\r\n'
             )
             body += f"--{boundary}\r\nContent-Disposition: {group_disp}".encode()
             body += f"--{boundary}--\r\n".encode()

@@ -636,11 +636,13 @@ export default function Workspace() {
       handleFile(list[0]);
       return;
     }
+    const suggested = list[0].name.replace(/\.[^.]*$/, "") || "Batch";
+    const groupName = window.prompt("Group name", suggested);
+    if (groupName === null) return;
     setStatus(`Uploading ${list.length} images…`);
     resetForNewImage();
     try {
-      const groupName = list[0].name.replace(/\.[^.]*$/, "") || "Batch";
-      const result = await uploadManyImages(list, groupName);
+      const result = await uploadManyImages(list, groupName.trim() || suggested);
       if (result.error || !result.sessions?.length) {
         setStatus(result.error ?? "Upload failed");
         pushToast("err", "Upload failed", result.error ?? "No loadable images");
@@ -660,10 +662,12 @@ export default function Workspace() {
 
   // folder import via the PyWebView native dialog (launcher uploads the folder)
   async function handleFolderImport() {
+    const groupName = window.prompt("Group name (blank = folder name)", "");
+    if (groupName === null) return;
     setStatus("Opening folder…");
     resetForNewImage();
     try {
-      const result = await importFolderViaPyWebView();
+      const result = await importFolderViaPyWebView(groupName.trim());
       if (!result.success) {
         if (result.error === "cancelled") {
           setStatus("Folder import cancelled.");
@@ -3146,6 +3150,7 @@ export default function Workspace() {
           <StatsPanel
             image={image}
             sessionId={sessionId}
+            groupName={groupCtx?.name}
             metadata={metadata}
             stats={seg.stats}
             segDone={seg.segDone}

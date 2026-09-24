@@ -474,10 +474,10 @@ export function isFolderImportAvailable(): boolean {
   );
 }
 
-export async function importFolderViaPyWebView(): Promise<
-  UploadManyResult & { success: boolean }
-> {
-  return (window as any).pywebview.api.import_folder();
+export async function importFolderViaPyWebView(
+  groupName: string,
+): Promise<UploadManyResult & { success: boolean }> {
+  return (window as any).pywebview.api.import_folder(groupName);
 }
 
 export async function updatePixelSize(

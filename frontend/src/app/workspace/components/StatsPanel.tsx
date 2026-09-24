@@ -21,6 +21,7 @@ interface GTScores {
 interface Props {
   image: string | null;
   sessionId: string | null;
+  groupName?: string | null;
   metadata: Metadata | null;
   stats: StatsResult | null;
   segDone: boolean;
@@ -122,6 +123,7 @@ function ShapeBar({
 export default function StatsPanel({
   image,
   sessionId,
+  groupName,
   metadata,
   stats,
   segDone,
@@ -161,6 +163,12 @@ export default function StatsPanel({
               <div className={styles.row}>
                 <span className={styles.label}>Source</span>
                 <span className={styles.val}>{imageSource}</span>
+              </div>
+            )}
+            {groupName && (
+              <div className={styles.row}>
+                <span className={styles.label}>Group</span>
+                <span className={styles.val}>{groupName}</span>
               </div>
             )}
             {metadata?.original_format && (
