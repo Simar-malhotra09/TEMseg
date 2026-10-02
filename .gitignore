@@ -3,6 +3,7 @@ backend/.DS_Store
 
 __pycache__/
 *.pyc
+.doit.db*
 *.egg-info/
 backend/uv_venv/
 backend/uv_venv_clean/
