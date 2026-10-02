@@ -34,8 +34,54 @@ LOG_DIR="$HOME/temseg_nightly"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/nightly_$(date +%Y%m%d_%H%M%S).log"
 
-build_ok=0
-test_ok=0
+tier2_build_ok=0
+tier2_test_ok=0
+coreml_build_ok=0
+coreml_test_ok=0
+quick_mode=false
+full_mode=false
+all_models=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --quick) quick_mode=true ;;
+        --full) full_mode=true ;;
+        --all-models) all_models=true ;;
+        *) echo "Unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+if [ "$quick_mode" = true ] && [ "$full_mode" = true ]; then
+    echo "Choose either --quick or --full, not both." >&2
+    exit 2
+fi
+
+if [ "$quick_mode" = false ] && [ "$full_mode" = false ]; then
+    if [ "$all_models" = true ]; then
+        full_mode=true
+    else
+        quick_mode=true
+    fi
+fi
+
+PYTEST="$REPO_ROOT/.venv/bin/pytest"
+if [ ! -x "$PYTEST" ]; then
+    echo "pytest is missing at $PYTEST. Install the project dev dependencies first." >&2
+    exit 2
+fi
+
+SAFE_BRANCH=$(printf '%s' "$(git rev-parse --abbrev-ref HEAD)" | sed 's/[^a-zA-Z0-9]/-/g; s/^-//; s/-$//')
+TIER2_APP="dist/tier2/TEMseg-${SAFE_BRANCH}.app"
+COREML_APP="dist/coreml/TEMseg-coreml-${SAFE_BRANCH}.app"
+PYTEST_MODE=()
+if [ "$full_mode" = true ]; then
+    PYTEST_MODE+=(--full)
+else
+    PYTEST_MODE+=(--quick)
+fi
+if [ "$all_models" = true ]; then
+    PYTEST_MODE+=(--all-models)
+fi
 
 cleanup_build() {
     # Preserve the build-timings CSVs alongside the logs, then drop the
@@ -56,30 +102,31 @@ trap cleanup_build EXIT
     echo "git  : $(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
     echo ""
 
-    echo "=== [1/4] build tier2 classic (clean, skip frontend) ==="
+    echo "=== [1/4] build tier2 ONNX (clean, skip frontend) ==="
     if ./scripts/mac/tier2/build_mac.sh --clean --skip-frontend; then
-        build_ok=1
-    fi
-
-    echo ""
-    echo "=== [2/4] API test (classic) ==="
-    if ./scripts/mac/test_api.sh "$@"; then
-        test_ok=1
+        tier2_build_ok=1
+        echo ""
+        echo "=== [2/4] packaged app pytest (tier2 ONNX) ==="
+        if "$PYTEST" -q -s tests/mac_app/test_packaged_app.py \
+            --app "$TIER2_APP" --expected-engine onnx "${PYTEST_MODE[@]}"; then
+            tier2_test_ok=1
+        fi
     fi
 
     echo ""
     echo "=== [3/4] build coreml variant (skip frontend) ==="
     if ./scripts/mac/coreml/build_mac.sh --skip-frontend; then
-        SAFE_BRANCH=$(printf '%s' "$(git rev-parse --abbrev-ref HEAD)" | sed 's/[^a-zA-Z0-9]/-/g; s/^-//; s/-$//')
-        COREML_APP="dist/coreml/TEMseg-coreml-${SAFE_BRANCH}.app"
+        coreml_build_ok=1
         if [ -d "$COREML_APP" ]; then
             echo ""
-            echo "=== [4/4] API test (coreml variant) ==="
-            if ./scripts/mac/test_api.sh "$@" --app "$COREML_APP"; then
-                test_ok=1
+            echo "=== [4/4] packaged app pytest (Core ML) ==="
+            if "$PYTEST" -q -s tests/mac_app/test_packaged_app.py \
+                --app "$COREML_APP" --expected-engine coreml "${PYTEST_MODE[@]}"; then
+                coreml_test_ok=1
             fi
         else
             echo "ERROR: coreml build produced no $COREML_APP"
+            coreml_build_ok=0
         fi
     fi
 } > "$LOG" 2>&1
@@ -88,8 +135,9 @@ trap cleanup_build EXIT
 ls -1t "$LOG_DIR"/nightly_*.log 2>/dev/null | tail -n +11 | xargs -r rm -f 2>/dev/null || true
 ls -1t "$LOG_DIR"/build_timings_*.csv 2>/dev/null | tail -n +11 | xargs -r rm -f 2>/dev/null || true
 
-echo "Nightly finished (build=$build_ok test=$test_ok) — log: $LOG"
-if [ "$build_ok" = 1 ] && [ "$test_ok" = 1 ]; then
+echo "Nightly finished (tier2_build=$tier2_build_ok tier2_test=$tier2_test_ok coreml_build=$coreml_build_ok coreml_test=$coreml_test_ok) — log: $LOG"
+if [ "$tier2_build_ok" = 1 ] && [ "$tier2_test_ok" = 1 ] \
+    && [ "$coreml_build_ok" = 1 ] && [ "$coreml_test_ok" = 1 ]; then
     exit 0
 else
     exit 1
