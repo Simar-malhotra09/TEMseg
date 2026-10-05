@@ -189,9 +189,9 @@ def system_info(request: Request):
             "name": name,
             "loaded": backend is not None,
             "engine": engine,
-            "runs_on": (
-                "apple neural engine" if engine == "coreml" else device
-            ) if backend is not None else None,
+            "runs_on": ("apple neural engine" if engine == "coreml" else device)
+            if backend is not None
+            else None,
             "ram_bytes": (
                 getattr(backend, "ram_bytes", None) if backend is not None else None
             ),

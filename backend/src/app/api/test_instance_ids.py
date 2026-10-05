@@ -43,7 +43,9 @@ def test_connected_component_path():
 
 
 def test_labels_map_path():
-    print("\n=== spatial ids: model labels map path (detection-order ids renumbered) ===")
+    print(
+        "\n=== spatial ids: model labels map path (detection-order ids renumbered) ==="
+    )
     mask = np.zeros((H, W), dtype=np.uint8)
     labels = np.zeros((H, W), dtype=np.int32)
     # arbitrary detection-order ids
@@ -55,7 +57,9 @@ def test_labels_map_path():
     draw_rect(mask, 50, 100, 20, 20)  # top-left, detection id 42
     labels[100:120, 50:70] = 42
 
-    instances, labeled = extract_instances(mask, Path("/tmp"), save=False, labels=labels)
+    instances, labeled = extract_instances(
+        mask, Path("/tmp"), save=False, labels=labels
+    )
     by_pos = ids_by_position(instances)
     assert by_pos[(50, 100)] == 1, f"top-left should be 1, got {by_pos}"
     assert by_pos[(300, 100)] == 2, f"top-right should be 2, got {by_pos}"

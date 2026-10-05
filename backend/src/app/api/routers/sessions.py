@@ -56,12 +56,14 @@ def recent_sessions() -> list[dict]:
         if not d.exists():
             continue
         org_file = next(d.glob("org_*"), None)
-        entries.append({
-            **e,
-            # rebuilt at read time so renames show up without a re-upload
-            "file_name": _session_display_name(e["session_id"]) or e["file_name"],
-            "file_size_bytes": org_file.stat().st_size if org_file else None,
-        })
+        entries.append(
+            {
+                **e,
+                # rebuilt at read time so renames show up without a re-upload
+                "file_name": _session_display_name(e["session_id"]) or e["file_name"],
+                "file_size_bytes": org_file.stat().st_size if org_file else None,
+            }
+        )
     return entries
 
 
@@ -107,11 +109,13 @@ def _group_sessions(g: dict) -> list[dict]:
     for sid in g["session_ids"]:
         if not (SESSIONS_DIR / sid).exists():
             continue
-        rows.append({
-            "session_id": sid,
-            "file_name": _session_display_name(sid) or sid,
-            "preview_url": f"/images/{sid}/preview",
-        })
+        rows.append(
+            {
+                "session_id": sid,
+                "file_name": _session_display_name(sid) or sid,
+                "preview_url": f"/images/{sid}/preview",
+            }
+        )
     return rows
 
 

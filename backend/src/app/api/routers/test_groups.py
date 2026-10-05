@@ -26,10 +26,14 @@ def test_rename_and_delete_session_prune_mru_and_groups(tmp_path, monkeypatch):
     (sd / "metadata.json").write_text(
         json.dumps({"file_name": "img", "original_format": "tif"})
     )
-    s.MRU_K_SESSIONS_FILE.write_text(json.dumps([
-        {"session_id": "s1", "file_name": "img.tif"},
-        {"session_id": "gone", "file_name": "x.png"},
-    ]))
+    s.MRU_K_SESSIONS_FILE.write_text(
+        json.dumps(
+            [
+                {"session_id": "s1", "file_name": "img.tif"},
+                {"session_id": "gone", "file_name": "x.png"},
+            ]
+        )
+    )
     s.create_group("batch", ["s1"])
 
     resp = s.rename_session("s1", s.RenameRequest(name="particle 01.tif"))

@@ -273,9 +273,17 @@ async def export_session(session_id: str, body: ExportRequest):
                     if has_scale
                     else p["perimeter_px"]
                 )
-                nn = p.get("nearest_neighbor_real", p.get("nearest_neighbor_px")) if has_scale else p.get("nearest_neighbor_px")
+                nn = (
+                    p.get("nearest_neighbor_real", p.get("nearest_neighbor_px"))
+                    if has_scale
+                    else p.get("nearest_neighbor_px")
+                )
                 nn_id = p.get("nearest_neighbor_id")
-                border = p.get("border_distance_real", p.get("border_distance_px")) if has_scale else p.get("border_distance_px")
+                border = (
+                    p.get("border_distance_real", p.get("border_distance_px"))
+                    if has_scale
+                    else p.get("border_distance_px")
+                )
                 border_edge = p.get("border_edge", "")
                 rows.append(
                     f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
