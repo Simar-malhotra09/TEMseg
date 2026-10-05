@@ -41,7 +41,7 @@ from app.logutils import Timer, get_logger
 
 logger = get_logger("RFRecovery")
 
-MAX_TRAIN_PIXELS = 500_000
+MAX_TRAIN_PIXELS = 100_000
 _DEFAULT_MIN_AREA = 200  # px² at full resolution; below this → noise
 _BG_DILATION = 10  # px — confident bg must be this far from any particle
 _FG_EROSION = 2  # px — confident fg excludes noisy SAM boundary
