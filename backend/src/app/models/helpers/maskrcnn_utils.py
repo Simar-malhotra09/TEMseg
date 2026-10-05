@@ -24,11 +24,12 @@ def merge_masks(masks, indices) -> np.ndarray:
     return merged
 
 
-def group_boxes_and_masks(results, strong_thresh=0.95, min_thresh=0.5,
-                           child_thresh=0.5, iou_thresh=0.1) -> dict:
-    boxes = np.array(results['boxes'])
-    scores = np.array(results['scores'])
-    masks = results['masks']
+def group_boxes_and_masks(
+    results, strong_thresh=0.95, min_thresh=0.5, child_thresh=0.5, iou_thresh=0.1
+) -> dict:
+    boxes = np.array(results["boxes"])
+    scores = np.array(results["scores"])
+    masks = results["masks"]
 
     if len(boxes) == 0:
         return results
@@ -51,7 +52,7 @@ def group_boxes_and_masks(results, strong_thresh=0.95, min_thresh=0.5,
             merged_masks.append(merge_masks(masks, group_indices))
 
     return {
-        'boxes': np.array(merged_boxes),
-        'scores': np.array(merged_scores),
-        'masks': np.array(merged_masks) if merged_masks else np.array([]),
+        "boxes": np.array(merged_boxes),
+        "scores": np.array(merged_scores),
+        "masks": np.array(merged_masks) if merged_masks else np.array([]),
     }

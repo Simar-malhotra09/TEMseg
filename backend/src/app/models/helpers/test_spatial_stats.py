@@ -85,8 +85,12 @@ def test_nearest_neighbor_and_border():
     assert "nearest_neighbor_real" not in by_id[1]
     assert "border_distance_real" not in by_id[1]
 
-    print(f"  NN: {by_id[1]['nearest_neighbor_px']:.2f} px (expected {expected_nn:.2f})")
-    print(f"  Border: {by_id[1]['border_distance_px']}, {by_id[2]['border_distance_px']} (expected 20, 60)")
+    print(
+        f"  NN: {by_id[1]['nearest_neighbor_px']:.2f} px (expected {expected_nn:.2f})"
+    )
+    print(
+        f"  Border: {by_id[1]['border_distance_px']}, {by_id[2]['border_distance_px']} (expected 20, 60)"
+    )
     print("  ✓ PASSED")
 
 
@@ -103,7 +107,10 @@ def test_real_units_scale():
     assert abs(by_id[1]["border_distance_real"] - 10.0) < 1e-9
     assert abs(by_id[2]["border_distance_real"] - 30.0) < 1e-9
     assert by_id[1]["nearest_neighbor_real"] is not None
-    assert abs(by_id[1]["nearest_neighbor_real"] - by_id[1]["nearest_neighbor_px"] * 0.5) < 1e-9
+    assert (
+        abs(by_id[1]["nearest_neighbor_real"] - by_id[1]["nearest_neighbor_px"] * 0.5)
+        < 1e-9
+    )
 
     print("  ✓ PASSED")
 
@@ -125,7 +132,7 @@ def test_single_particle_has_no_neighbor():
 def test_three_in_a_row():
     print("\n=== three rectangles in a row: pairwise NN + edge-touching particle ===")
     labeled = np.zeros((512, 512), dtype=np.uint16)
-    draw_rect(labeled, 1, 0, 0, 20, 20)    # touches top-left corner, border 0
+    draw_rect(labeled, 1, 0, 0, 20, 20)  # touches top-left corner, border 0
     draw_rect(labeled, 2, 50, 40, 20, 20)  # NN from particle 1: 50 px
     draw_rect(labeled, 3, 120, 40, 20, 20)  # NN from particle 2: 70 px
 
@@ -158,8 +165,18 @@ def test_fallback_without_labeled_mask():
     for s in (sq1, sq2):
         cv.fillPoly(mask, [np.array(s, dtype=np.int32)], 255)
     instances = [
-        {"id": 1, "contour": sq1, "bbox": {"x": 20, "y": 50, "w": 20, "h": 20}, "area": 400.0},
-        {"id": 2, "contour": sq2, "bbox": {"x": 100, "y": 50, "w": 20, "h": 20}, "area": 400.0},
+        {
+            "id": 1,
+            "contour": sq1,
+            "bbox": {"x": 20, "y": 50, "w": 20, "h": 20},
+            "area": 400.0,
+        },
+        {
+            "id": 2,
+            "contour": sq2,
+            "bbox": {"x": 100, "y": 50, "w": 20, "h": 20},
+            "area": 400.0,
+        },
     ]
 
     stats = compute_stats_from_instances(instances, mask, labeled_mask=None)

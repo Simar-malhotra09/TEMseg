@@ -14,7 +14,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.api.instances import extract_instances
-from app.models.helpers.compute_stats import compute_stats_from_instances, _equivalent_diameter_px
+from app.models.helpers.compute_stats import (
+    compute_stats_from_instances,
+    _equivalent_diameter_px,
+)
 
 
 def compute_stats(mask, pixel_size=None, pixel_unit=None):
@@ -30,6 +33,7 @@ def compute_stats(mask, pixel_size=None, pixel_unit=None):
 
 
 # Helpers to generate synthetic masks
+
 
 def make_blank(h=512, w=512) -> np.ndarray:
     return np.zeros((h, w), dtype=np.uint8)
@@ -61,6 +65,7 @@ def count_components(mask: np.ndarray) -> int:
 
 # Test 1: Single circle — check count, area, diameter, circularity
 
+
 def test_single_circle():
     print("\n=== Test 1: Single circle (r=50) ===")
     mask = make_blank(512, 512)
@@ -72,16 +77,22 @@ def test_single_circle():
 
     stats = compute_stats(mask)
 
-    assert stats["particle_count"] == 1, f"Expected 1 particle, got {stats['particle_count']}"
+    assert stats["particle_count"] == 1, (
+        f"Expected 1 particle, got {stats['particle_count']}"
+    )
 
     measured_area = stats["particles"][0]["area_px"]
     area_err = abs(measured_area - true_area) / true_area
-    print(f"  Area: expected={true_area}, got={measured_area:.1f}, error={area_err:.4f}")
+    print(
+        f"  Area: expected={true_area}, got={measured_area:.1f}, error={area_err:.4f}"
+    )
     assert area_err < 0.02, f"Area error too high: {area_err:.4f}"
 
     measured_diam = stats["particles"][0]["diameter_px"]
     diam_err = abs(measured_diam - true_diameter) / true_diameter
-    print(f"  Eq. Diameter: expected={true_diameter:.2f}, got={measured_diam:.2f}, error={diam_err:.4f}")
+    print(
+        f"  Eq. Diameter: expected={true_diameter:.2f}, got={measured_diam:.2f}, error={diam_err:.4f}"
+    )
     assert diam_err < 0.02, f"Diameter error too high: {diam_err:.4f}"
 
     circ = stats["particles"][0]["circularity"]
@@ -100,6 +111,7 @@ def test_single_circle():
 
 # Test 2: Multiple circles of same size — check count and consistency
 
+
 def test_multiple_same_circles():
     print("\n=== Test 2: 5 circles of same size (r=30) ===")
     mask = make_blank(512, 512)
@@ -109,7 +121,9 @@ def test_multiple_same_circles():
 
     stats = compute_stats(mask)
 
-    assert stats["particle_count"] == 5, f"Expected 5 particles, got {stats['particle_count']}"
+    assert stats["particle_count"] == 5, (
+        f"Expected 5 particles, got {stats['particle_count']}"
+    )
 
     areas = [p["area_px"] for p in stats["particles"]]
     area_std = np.std(areas)
@@ -117,15 +131,22 @@ def test_multiple_same_circles():
     cv_area = area_std / area_mean  # coefficient of variation
     print(f"  Count: {stats['particle_count']}")
     print(f"  Areas: mean={area_mean:.1f}, std={area_std:.1f}, CV={cv_area:.4f}")
-    assert cv_area < 0.05, f"Area variation too high for identical circles: CV={cv_area}"
+    assert cv_area < 0.05, (
+        f"Area variation too high for identical circles: CV={cv_area}"
+    )
 
-    print(f"  Size stats: mean={stats['size_stats']['diameter_mean']:.2f}, std={stats['size_stats']['diameter_std']:.2f}")
-    assert stats["size_stats"]["diameter_std"] < 2.0, "Std too high for identical circles"
+    print(
+        f"  Size stats: mean={stats['size_stats']['diameter_mean']:.2f}, std={stats['size_stats']['diameter_std']:.2f}"
+    )
+    assert stats["size_stats"]["diameter_std"] < 2.0, (
+        "Std too high for identical circles"
+    )
 
     print("  ✓ PASSED")
 
 
 # Test 3: Known pixel scale — check real-unit conversion
+
 
 def test_pixel_scale_conversion():
     print("\n=== Test 3: Pixel scale conversion (0.5 nm/px) ===")
@@ -153,13 +174,16 @@ def test_pixel_scale_conversion():
     diam_real = stats["particles"][0]["diameter_real"]
     expected_diam_real = diam_px * pixel_size
     err_d = abs(diam_real - expected_diam_real) / expected_diam_real
-    print(f"  Diameter px: {diam_px:.2f}, real: {diam_real:.2f} nm (expected {expected_diam_real:.2f})")
+    print(
+        f"  Diameter px: {diam_px:.2f}, real: {diam_real:.2f} nm (expected {expected_diam_real:.2f})"
+    )
     assert err_d < 1e-6, f"Diameter scale error: {err_d}"
 
     print("  ✓ PASSED")
 
 
 # Test 4: Elongated rectangle — check aspect ratio and shape classification
+
 
 def test_elongated_rectangle():
     print("\n=== Test 4: Elongated rectangle (20x100) ===")
@@ -172,10 +196,14 @@ def test_elongated_rectangle():
 
     p = stats["particles"][0]
     print(f"  Aspect ratio: {p['aspect_ratio']:.2f} (expected ~5.0)")
-    assert p["aspect_ratio"] > 3.0, f"Aspect ratio too low for 20x100 rect: {p['aspect_ratio']}"
+    assert p["aspect_ratio"] > 3.0, (
+        f"Aspect ratio too low for 20x100 rect: {p['aspect_ratio']}"
+    )
 
     print(f"  Circularity: {p['circularity']:.4f} (expected <0.8)")
-    assert p["circularity"] < 0.85, f"Circularity too high for rectangle: {p['circularity']}"
+    assert p["circularity"] < 0.85, (
+        f"Circularity too high for rectangle: {p['circularity']}"
+    )
 
     print(f"  Shape: {p['shape']} (expected 'elongated')")
     assert p["shape"] == "rod", f"Expected 'rod', got '{p['shape']}'"
@@ -191,6 +219,7 @@ def test_elongated_rectangle():
 
 
 # Test 5: Mixed shapes — check shape distribution
+
 
 def test_shape_distribution():
     print("\n=== Test 5: Mixed shapes (3 circles + 2 rods) ===")
@@ -215,13 +244,16 @@ def test_shape_distribution():
 
     assert "spherical" in sd, "Missing 'spherical' in shape distribution"
     assert "rod" in sd, "Missing 'rod' in shape distribution"
-    assert sd["spherical"]["count"] == 3, f"Expected 3 spherical, got {sd['spherical']['count']}"
+    assert sd["spherical"]["count"] == 3, (
+        f"Expected 3 spherical, got {sd['spherical']['count']}"
+    )
     assert sd["rod"]["count"] == 2, f"Expected 2 rod, got {sd['rod']['count']}"
 
     print("  ✓ PASSED")
 
 
 # Test 6: Coverage calculation
+
 
 def test_coverage():
     print("\n=== Test 6: Coverage ===")
@@ -234,13 +266,16 @@ def test_coverage():
     # cv.rectangle is endpoint-inclusive: (0,0)-(10,10) fills 11x11 = 121 px
     expected_coverage = np.count_nonzero(mask) / mask.size
     err = abs(stats["coverage"] - expected_coverage)
-    print(f"  Coverage: {stats['coverage']:.6f} (expected {expected_coverage:.6f}, err={err:.8f})")
+    print(
+        f"  Coverage: {stats['coverage']:.6f} (expected {expected_coverage:.6f}, err={err:.8f})"
+    )
     assert err < 1e-9, f"Coverage error: {err}"
 
     print("  ✓ PASSED")
 
 
 # Test 7: Empty mask
+
 
 def test_empty_mask():
     print("\n=== Test 7: Empty mask ===")
@@ -258,6 +293,7 @@ def test_empty_mask():
 
 # Test 8: Perimeter sanity check (circle perimeter ≈ 2πr)
 
+
 def test_perimeter():
     print("\n=== Test 8: Perimeter of circle (r=60) ===")
     mask = make_blank(512, 512)
@@ -268,7 +304,9 @@ def test_perimeter():
 
     expected_perim = 2 * math.pi * 60
     perim_err = abs(p["perimeter_px"] - expected_perim) / expected_perim
-    print(f"  Perimeter: {p['perimeter_px']:.1f} (expected ~{expected_perim:.1f}, error={perim_err:.4f})")
+    print(
+        f"  Perimeter: {p['perimeter_px']:.1f} (expected ~{expected_perim:.1f}, error={perim_err:.4f})"
+    )
     # rasterization causes perimeter to be slightly larger, allow 5%
     assert perim_err < 0.05, f"Perimeter error: {perim_err}"
 
@@ -276,6 +314,7 @@ def test_perimeter():
 
 
 # Test 9: Distribution fitting sanity
+
 
 def test_distribution_fitting():
     print("\n=== Test 9: Distribution fitting (20 circles, varied radii) ===")
@@ -291,7 +330,7 @@ def test_distribution_fitting():
             cx = np.random.randint(r + 5, 1024 - r - 5)
             cy = np.random.randint(r + 5, 1024 - r - 5)
             # check no overlap with existing
-            roi = mask[cy - r:cy + r, cx - r:cx + r]
+            roi = mask[cy - r : cy + r, cx - r : cx + r]
             if np.any(roi):
                 continue
             draw_circle(mask, cx, cy, int(r))
@@ -303,7 +342,9 @@ def test_distribution_fitting():
     stats = compute_stats(mask)
 
     print(f"  Particle count: {stats['particle_count']}")
-    assert stats["particle_count"] == placed, f"Expected {placed}, got {stats['particle_count']}"
+    assert stats["particle_count"] == placed, (
+        f"Expected {placed}, got {stats['particle_count']}"
+    )
 
     fits = stats.get("distribution_fits_diameter") or stats.get("distribution_fits")
     if fits and fits.get("reliable"):
@@ -323,6 +364,7 @@ def test_distribution_fitting():
 
 
 # Run all
+
 
 def run_all():
     tests = [

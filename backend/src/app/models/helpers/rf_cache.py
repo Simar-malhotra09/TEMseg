@@ -61,9 +61,7 @@ def get_or_train(
 
 def update(session_key: str, image: np.ndarray, mask: np.ndarray) -> None:
     if session_key not in _cache:
-        logger.warning(
-            f"No entry for session={session_key}, skipping update"
-        )
+        logger.warning(f"No entry for session={session_key}, skipping update")
         return
     _cache[session_key].update(image, mask)
 
