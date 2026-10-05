@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -42,6 +42,14 @@ interface ImgSize{
 }
 
 type SidebarTab = "segment" | "refine" | "augment" | "analysis";
+
+// shipped defaults for the yolo detection tunables. A field with no override
+// falls back to its default, and each reset button clears one override.
+const YOLO_DEFAULTS: YoloConfig = {
+  conf: { default: 0.01, override: null },
+  iou: { default: 0.5, override: null },
+  max_det: { default: 4000, override: null },
+};
 type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
@@ -209,12 +217,42 @@ export default function Workspace() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // yolo detection thresholds, tuned from the settings modal. Values are
-  // client only until the segment request carries them.
+  // yolo detection thresholds, tuned from the settings modal and sent with
+  // every segment request. User overrides persist server side.
   const [yoloCfgOpen, setYoloCfgOpen] = useState(false);
-  const [yoloConf, setYoloConf] = useState(0.01);
-  const [yoloIou, setYoloIou] = useState(0.5);
-  const [yoloMaxDet, setYoloMaxDet] = useState(4000);
+  const [yolo, setYolo] = useState<YoloConfig>(YOLO_DEFAULTS);
+  // effective value: the user override when set, else the stored default
+  const yoloValue = (field: keyof YoloConfig) =>
+    yolo[field].override ?? yolo[field].default;
+  // saves are debounced so one slider drag is one write, and queued so a slow
+  // older save can never overwrite a newer value
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const persistYolo = (next: YoloConfig) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const overrides = {
+        conf: next.conf.override,
+        iou: next.iou.override,
+        max_det: next.max_det.override,
+      };
+      saveChain.current = saveChain.current
+        .then(() => saveYoloSettings(overrides))
+        .catch(() => { /* keep the new value in the UI */ });
+    }, 300);
+  };
+  const setYoloOverride = (field: keyof YoloConfig, override: number | null) => {
+    const next: YoloConfig = {
+      ...yolo,
+      [field]: { default: yolo[field].default, override },
+    };
+    setYolo(next);
+    persistYolo(next);
+  };
+  // restore the user overrides saved by the previous app run
+  useEffect(() => {
+    getYoloSettings().then(setYolo).catch(() => { /* keep defaults */ });
+  }, []);
 
   // transient toasts — push for things worth surfacing beyond the status pill
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
@@ -831,7 +869,11 @@ export default function Workspace() {
     const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
     setStatus(`Running ${selectedModel}...`);
-    const msg = await seg.runSegmentation(activeRegions, blackout, inverse);
+    const msg = await seg.runSegmentation(activeRegions, blackout, inverse, {
+      conf: yoloValue("conf"),
+      iou: yoloValue("iou"),
+      max_det: yoloValue("max_det"),
+    });
 
     // if gt available, compute scores 
     if (msg) {
@@ -3403,10 +3445,17 @@ export default function Workspace() {
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>conf</span>
-                    <span className={styles.cfgVal}>{yoloConf.toFixed(2)}</span>
+                    <span className={styles.cfgValWrap}>
+                      <span className={styles.cfgVal}>{yoloValue("conf").toFixed(2)}</span>
+                      <button type="button" className={styles.settingsCfg}
+                        title={`Back to the default value (${yolo.conf.default})`}
+                        onClick={() => setYoloOverride("conf", null)}>
+                        reset
+                      </button>
+                    </span>
                   </div>
-                  <input type="range" min={0.01} max={0.95} step={0.01} value={yoloConf}
-                    onChange={e => setYoloConf(Number(e.target.value))}
+                  <input type="range" min={0.01} max={0.95} step={0.01} value={yoloValue("conf")}
+                    onChange={e => setYoloOverride("conf", Number(e.target.value))}
                     style={{ width: "100%", accentColor: "#7ee8a2" }} />
                   <p className={styles.settingsHint}>
                     Lowest score to keep a detection. Lower finds faint particles but keeps more false ones.
@@ -3415,10 +3464,17 @@ export default function Workspace() {
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>nms</span>
-                    <span className={styles.cfgVal}>{yoloIou.toFixed(2)}</span>
+                    <span className={styles.cfgValWrap}>
+                      <span className={styles.cfgVal}>{yoloValue("iou").toFixed(2)}</span>
+                      <button type="button" className={styles.settingsCfg}
+                        title={`Back to the default value (${yolo.iou.default})`}
+                        onClick={() => setYoloOverride("iou", null)}>
+                        reset
+                      </button>
+                    </span>
                   </div>
-                  <input type="range" min={0.05} max={0.95} step={0.05} value={yoloIou}
-                    onChange={e => setYoloIou(Number(e.target.value))}
+                  <input type="range" min={0.05} max={0.95} step={0.05} value={yoloValue("iou")}
+                    onChange={e => setYoloOverride("iou", Number(e.target.value))}
                     style={{ width: "100%", accentColor: "#7ee8a2" }} />
                   <p className={styles.settingsHint}>
                     Overlap cutoff. Two boxes above this overlap become one box. Lower kills more duplicate boxes but can merge touching particles.
@@ -3427,9 +3483,16 @@ export default function Workspace() {
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>max bbox</span>
-                    <input type="number" min={1} max={100000} step={100} value={yoloMaxDet}
-                      onChange={e => setYoloMaxDet(Math.max(1, Number(e.target.value) || 1))}
-                      className={styles.cfgNum} />
+                    <span className={styles.cfgValWrap}>
+                      <input type="number" min={1} max={100000} step={100} value={yoloValue("max_det")}
+                        onChange={e => setYoloOverride("max_det", Math.max(1, Number(e.target.value) || 1))}
+                        className={styles.cfgNum} />
+                      <button type="button" className={styles.settingsCfg}
+                        title={`Back to the default value (${yolo.max_det.default})`}
+                        onClick={() => setYoloOverride("max_det", null)}>
+                        reset
+                      </button>
+                    </span>
                   </div>
                   <p className={styles.settingsHint}>
                     The most boxes kept after filtering. Raise it only for very crowded images.

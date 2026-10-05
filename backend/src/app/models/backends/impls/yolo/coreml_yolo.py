@@ -16,8 +16,8 @@ from ...base import YoloBackend
 
 logger = get_logger("CoreMLYolo")
 
-CONF = 0.25
-IOU = 0.5
+CONF = 0.01
+IOU = 0.05
 MAX_DET = 4000
 IMGSZ = 640
 
@@ -71,10 +71,18 @@ class CoreMLYoloBackend(YoloBackend):
         t0 = time.perf_counter()
         self._model = ct.models.MLModel(str(pkg_path))
         # first predict pays the .mlpackage -> .mlmodelc compile; warm it now
-        self._model.predict({"image": Image.fromarray(np.zeros((640, 640, 3), np.uint8))})
+        self._model.predict(
+            {"image": Image.fromarray(np.zeros((640, 640, 3), np.uint8))}
+        )
         logger.info(f"coreml yolo loaded+compiled in {time.perf_counter() - t0:.1f}s")
 
-    def detect(self, image_rgb: np.ndarray) -> np.ndarray:
+    def detect(
+        self,
+        image_rgb: np.ndarray,
+        conf: float = CONF,
+        iou: float = IOU,
+        max_det: int = MAX_DET,
+    ) -> np.ndarray:
         x = letterbox_rgb(image_rgb)
         raw = self._model.predict({"image": Image.fromarray(x)})["var_1362"]
         pred = raw[0]
@@ -90,9 +98,9 @@ class CoreMLYoloBackend(YoloBackend):
             ],
             1,
         )
-        cand = np.where(cls > CONF)[0]
+        cand = np.where(cls > conf)[0]
         boxes, cls = boxes[cand], cls[cand]
-        sel = numpy_nms(boxes, cls, IOU)[:MAX_DET]
+        sel = numpy_nms(boxes, cls, iou)[:max_det]
         b = boxes[sel].copy()
         gain = min(IMGSZ / h, IMGSZ / w)
         new_unpad = (round(w * gain), round(h * gain))

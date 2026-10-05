@@ -567,6 +567,23 @@ export async function getSystemInfo(): Promise<SystemInfo> {
   return res.json();
 }
 
+export async function getYoloSettings(): Promise<YoloConfig> {
+  const res = await trackedFetch(`${BASE_URL}/config/yolo`);
+  if (!res.ok) throw new Error(`getYoloSettings: ${res.status}`);
+  return res.json();
+}
+
+export async function saveYoloSettings(
+  overrides: { conf: number | null; iou: number | null; max_det: number | null },
+): Promise<void> {
+  const res = await trackedFetch(`${BASE_URL}/config/yolo`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(overrides),
+  });
+  if (!res.ok) throw new Error(`saveYoloSettings: ${res.status}`);
+}
+
 export interface FromPointsResponse {
   proposals: Instance[];
   rejected: { index: number; reason: string }[];
@@ -678,6 +695,24 @@ export async function uploadImage(file: File): Promise<UploadResponse> {
   return data;
 }
 
+export interface YoloParams {
+  conf: number;
+  iou: number;
+  max_det: number;
+}
+
+// one configurable field: the default is fixed, the override is what the user set
+export interface YoloField {
+  default: number;
+  override: number | null;
+}
+
+export interface YoloConfig {
+  conf: YoloField;
+  iou: YoloField;
+  max_det: YoloField;
+}
+
 export async function segmentImage(
   sessionId: string,
   model: string,
@@ -686,6 +721,7 @@ export async function segmentImage(
   inverseBlackout: boolean = false,
   colorize: boolean = true,
   encoderDepth: number = 12,
+  yolo: YoloParams = { conf: 0.01, iou: 0.5, max_det: 4000 },
 ): Promise<SegmentResponse> {
   console.log(
     "Calling [segmentImage]",
@@ -708,6 +744,9 @@ export async function segmentImage(
       inverse_blackout: inverseBlackout,
       regions: regions,
       colorize: colorize,
+      yolo_conf: yolo.conf,
+      yolo_iou: yolo.iou,
+      yolo_max_det: yolo.max_det,
     }),
   });
 

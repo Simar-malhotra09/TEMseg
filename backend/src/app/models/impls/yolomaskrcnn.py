@@ -134,10 +134,12 @@ class YoloMaskRCNN(Model):
             )
         return img
 
-    def segment(self, image: np.ndarray) -> SegmentationResult:
+    def segment(
+        self, image: np.ndarray, yolo_params: dict | None = None, **kwargs
+    ) -> SegmentationResult:
         model = self.components["maskrcnn"]
 
-        boxes = self._yolo.detect(image)
+        boxes = self._yolo.detect(image, **(yolo_params or {}))
 
         h, w = image.shape[:2]
         if len(boxes) == 0:
@@ -184,7 +186,9 @@ class YoloMaskRCNN(Model):
             labels_np = np.zeros((h, w), dtype=np.uint16)
             CHUNK = 64
             for i in range(0, len(boxes), CHUNK):
-                chunk = paste_masks_in_image(mask_prob[i : i + CHUNK], yb[i : i + CHUNK], (h, w))
+                chunk = paste_masks_in_image(
+                    mask_prob[i : i + CHUNK], yb[i : i + CHUNK], (h, w)
+                )
                 bin_np = (chunk > 0.5).squeeze(1).cpu().numpy()
                 for k in range(bin_np.shape[0]):
                     m = bin_np[k]

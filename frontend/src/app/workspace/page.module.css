@@ -450,6 +450,7 @@ margin-bottom: 2px;
 }
 .cfgName { font-size: 11px; color: var(--text); }
 .cfgVal { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.cfgValWrap { display: flex; align-items: center; gap: 8px; }
 .cfgNum {
   width: 72px;
   background: var(--bg-hover);

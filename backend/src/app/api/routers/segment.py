@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Literal
 from pathlib import Path
 from fastapi import APIRouter, Request
+import json
 import time
 import cv2 as cv
 import numpy as np
@@ -20,7 +21,7 @@ from app.api.instances import extract_instances, colorize_labeled_mask
 from app.logutils import Timer, get_logger, ui_event
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SegmentRequest(BaseModel):
@@ -29,6 +30,11 @@ class SegmentRequest(BaseModel):
     # SAM ViT-B encoder depth (12 = full, 8 = early-exit). YoloSAM/FasterYoloSAM
     # only; ignored by MaskRCNN variants.
     encoder_depth: Literal[8, 12] = 12
+    # YOLO detection thresholds, tunable by the user per run. Ignored by
+    # MaskRCNN variants.
+    yolo_conf: float = Field(0.01, ge=0.0, le=1.0)
+    yolo_iou: float = Field(0.5, ge=0.0, le=1.0)
+    yolo_max_det: int = Field(4000, ge=1)
     regions: List[Box] = None
     blackout: bool = False
     inverse_blackout: bool = False
@@ -92,7 +98,8 @@ async def segment(req: SegmentRequest, request: Request):
     )
     logger.info(
         f"segment request: session={req.session_id}, model={req.model.value}, "
-        f"depth={req.encoder_depth}, regions={len(req.regions or [])}, mode={action}"
+        f"depth={req.encoder_depth}, regions={len(req.regions or [])}, mode={action}, "
+        f"yolo conf={req.yolo_conf} iou={req.yolo_iou} max_det={req.yolo_max_det}"
     )
 
     session_dir = SESSIONS_DIR / req.session_id
@@ -105,6 +112,26 @@ async def segment(req: SegmentRequest, request: Request):
 
     image_path = orig_files[0]
 
+    yolo_params = {
+        "conf": req.yolo_conf,
+        "iou": req.yolo_iou,
+        "max_det": req.yolo_max_det,
+    }
+
+    # record the detection thresholds so a session can be traced back to the
+    # settings that produced it. Written before inference so the empty result
+    # paths keep it too.
+    yolo_models = (
+        AvailableModels.yolosam,
+        AvailableModels.fasteryolosam,
+        AvailableModels.yolomaskrcnn,
+    )
+    if req.model in yolo_models:
+        meta_path = session_dir / "metadata.json"
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+        meta["yolo"] = yolo_params
+        meta_path.write_text(json.dumps(meta, indent=2))
+
     with Timer(logger, "segment") as t:
         # load image
         with t.step("load"):
@@ -116,7 +143,10 @@ async def segment(req: SegmentRequest, request: Request):
             if req.inverse_blackout:
                 # inverese blackout reqs to keep only the selected regions
                 # and ignore all else. Suitable for batch segmentation
-                if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
+                if req.model in (
+                    AvailableModels.yolosam,
+                    AvailableModels.fasteryolosam,
+                ):
                     logger.info(
                         f"Running batch segmentation on {len(req.regions)} patches"
                     )
@@ -125,6 +155,7 @@ async def segment(req: SegmentRequest, request: Request):
                         req.regions,
                         model_inst,
                         encoder_depth=req.encoder_depth,
+                        yolo_params=yolo_params,
                     )
                 # yolomaskrcnn and maskrcnn_synthetic do not support batch segmentation
                 elif req.model in (
@@ -136,7 +167,7 @@ async def segment(req: SegmentRequest, request: Request):
                         req.regions,
                         save_path=f"sessions/{req.session_id}/inverse_blackout_check.png",
                     )
-                    result = model_inst.segment(img)
+                    result = model_inst.segment(img, yolo_params=yolo_params)
                 else:
                     return {"error": f"Unsupported model {req.model}"}
 
@@ -150,12 +181,18 @@ async def segment(req: SegmentRequest, request: Request):
                         req.regions,
                         save_path=f"sessions/{req.session_id}/blackout_check.png",
                     )
-                if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
+                if req.model in (
+                    AvailableModels.yolosam,
+                    AvailableModels.fasteryolosam,
+                ):
                     result = model_inst.segment(
-                        img, embedding, encoder_depth=req.encoder_depth
+                        img,
+                        embedding,
+                        encoder_depth=req.encoder_depth,
+                        yolo_params=yolo_params,
                     )
                 else:
-                    result = model_inst.segment(img)
+                    result = model_inst.segment(img, yolo_params=yolo_params)
 
         # validation model which served req
         if req.model != result.model:
@@ -295,8 +332,6 @@ async def segment(req: SegmentRequest, request: Request):
             return {"error": "Failed to save mask"}
 
         # comute stats
-        import json
-
         # load pixel scale from session metadata (if available)
         pixel_size = None
         pixel_unit = None

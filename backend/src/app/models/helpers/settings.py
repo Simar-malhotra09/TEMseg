@@ -47,6 +47,11 @@ def app_support_shape_configs_dir() -> Path:
     return app_data_dir() / "shape_configs"
 
 
+def app_support_yolo_config_path() -> Path:
+    """Platform-appropriate user override location for yolo detection settings."""
+    return app_data_dir() / "yolo_config.json"
+
+
 def bundled_shape_config_path() -> Path:
     """Default shape_config.toml shipped next to compute_stats.py."""
     return Path(__file__).resolve().parent / "shape_config.toml"

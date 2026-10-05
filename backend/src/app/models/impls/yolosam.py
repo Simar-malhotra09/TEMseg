@@ -193,6 +193,7 @@ class YoloSam(Model):
         image: np.ndarray,
         embedding_cache: SamEmbedding | None = None,
         encoder_depth: int = 12,
+        yolo_params: dict | None = None,
         **kwargs,
     ) -> YoloSAMSegmentationResult:
         logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
@@ -200,7 +201,7 @@ class YoloSam(Model):
         # YOLO Detection
         with Timer(logger, "yolo") as t_yolo:
             with t_yolo.step("predict"):
-                boxes = self._yolo.detect(image)
+                boxes = self._yolo.detect(image, **(yolo_params or {}))
             t_yolo.field("boxes", len(boxes))
 
         # Always prime SAM with the image so the embedding is available for
@@ -264,6 +265,7 @@ class YoloSam(Model):
         offsets: List[tuple],
         img_shape: tuple,
         encoder_depth: int = 12,
+        yolo_params: dict | None = None,
     ) -> YoloSAMSegmentationResult:
         """
         Batch YOLO detection across all patches, then SAM per patch.
@@ -281,7 +283,7 @@ class YoloSam(Model):
         label_offset = 0  # owner ids keep global box order across patches
 
         for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
-            boxes_np = self._yolo.detect(patch)
+            boxes_np = self._yolo.detect(patch, **(yolo_params or {}))
             if len(boxes_np) == 0:
                 log_batch.debug(f"patch {i}: no detections, skipping")
                 continue

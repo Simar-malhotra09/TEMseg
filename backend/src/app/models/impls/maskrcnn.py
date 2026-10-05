@@ -127,7 +127,7 @@ class MaskRCNN(Model):
     #     img = cv.cvtColor(img, cv.COLOR_GRAY2RGB)
     #     return img.astype(np.float32) / 255.0
 
-    def segment(self, image: np.ndarray) -> SegmentationResult:
+    def segment(self, image: np.ndarray, **kwargs) -> SegmentationResult:
         model = self.components["maskrcnn"]
         tensor = torch.from_numpy(image).permute(2, 0, 1).to(self.device)
 

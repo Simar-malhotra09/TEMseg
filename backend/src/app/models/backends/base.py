@@ -24,15 +24,20 @@ class YoloBackend(ABC):
     """Object detection: image in, boxes out."""
 
     @abstractmethod
-    def detect(self, image_rgb: np.ndarray) -> np.ndarray:
-        """(H,W,3) uint8 RGB -> boxes_xyxy (N,4) float32 in image space."""
+    def detect(self, image_rgb: np.ndarray, **kwargs) -> np.ndarray:
+        """(H,W,3) uint8 RGB -> boxes_xyxy (N,4) float32 in image space.
+
+        kwargs carry the detection thresholds (conf, iou, max_det).
+        """
 
 
 class SamBackend(ABC):
     """SAM encode + boxes-only union decode (+ optional point prompts)."""
 
     @abstractmethod
-    def encode(self, image_rgb: np.ndarray, encoder_depth: int = 12) -> SamEmbedding: ...
+    def encode(
+        self, image_rgb: np.ndarray, encoder_depth: int = 12
+    ) -> SamEmbedding: ...
 
     @abstractmethod
     def decode_union(
@@ -41,4 +46,6 @@ class SamBackend(ABC):
         """(union uint8, owner_labels uint16) at original-image size."""
 
     def predict_prompts(self, prompts: list[dict]) -> np.ndarray:
-        raise NotImplementedError(f"{type(self).__name__} does not support point prompts")
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support point prompts"
+        )

@@ -12,10 +12,12 @@ from app.models.helpers.compute_stats import (
 from app.models.helpers.settings import (
     app_support_shape_config_path,
     app_support_shape_configs_dir,
+    app_support_yolo_config_path,
     bundled_shape_config_path,
     settings,
 )
 from fastapi import APIRouter, HTTPException
+import json
 import re
 from pathlib import Path
 from pydantic import BaseModel, Field
@@ -137,7 +139,7 @@ async def get_shape_rules():
 @router.put("/shape-rules")
 async def update_shape_rules(req: ShapeRulesUpdate):
     """
-    Overwrite the user's shape rules. default_shape is left untouched 
+    Overwrite the user's shape rules. default_shape is left untouched
     and only the ordered rule list is editable from the client. Written to the app-support
     override path; the bundled shape_config.toml is never modified.
     """
@@ -156,3 +158,67 @@ async def reset_shape_rules():
     config = load_shape_classification_config(bundled_shape_config_path())
     logger.info("Reset shape classification rules to default")
     return _config_response(config, is_default=True)
+
+
+# shipped out of the box values. Seeded into yolo_config.json once and never
+# changed after that, so a user can always go back to them.
+YOLO_SHIPPED_DEFAULTS = {"conf": 0.01, "iou": 0.5, "max_det": 4000}
+
+
+class YoloOverridesIn(BaseModel):
+    # user overrides, one per tunable; null means use the stored default
+    conf: float | None = Field(None, ge=0.0, le=1.0)
+    iou: float | None = Field(None, ge=0.0, le=1.0)
+    max_det: int | None = Field(None, ge=1)
+
+
+def _load_yolo_config() -> dict:
+    """File shape: {field: {"default": x, "override": x|null}}.
+
+    The default is seeded from the shipped value on first use and is immutable
+    after that. The override is the only field the app writes.
+    """
+    try:
+        data = json.loads(app_support_yolo_config_path().read_text())
+    except (OSError, ValueError):
+        data = None
+    config = {}
+    for field, shipped_default in YOLO_SHIPPED_DEFAULTS.items():
+        entry = data.get(field) if isinstance(data, dict) else None
+        entry = entry if isinstance(entry, dict) else {}
+        default = entry.get("default")
+        override = entry.get("override")
+        config[field] = {
+            "default": default
+            if isinstance(default, (int, float))
+            else shipped_default,
+            "override": override if isinstance(override, (int, float)) else None,
+        }
+    return config
+
+
+def _write_yolo_config(config: dict) -> None:
+    path = app_support_yolo_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2))
+
+
+@router.get("/yolo")
+async def get_yolo_settings():
+    """{field: {default, override}} for the configure modal. The effective
+    value is the override when set, else the default."""
+    config = _load_yolo_config()
+    if not app_support_yolo_config_path().exists():
+        _write_yolo_config(config)  # seed so the shipped defaults stay on disk
+    return config
+
+
+@router.put("/yolo")
+async def update_yolo_settings(req: YoloOverridesIn):
+    """Replace the user overrides. Stored defaults are immutable."""
+    config = _load_yolo_config()
+    for field, override in req.model_dump().items():
+        config[field]["override"] = override
+    _write_yolo_config(config)
+    logger.info(f"Saved yolo detection overrides: {req.model_dump()}")
+    return config

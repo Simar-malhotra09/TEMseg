@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { segmentImage, uploadGroundTruth, computeGTScore } from "@/lib/api";
+import { segmentImage, uploadGroundTruth, computeGTScore, YoloParams } from "@/lib/api";
 import { BASE_URL, StatsResult } from "@/lib/api";
 import { BlackoutRect } from "../components/BlackOutCanvas" 
 
@@ -51,12 +51,13 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
     activeRegions: BlackoutRect[],
     blackout: boolean,
     inverse: boolean,
+    yolo: YoloParams,
   ): Promise<string | null> => {
     if (!sessionId || !selectedModel) return null;
     setIsSegmenting(true);
     try {
       const result = await segmentImage(
-        sessionId, selectedModel, activeRegions, blackout, inverse, true, encoderDepth
+        sessionId, selectedModel, activeRegions, blackout, inverse, true, encoderDepth, yolo
       );
       if ('error' in result) {
         return "Segmentation returned no results.";
