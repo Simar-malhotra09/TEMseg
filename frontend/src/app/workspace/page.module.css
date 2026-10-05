@@ -387,61 +387,79 @@ margin-bottom: 2px;
   color: var(--text-ghost);
   margin-bottom: 5px;
 }
+/* 3 column row: name | value | action slot. The fixed action column keeps
+   the value column aligned top to bottom, also on rows without a button. */
 .settingsRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) 64px;
   align-items: center;
   gap: 8px;
   padding: 3px 0;
-  min-width: 0;
 }
-.settingsDot,
-.settingsDotOn {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.settingsName {
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.settingsDot { background: var(--text-blast); }
-.settingsDotOn { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-.settingsName { font-size: 11.5px; color: var(--text); white-space: nowrap; }
-.settingsMeta { margin-left: auto; font-size: 10px; color: var(--text-faint); white-space: nowrap; }
-.settingsWeight {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 1.5px 0 1.5px 14px;
-  min-width: 0;
+.settingsNum {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
+.settingsCfg {
+  background: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 9px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.settingsCfg:hover { background: var(--bg-hover); color: var(--text); }
+.settingsWeight { padding-left: 14px; }
 .settingsWeightName {
   font-size: 10px;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
-}
-.settingsWeightSize { margin-left: auto; font-size: 10px; color: var(--text-ghost); white-space: nowrap; }
-.settingsPath {
-  font-size: 10px;
-  color: var(--text-ghost);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
-  padding: 6px 0 2px 14px;
 }
 .settingsKey { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
 .settingsVal {
-  margin-left: auto;
   font-size: 10px;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
 }
 .settingsValPath { direction: rtl; text-align: right; }
+.settingsHint { font-size: 10px; color: var(--text-ghost); line-height: 1.5; margin: 2px 0 0; }
+
+.cfgHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+.cfgName { font-size: 11px; color: var(--text); }
+.cfgVal { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.cfgNum {
+  width: 72px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+}
 
 .kbdRow {
   display: grid;
@@ -1037,8 +1055,8 @@ border-bottom: 1px solid var(--border-soft);
 .statusbar {
 display: flex;
 align-items: center;
-gap: 18px;
-padding: 4px 10px;
+gap: 10px;
+padding: 2px 8px;
 border-top: 1px solid var(--border);
 background: var(--bg-sidebar);
 color: var(--text-dim);
@@ -1050,6 +1068,15 @@ flex-shrink: 0;
 .sbarB { font-weight: 700; }
 .sbarGrow { flex: 1; }
 .sbarRight { display: flex; align-items: center; gap: 10px; }
+.sbarPath {
+font-size: 9.5px;
+color: var(--text-ghost);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+max-width: 360px;
+direction: rtl;
+}
 .zoomBtn {
 background: none;
 border: none;

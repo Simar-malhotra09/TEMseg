@@ -209,6 +209,13 @@ export default function Workspace() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // yolo detection thresholds, tuned from the settings modal. Values are
+  // client only until the segment request carries them.
+  const [yoloCfgOpen, setYoloCfgOpen] = useState(false);
+  const [yoloConf, setYoloConf] = useState(0.01);
+  const [yoloIou, setYoloIou] = useState(0.5);
+  const [yoloMaxDet, setYoloMaxDet] = useState(4000);
+
   // transient toasts — push for things worth surfacing beyond the status pill
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const toastIdRef = useRef(0);
@@ -3299,6 +3306,11 @@ export default function Workspace() {
           </span>
           <span className={styles.sbarGrow} />
           <span className={styles.sbarRight}>
+            {systemInfo && (
+              <span className={styles.sbarPath} title={systemInfo.weights_dir}>
+                {systemInfo.weights_dir}
+              </span>
+            )}
             <span className={styles.deviceChip}>
               <span className={styles.deviceLed} />
               {systemInfo ? `${systemInfo.device}` : "backend"}
@@ -3324,25 +3336,29 @@ export default function Workspace() {
                       {systemInfo.models.map(m => (
                         <div key={m.key}>
                           <div className={styles.settingsRow}>
-                            <span className={m.loaded ? styles.settingsDotOn : styles.settingsDot} />
                             <span className={styles.settingsName}>{m.name}</span>
-                            <span className={styles.settingsMeta}>
-                              {m.loaded && m.engine
-                                ? `${m.engine} · ${m.runs_on}${m.ram_bytes ? ` · ${formatBytes(m.ram_bytes)}` : ""}`
-                                : "not loaded"}
+                            <span className={styles.settingsNum}>
+                              {m.loaded && m.ram_bytes ? formatBytes(m.ram_bytes) : ""}
+                            </span>
+                            <span>
+                              {m.key === "yolo" && (
+                                <button type="button" className={styles.settingsCfg}
+                                  onClick={() => setYoloCfgOpen(true)}>
+                                  configure
+                                </button>
+                              )}
                             </span>
                           </div>
                           {m.weights.map(w => (
-                            <div key={w.name} className={styles.settingsWeight}>
+                            <div key={w.name} className={`${styles.settingsRow} ${styles.settingsWeight}`}>
                               <span className={styles.settingsWeightName} title={w.name}>{w.name}</span>
-                              <span className={styles.settingsWeightSize}>
+                              <span className={styles.settingsNum}>
                                 {w.present ? `${Math.round(w.size_mb)} MB` : "missing"}
                               </span>
                             </div>
                           ))}
                         </div>
                       ))}
-                      <p className={styles.settingsPath} title={systemInfo.weights_dir}>{systemInfo.weights_dir}</p>
                     </div>
 
                     <div className={styles.settingsGroup}>
@@ -3368,6 +3384,57 @@ export default function Workspace() {
                 ) : (
                   <p className={styles.sidebarHint}>loading model info…</p>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+        {yoloCfgOpen && (
+          <div className={styles.modalRoot}>
+            <div className={styles.modalBackdrop} onClick={() => setYoloCfgOpen(false)} />
+            <div className={styles.modal}>
+              <div className={styles.modalHead}>
+                <div>
+                  <h3>Configure yolo</h3>
+                  <p className={styles.modalHeadSub}>Detection thresholds. They apply on the next segmentation run.</p>
+                </div>
+                <button type="button" className={styles.modalClose} onClick={() => setYoloCfgOpen(false)}>✕</button>
+              </div>
+              <div className={styles.modalBody}>
+                <div>
+                  <div className={styles.cfgHead}>
+                    <span className={styles.cfgName}>conf</span>
+                    <span className={styles.cfgVal}>{yoloConf.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min={0.01} max={0.95} step={0.01} value={yoloConf}
+                    onChange={e => setYoloConf(Number(e.target.value))}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <p className={styles.settingsHint}>
+                    Lowest score to keep a detection. Lower finds faint particles but keeps more false ones.
+                  </p>
+                </div>
+                <div>
+                  <div className={styles.cfgHead}>
+                    <span className={styles.cfgName}>nms</span>
+                    <span className={styles.cfgVal}>{yoloIou.toFixed(2)}</span>
+                  </div>
+                  <input type="range" min={0.05} max={0.95} step={0.05} value={yoloIou}
+                    onChange={e => setYoloIou(Number(e.target.value))}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <p className={styles.settingsHint}>
+                    Overlap cutoff. Two boxes above this overlap become one box. Lower kills more duplicate boxes but can merge touching particles.
+                  </p>
+                </div>
+                <div>
+                  <div className={styles.cfgHead}>
+                    <span className={styles.cfgName}>max bbox</span>
+                    <input type="number" min={1} max={100000} step={100} value={yoloMaxDet}
+                      onChange={e => setYoloMaxDet(Math.max(1, Number(e.target.value) || 1))}
+                      className={styles.cfgNum} />
+                  </div>
+                  <p className={styles.settingsHint}>
+                    The most boxes kept after filtering. Raise it only for very crowded images.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
