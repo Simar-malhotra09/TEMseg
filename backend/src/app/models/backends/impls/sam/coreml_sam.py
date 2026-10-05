@@ -48,7 +48,9 @@ class CoreMLSamBackend(SamBackend):
         t0 = time.perf_counter()
         self._enc = ct.models.MLModel(str(enc_pkg))
         self._enc.predict({"image": np.zeros((1, 3, 1024, 1024), np.float32)})
-        logger.info(f"coreml sam encoder loaded+compiled in {time.perf_counter() - t0:.1f}s")
+        logger.info(
+            f"coreml sam encoder loaded+compiled in {time.perf_counter() - t0:.1f}s"
+        )
         t0 = time.perf_counter()
         self._dec = ct.models.MLModel(str(dec_pkg))
         self._dec.predict(
@@ -57,7 +59,9 @@ class CoreMLSamBackend(SamBackend):
                 "boxes": np.zeros((B, 4), np.float32),
             }
         )
-        logger.info(f"coreml sam decoder loaded+compiled in {time.perf_counter() - t0:.1f}s")
+        logger.info(
+            f"coreml sam decoder loaded+compiled in {time.perf_counter() - t0:.1f}s"
+        )
         self._device = torch.device(device)
 
     def encode(self, image_rgb: np.ndarray, encoder_depth: int = 12) -> SamEmbedding:
@@ -93,9 +97,11 @@ class CoreMLSamBackend(SamBackend):
             groups = []
             for j in range(0, B, 8):
                 group = masks[j : j + 8, 0, :nh, :nw]
-                gt = torch.from_numpy(
-                    np.ascontiguousarray(group, dtype=np.float32)
-                ).unsqueeze(1).to(self._device)
+                gt = (
+                    torch.from_numpy(np.ascontiguousarray(group, dtype=np.float32))
+                    .unsqueeze(1)
+                    .to(self._device)
+                )
                 groups.append(
                     torch.nn.functional.interpolate(
                         gt, size=(h, w), mode="bilinear", align_corners=False
@@ -104,9 +110,7 @@ class CoreMLSamBackend(SamBackend):
             chunk_logits = torch.cat(groups, 0)
             if running_max is None:
                 running_max = chunk_logits[0].clone()
-                running_owner = torch.full_like(
-                    running_max, i + 1, dtype=torch.float32
-                )
+                running_owner = torch.full_like(running_max, i + 1, dtype=torch.float32)
                 start = 1
             else:
                 start = 0

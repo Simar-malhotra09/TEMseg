@@ -63,9 +63,7 @@ def device_allocated_bytes(device: str) -> int | None:
     return None
 
 
-def ram_since(
-    before: tuple[int | None, int | None], device: str
-) -> int | None:
+def ram_since(before: tuple[int | None, int | None], device: str) -> int | None:
     rss_after = process_peak_rss_bytes()
     alloc_after = device_allocated_bytes(device)
     if before[1] is not None and alloc_after is not None:
@@ -111,8 +109,14 @@ def choose_backends(
     Cached: same key -> same instances, no recompile."""
     yolo = choose_yolo_backend(components, device)
     if coreml_available():
-        key = ("coreml", str(YOLO_PKG), str(ENC_PKG), str(DEC_PKG),
-               id(components["sam"]), device)
+        key = (
+            "coreml",
+            str(YOLO_PKG),
+            str(ENC_PKG),
+            str(DEC_PKG),
+            id(components["sam"]),
+            device,
+        )
         if key in _backend_cache:
             return _backend_cache[key]
         sam: SamBackend = CoreMLSamBackend(ENC_PKG, DEC_PKG, device)
