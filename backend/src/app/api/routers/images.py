@@ -267,9 +267,7 @@ async def update_metadata(session_id: str, req: UpdateMetadataRequest):
                 )
                 return {"metadata": meta, "stats": stats}
         except Exception as e:
-            logger_meta.warning(
-                f"Stats recompute failed after pixel_size update: {e}"
-            )
+            logger_meta.warning(f"Stats recompute failed after pixel_size update: {e}")
 
     return {"metadata": meta}
 
@@ -484,6 +482,16 @@ async def get_yolo_boxes_debug(session_id: str):
         return {
             "error": "No YOLO boxes debug image — run segmentation with YoloSAM first"
         }
+    return FileResponse(path)
+
+
+@router.get("/{session_id}/sam-debug")
+async def get_sam_debug(session_id: str):
+    """Accumulated SAM prompt debug overlay, written by masks.from_points.
+    Every click appends its point and its three candidate boundaries."""
+    path = SESSIONS_DIR / session_id / "sam_debug.png"
+    if not path.exists():
+        return {"error": "No SAM debug image — click points in augment mode first"}
     return FileResponse(path)
 
 

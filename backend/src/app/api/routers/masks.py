@@ -143,10 +143,9 @@ async def get_instances(session_id: str):
 
 def _same_geometry(old: dict, new: dict) -> bool:
     """True when both instances describe the same outline(s)."""
-    return (
-        old.get("contour") == new.get("contour")
-        and (old.get("extra_contours") or []) == (new.get("extra_contours") or [])
-    )
+    return old.get("contour") == new.get("contour") and (
+        old.get("extra_contours") or []
+    ) == (new.get("extra_contours") or [])
 
 
 def _recompute_stats(
@@ -385,8 +384,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
             continue
 
         logger.debug(
-            f"split point {i + 1}/{len(body.points)}: "
-            f"{pixel_count}px after constraint"
+            f"split point {i + 1}/{len(body.points)}: {pixel_count}px after constraint"
         )
         new_masks.append(constrained)
 
@@ -698,6 +696,44 @@ def _pick_smallest_safe_mask(
     return k, a, m
 
 
+def _append_sam_debug(
+    session_dir: Path,
+    base_bgr: np.ndarray,
+    point: tuple[float, float],
+    raw_masks: list,
+    kept: int | None,
+) -> None:
+    """Accumulate one prompt event into sam_debug.png for the session.
+
+    Kept candidate boundary is red, the others black then blue in candidate
+    order. Same rule in the prior and no prior cases, so the two selection
+    assumptions can be compared on one image.
+    """
+    path = session_dir / "sam_debug.png"
+    canvas = cv.imread(str(path)) if path.exists() else None
+    if canvas is None or canvas.shape != base_bgr.shape:
+        canvas = base_bgr.copy()
+    px, py = int(round(point[0])), int(round(point[1]))
+    cv.circle(canvas, (px, py), 7, (0, 255, 255), 2)
+    cv.line(canvas, (px - 10, py), (px + 10, py), (0, 255, 255), 1)
+    cv.line(canvas, (px, py - 10), (px, py + 10), (0, 255, 255), 1)
+    other_colors = ((0, 0, 0), (255, 0, 0))  # BGR: black then blue
+    ci = 0
+    for k, m in enumerate(raw_masks):
+        if k == kept:
+            color = (0, 0, 255)  # BGR red: the candidate the logic kept
+        else:
+            color = other_colors[ci % len(other_colors)]
+            ci += 1
+        contours, _ = cv.findContours(
+            (np.asarray(m) > 0).astype(np.uint8),
+            cv.RETR_EXTERNAL,
+            cv.CHAIN_APPROX_SIMPLE,
+        )
+        cv.drawContours(canvas, contours, -1, color, 2)
+    cv.imwrite(str(path), canvas)
+
+
 @router.post("/{session_id}/from-points")
 async def from_points(session_id: str, body: FromPointsRequest, request: Request):
     t = Timer(logger, "from-points")
@@ -770,6 +806,15 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         f"{body.min_area}-{int(max_area)}px"
     )
 
+    # debug overlay base: the original in BGR so saved colors match the viewer
+    base_bgr = None
+    orig_files = list(session_dir.glob("org_*"))
+    if orig_files:
+        try:
+            base_bgr = cv.cvtColor(yolosam.load_image(orig_files[0]), cv.COLOR_RGB2BGR)
+        except Exception as e:
+            logger.warning(f"debug base image load failed: {e}")
+
     # SAM predict per click
     existing_mask = labeled > 0
     used_ids = {i["id"] for i in instances} | {
@@ -827,6 +872,8 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
         if has_prior:
             # Box-sweep around the click, widths from sqrt(area) percentiles.
             # multimask=False since box already disambiguates scale.
+            raw_masks: list[np.ndarray] = []
+            kept_j = None
             best_log_dist = float("inf")
             for k, bw in enumerate(box_widths):
                 half = float(bw) / 2.0
@@ -847,6 +894,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                         f"SAM prediction failed for click {i} at box size {k}: {e}"
                     )
                     continue
+                raw_masks.append(masks[0].astype(np.uint8))
                 m = (masks[0].astype(np.uint8) > 0) & (~existing_mask)
                 a = int(m.sum())
                 if a < body.min_area or a > max_area:
@@ -854,9 +902,12 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                 log_dist = abs(np.log(max(a, 1.0)) - log_median)
                 if log_dist < best_log_dist:
                     best_log_dist = log_dist
+                    kept_j = len(raw_masks) - 1
                     constrained = m
                     area = a
                     chosen_sam_score = float(scores[0])
+            if base_bgr is not None and raw_masks:
+                _append_sam_debug(session_dir, base_bgr, (px, py), raw_masks, kept_j)
             if constrained is None:
                 rejected.append(
                     {"index": i, "reason": "no box variant within area window"}
@@ -876,6 +927,14 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
                 rejected.append({"index": i, "reason": f"SAM error: {e}"})
                 continue
             pick = _pick_smallest_safe_mask(masks, body.min_area, max_area)
+            if base_bgr is not None:
+                _append_sam_debug(
+                    session_dir,
+                    base_bgr,
+                    (px, py),
+                    [m for m in masks],
+                    pick[0] if pick is not None else None,
+                )
             if pick is None:
                 rejected.append(
                     {"index": i, "reason": "no SAM output within area window"}
