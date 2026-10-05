@@ -21,6 +21,11 @@ SESSIONS_DIR = Path("sessions")
 # Below this floor we refuse to train rather than return junk.
 MIN_BG_FRACTION = 0.04
 
+# Flip to False to inspect the raw RF contours. When True, each proposal gets
+# the convex hull of its raw output: no in and out boundary wobble, and later
+# manual refinement works on a simpler polygon.
+USE_CONVEX_HULL = True
+
 
 class TrainRequest(BaseModel):
     session_id: str
@@ -126,6 +131,21 @@ async def rf_propose(req: ProposeRequest, request: Request):
         }
 
     instances, _ = extract_instances(missed, session_dir, save=False)
+
+    if USE_CONVEX_HULL:
+        # hull over main + satellite points, so the outline covers the whole
+        # raw output. bbox and area follow the hull, so what the client shows
+        # is what a later accept commits.
+        for inst in instances:
+            pts = np.array(inst["contour"], dtype=np.int32).reshape(-1, 2)
+            for extra in inst.get("extra_contours") or []:
+                pts = np.vstack([pts, np.array(extra, dtype=np.int32).reshape(-1, 2)])
+            hull = cv.convexHull(pts).reshape(-1, 2)
+            x, y, w, h = cv.boundingRect(hull)
+            inst["contour"] = hull.tolist()
+            inst["extra_contours"] = []
+            inst["bbox"] = {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
+            inst["area"] = int(cv.contourArea(hull))
 
     # Dedupe against the *rasterized final contour*, not the raw missed-pixel
     # mask. extract_instances traces contours with RETR_EXTERNAL, which only
