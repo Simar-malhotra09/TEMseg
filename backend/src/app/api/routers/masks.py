@@ -823,14 +823,14 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     proposals: list[dict] = []
     rejected: list[dict] = []
 
-    # Build a size prior from disk + pending if any. With ≥1 example, swap each
-    # click's SAM call from multimask=True to a box-sweep whose widths come from
-    # sqrt(area) percentiles of the prior, mirroring /propose-similar's per-seed
-    # logic. This makes click-produced masks track the user's annotated scale
-    # rather than depending on SAM's arbitrary multimask scale lottery.
-    prior_areas = [float(i["area"]) for i in instances] + [
-        float(p["area"]) for p in body.pending if p.get("area")
-    ]
+    # Build a size prior from committed particles only (on disk, so accepted
+    # proposals included). Pending proposals are deliberately excluded: a bad
+    # early proposal would leak its error into later ones. With at least 1
+    # example, swap each click's SAM call from multimask=True to a box-sweep
+    # whose widths come from sqrt(area) percentiles of the prior, mirroring
+    # /propose-similar's per-seed logic. This makes click-produced masks track
+    # the annotated scale rather than depending on SAM's scale lottery.
+    prior_areas = [float(i["area"]) for i in instances]
     has_prior = len(prior_areas) > 0
     if has_prior:
         sqrt_areas = np.sqrt(np.array(prior_areas, dtype=float))
