@@ -28,6 +28,13 @@ backend/src/routes.log
 debug.txt
 temseg_export_failing_obj/
 
+# local scratch and experiment output
+backend/src/groups.json
+inference-path.html
+logger.txt
+slides/
+ui-re/
+
 data/
 backend/src/data/
 backend/src/sessions/
