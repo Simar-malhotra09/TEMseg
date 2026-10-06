@@ -72,12 +72,16 @@ EMD="${EMD:-$FIXTURES/sample.emd}"      # rsciio/hyperspy path, known-good for s
 TIF="${TIF:-$FIXTURES/sample.tif}"      # tifffile path
 JPG="${JPG:-$FIXTURES/sample.jpg}"      # cv2 path
 NPY="${NPY:-$FIXTURES/mask.npy}"        # numpy path (also used as the GT mask)
-GT_MASK="${GT_MASK:-$FIXTURES/mask.npy}"
+GT_MASK="${GT_MASK:-}"
 
 # Fail early if a fixture is missing (keeps errors clear and actionable).
-for _f in "$EMD" "$TIF" "$JPG" "$NPY" "$GT_MASK"; do
+for _f in "$EMD" "$TIF" "$JPG" "$NPY"; do
     [ -f "$_f" ] || { echo "Missing fixture: $_f"; exit 2; }
 done
+if [ -n "$GT_MASK" ] && [ ! -f "$GT_MASK" ]; then
+    echo "Missing ground truth file: $GT_MASK" >&2
+    exit 2
+fi
 
 # Helpers
 PASS=0
@@ -85,7 +89,8 @@ FAIL=0
 SKIP=0
 FAILED_TESTS=()
 SESSION_IDS=()
-LOGDIR="$(mktemp -d /tmp/temseg_api_test.XXXXXX)"
+LOGDIR="${TEMSEG_TEST_LOGDIR:-${REPO_ROOT}/logs/api-test-$(date +%Y%m%d-%H%M%S)-$$}"
+mkdir -p "$LOGDIR"
 APP_PID=""
 
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[0;33m'; N='\033[0m'
@@ -138,18 +143,23 @@ assert_no_5xx() {
 cleanup() {
     echo ""
     echo "── cleanup ──"
+    # Sessions are stored in the user's app-data directory. Remove only IDs
+    # created by this test through the API while the server is still running.
+    if [ ${#SESSION_IDS[@]} -gt 0 ]; then
+        local cleanup_failed=false
+        for sid in "${SESSION_IDS[@]}"; do
+            if ! curl -fsS -X DELETE "${BASE_URL}/sessions/${sid}" >/dev/null; then
+                echo "  could not remove test session ${sid}" >&2
+                cleanup_failed=true
+            fi
+        done
+        if [ "$cleanup_failed" = false ]; then
+            echo "  removed ${#SESSION_IDS[@]} test session(s)"
+        fi
+    fi
     if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
         [ "$KEEP_RUNNING" = true ] && echo "  leaving app running (pid $APP_PID)" \
             || { echo "  stopping app (pid $APP_PID)"; kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true; }
-    fi
-    # Remove only the sessions this run created (sessions live inside the bundle
-    # under backend_src/sessions in frozen mode).
-    if [ -n "${APP:-}" ] && [ ${#SESSION_IDS[@]} -gt 0 ]; then
-        local sess_root="${APP}/Contents/Resources/backend_src/sessions"
-        for sid in "${SESSION_IDS[@]}"; do
-            rm -rf "$sess_root/$sid" 2>/dev/null || true
-        done
-        echo "  removed ${#SESSION_IDS[@]} test session(s)"
     fi
     echo "  logs: $LOGDIR"
 }
@@ -384,13 +394,31 @@ else
     fi
 
     section "9. Ground truth"
+    SELF_GT=false
+    if [ -z "$GT_MASK" ]; then
+        GT_MASK="$LOGDIR/self_mask.npy"
+        if unzip -p "$ZIP" seg_mask.npy > "$GT_MASK"; then
+            SELF_GT=true
+        else
+            fail "could not extract self-mask for ground-truth API check"
+        fi
+    fi
     req POST "$BASE_URL/gt/$EMD_SID" -F "file=@$GT_MASK"
     assert_code 200 && pass "GT upload" || true
 
     req POST "$BASE_URL/gt/$EMD_SID/compute" \
         -H "Content-Type: application/json" \
         -d '{"blackout":false,"inverse_blackout":false,"regions":[]}'
-    assert_no_5xx && pass "GT compute (200/4xx business OK)" || true
+    if assert_code 200; then
+        IOU="$(echo "$HTTP_BODY" | jget 'd["scores"]["iou"]')"
+        if [ "$SELF_GT" = true ]; then
+            awk -v value="$IOU" 'BEGIN { exit !(value >= 0.9999) }' \
+                && pass "GT self-mask IoU=$IOU" \
+                || fail "GT self-mask IoU=$IOU, expected at least 0.9999"
+        else
+            pass "GT comparison completed (IoU=$IOU)"
+        fi
+    fi
 
     section "10. RF recovery"
     req POST "$BASE_URL/rf/train" \
@@ -407,8 +435,8 @@ else
     req GET "$BASE_URL/config/shape-rules"
     assert_code 200 && pass "GET shape-rules" || true
 
-    req POST "$BASE_URL/config/shape-rules/reset"
-    assert_code 200 && pass "reset shape-rules" || true
+    req GET "$BASE_URL/config/yolo"
+    assert_code 200 && pass "GET YOLO settings" || true
 fi
 
 section "Summary"

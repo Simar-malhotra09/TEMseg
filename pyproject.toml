@@ -51,4 +51,7 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["backend/src/app"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/src/app"]

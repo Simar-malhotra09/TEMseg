@@ -17,6 +17,7 @@ frontend/main.py
 
 build/
 dist/
+logs/
 *.zip
 TEMseg_windows/
 rthook_hyperspy.py
