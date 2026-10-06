@@ -396,8 +396,13 @@ else
     section "9. Ground truth"
     SELF_GT=false
     if [ -z "$GT_MASK" ]; then
+        CURRENT_MASK_ZIP="$LOGDIR/current-mask.zip"
+        req_file POST "$BASE_URL/export/$EMD_SID" "$CURRENT_MASK_ZIP" \
+            -H "Content-Type: application/json" \
+            -d '{"items":["seg_mask_npy"]}'
+        assert_code 200 || fail "could not export current mask for ground-truth API check"
         GT_MASK="$LOGDIR/self_mask.npy"
-        if unzip -p "$ZIP" seg_mask.npy > "$GT_MASK"; then
+        if unzip -p "$CURRENT_MASK_ZIP" seg_mask.npy > "$GT_MASK"; then
             SELF_GT=true
         else
             fail "could not extract self-mask for ground-truth API check"
