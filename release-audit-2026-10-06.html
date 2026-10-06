@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TEMseg release audit — 6 October 2026</title>
+  <style>
+    html { background: #fff; color: #111; }
+    body { max-width: 920px; margin: 32px auto 72px; padding: 0 20px; font: 16px/1.55 Arial, sans-serif; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { font-size: 2rem; margin-bottom: .3em; }
+    h2 { margin-top: 2em; border-bottom: 1px solid #111; padding-bottom: .2em; }
+    h3 { margin-top: 1.4em; }
+    p, li { max-width: 78ch; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #111; padding: .45em .55em; text-align: left; vertical-align: top; }
+    th { background: #fff; }
+    a { color: #111; text-decoration: underline; }
+    code { font: .92em Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .note { border-left: 3px solid #111; padding-left: 1em; }
+    @media print { body { margin: 0 auto; } a { color: #111; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TEMseg release audit</h1>
+    <p>6 October 2026 · Branch: <code>audit/release-hardening-2026-10-06</code> · Review state: separate commits</p>
+    <p class="note">This report covers code, a local macOS package build, API checks, and TEM measurement needs. It does not certify measurement accuracy on a new sample. The release decision must use reference images and an installed app on each target platform.</p>
+  </header>
+
+  <section>
+    <h2>1. Release decision</h2>
+    <p><strong>Recommendation: hold the public release until the open gates in section 5 pass.</strong> The audit found errors that can change measured particle sizes, hide prior session data, or stop EMD import in a packaged app. The branch fixes several of these errors. The remaining gates concern measurement validation, upgrades, and target machines. The passing API suite is evidence of operation only. It is not evidence of scientific accuracy.</p>
+    <table>
+      <tr><th>Gate</th><th>State</th><th>Reason</th></tr>
+      <tr><td>Scientific import</td><td>Quick packaged test passed</td><td>The first package failed to import EMD. The direct EMD reader in the second package passed the EMD, TIFF, JPG, and NPY checks.</td></tr>
+      <tr><td>Security baseline</td><td>Improved; limits remain</td><td>The API now binds to loopback and checks browser origins and session IDs. Large files and local clients still need a threat model.</td></tr>
+      <tr><td>Reproducible output</td><td>Improved</td><td>Exports include the source file and an analysis manifest. Scale and mask provenance are more visible.</td></tr>
+      <tr><td>New machine</td><td>Open</td><td>This audit used the current macOS machine and its cached model weights. Windows and a clean offline machine were not tested.</td></tr>
+      <tr><td>Measurement validation</td><td>Open</td><td>No reference material comparison or blinded user review was done in this audit.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>2. What changed on this branch</h2>
+    <table>
+      <tr><th>Area</th><th>Change</th><th>Reason</th></tr>
+      <tr><td>App storage and network</td><td><a href="launcher.py">launcher.py</a> stores sessions in the user data directory and binds the API to <code>127.0.0.1</code>. The API accepts local Host and Origin values only.</td><td>An installed app bundle can be read-only or replaced. A network-facing unauthenticated analysis API exposes local images and model controls.</td></tr>
+      <tr><td>Input paths</td><td>The API checks session IDs and upload names. Ground-truth files use a fixed prefix. A failed image decode does not create a session.</td><td>Unchecked names could escape the session folder or replace a file. Invalid uploads left partial sessions.</td></tr>
+      <tr><td>Image import</td><td><a href="backend/src/app/models/helpers/image_io.py">image_io.py</a> is the shared reader for preview and inference. It preserves TIFF pixel depth before display conversion. It rejects EMD stacks and unsupported TIFF axes. It reads EMD through RosettaSciIO.</td><td>The prior model loaders used an 8-bit color read for TIFF. The first packaged test showed that HyperSpy plugin lookup could not import EMD.</td></tr>
+      <tr><td>Calibration</td><td>EMD scale is accepted only when both spatial axes have matching positive values and units. Manual and scale-bar updates must be finite and positive. Scale-bar inputs must agree with the stored pixel size. The UI shows the source or warning. Manual entry now appears when the image has no scale.</td><td>A wrong axis or missing unit can produce plausible but false nanometre values. A user needs a clear way to enter a scale for an uncalibrated image.</td></tr>
+      <tr><td>Particle results</td><td>Statistics mark particles that touch an image edge. Export CSV includes the flag. Distribution fits use AIC to choose a model and show the KS distance without a nominal fitted-data p value. The shape-rule file hash is saved with the results.</td><td>Truncated particles bias size data. A same-sample KS p value is not a valid fit test after parameters are fitted to that sample. Shape rules can change after analysis.</td></tr>
+      <tr><td>Segmentation state</td><td>The API rejects conflicting region modes and empty keep regions. A zero-particle result saves a zero mask and zero statistics. Analysis settings and the manual edit count are saved.</td><td>A new empty run must not leave the prior mask or prior statistics in place. A reviewer must know how results were produced.</td></tr>
+      <tr><td>Exports</td><td><a href="backend/src/app/api/routers/export.py">export.py</a> includes the original source file and an <code>analysis_manifest.json</code> with source and mask hashes, calibration, settings, and counts. Batch and UI export use one CSV builder. Text labels are quoted and spreadsheet formula prefixes are escaped.</td><td>The preview image loses source bit depth. A CSV label can change spreadsheet behavior. One exporter reduces drift between batch and interactive results.</td></tr>
+      <tr><td>Ground-truth scoring</td><td>The comparison now reads the saved labeled mask. It checks image shape before scoring. The package test uses a self-mask to check the scoring path.</td><td>The former scorer read the colored display PNG. Its gray threshold could change a score. The supplied <code>mask.npy</code> is not aligned with the EMD fixture, so it must not stand in for a reference annotation.</td></tr>
+      <tr><td>Model files</td><td>Both Mask R-CNN paths use PyTorch <code>weights_only=True</code>. Downloads require HTTPS and a valid SHA-256 digest. Downloads retry and replace the final file only after a hash match.</td><td>These model files are state dictionaries. Restricted loading reduces code execution risk from a changed checkpoint. A partial or changed download must not become a trusted model.</td></tr>
+      <tr><td>Build and checks</td><td>The wheel package path points to the real Python package. Default pytest discovery stays inside the app source. A local API test covers a 16-bit TIFF, calibration, export, origin checks, bad names, ground-truth scoring, and CSV formula text. The package test puts logs under <code>logs/</code> and no longer resets user shape rules.</td><td>The old wheel did not contain the app. Unbounded pytest discovery collected bundled third-party tests. A full package test removed a user override before the suite was corrected.</td></tr>
+    </table>
+    <p>The source changes are split into these reviewable commits:</p>
+    <table>
+      <tr><th>Commit</th><th>Scope</th></tr>
+      <tr><td><code>f0b0f946</code></td><td>Desktop storage and local API access.</td></tr>
+      <tr><td><code>3ff82884</code></td><td>TEM image import, calibration, segmentation state, and particle statistics.</td></tr>
+      <tr><td><code>29cd5420</code></td><td>Traceable exports and labeled-mask scoring.</td></tr>
+      <tr><td><code>5c1f3b4a</code></td><td>Build setup and release checks.</td></tr>
+      <tr><td><code>4fd80325</code></td><td>Ground-truth self-check after the last model run.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. Evidence from this audit</h2>
+    <table>
+      <tr><th>Check</th><th>Result</th><th>Limit</th></tr>
+      <tr><td>Local Python tests</td><td>22 passed.</td><td>They check API and data paths. They do not measure model quality.</td></tr>
+      <tr><td>Python lint and formatting</td><td>Ruff checks pass for the changed backend and launcher files.</td><td>Two old files outside this change still fail the repository-wide formatter check.</td></tr>
+      <tr><td>Frontend</td><td>TypeScript type check and production Next.js build pass.</td><td>The visual layout and manual UI steps were not checked on Windows.</td></tr>
+      <tr><td>Wheel</td><td>The built wheel contains <code>app/api/main.py</code> and the new image reader.</td><td>PyInstaller is the desktop release path.</td></tr>
+      <tr><td>First macOS package</td><td>The app started and served both ports. EMD upload failed because the packaged plugin registry lacked the EMD reader.</td><td>This failure caused the direct-reader change.</td></tr>
+      <tr><td>Second macOS package, quick suite</td><td>19 passed, 0 failed. EMD, TIFF, JPG, and NPY upload worked. YoloSAM found 22 particles in the EMD fixture. Statistics, ZIP export, histogram CSV, and static frontend checks passed.</td><td>A headless check does not inspect the native window.</td></tr>
+      <tr><td>Second macOS package, full suite</td><td>29 passed, 0 failed. Refinement, ground-truth, and RF endpoints returned no server error. This is a smoke check; it does not judge mask quality.</td><td>The test used cached model weights on this Mac. The old suite called a shape-rule reset; see the note below.</td></tr>
+      <tr><td>Second macOS package, all models</td><td>31 passed, 0 failed. The EMD fixture gave 22 particles with YoloSAM, 22 with YoloMaskRCNN, and 16 with MaskRCNN-Synthetic. The safe shape-rule check left the user override in place.</td><td>These counts show that each path ran. They do not establish which mask is correct.</td></tr>
+      <tr><td>Final macOS package, all models</td><td>31 passed, 0 failed. A mask compared with itself gave IoU 0.9999999999998147. EMD import, all three model paths, export, and static serving worked.</td><td>A self-mask checks scoring code. It is not a model accuracy score. Some refinement and recovery checks accept a business-level 400 response.</td></tr>
+    </table>
+    <p>The local import check loaded the supplied EMD fixture as a 2048 × 2048 image. A synthetic 16-bit TIFF kept four distinct levels after display conversion. The raw TIFF bytes in the ZIP matched the uploaded bytes.</p>
+    <p>The supplied <code>mask.npy</code> and <code>sample.emd</code> do not mark the same particle positions. Each of three model comparisons against that mask gave IoU 0. A visual check of the source, predicted mask, and supplied mask confirmed the mismatch. This is a fixture pairing error. It is not evidence that all three models have zero accuracy. The image and mask checks are saved in <code>logs/quality-check-20261006/</code>. I did not run a blinded accuracy study.</p>
+    <p class="note"><strong>Test side effect:</strong> The full suite reset an existing shape-rule override in the user data directory. The file had 661 bytes and the last saved log entry recorded five rules. I restored a 661-byte serialized copy of the five bundled rules at the same path. These facts strongly suggest the same content, but I cannot prove the removed bytes were identical. The test script now reads YOLO settings instead of resetting shape rules.</p>
+  </section>
+
+  <section>
+    <h2>4. Scientific risks that the app must show to users</h2>
+    <h3>4.1 A TEM image is a projected view</h3>
+    <p>Equivalent circle diameter comes from projected area. It is not a direct three-dimensional particle diameter. Touching particles, agglomerates, low contrast, and image thresholds change that area. Show the method name with every size result. Keep the mask next to the source image.</p>
+    <h3>4.2 Sampling can dominate model error</h3>
+    <p>A count of many particles from one field does not replace several independent fields. The app now reports particles that touch an edge. It does not yet make a documented rule for edge exclusion, field selection, or replicate weights. Add these rules before a user compares samples.</p>
+    <h3>4.3 Calibration needs evidence</h3>
+    <p>The app can record embedded, manual, or scale-bar calibration. It does not yet keep the scale-bar line coordinates or a calibration reference image. A lab must be able to check the line and the unit later. A wrong scale changes every physical size and every area by the square of that scale.</p>
+    <h3>4.4 Fit labels need restraint</h3>
+    <p>The app now uses AIC to rank three fitted distribution families. AIC ranks only the tested families. It does not prove that any family is correct. The small-sample threshold of ten particles is too low for a strong scientific fit claim. Report the raw sizes, field count, and plot with the fitted curve.</p>
+  </section>
+
+  <section>
+    <h2>5. Open release gates and known limits</h2>
+    <table>
+      <tr><th>Priority</th><th>Issue</th><th>Required check or action</th></tr>
+      <tr><td>Passed</td><td>Confirm packaged EMD import after the direct-reader fix.</td><td>The second package passed the quick suite with EMD, TIFF, JPG, NPY, segmentation, and export.</td></tr>
+      <tr><td>P0</td><td>Validate measurement quality.</td><td>Use a calibrated reference material and blinded hand annotations. Report count error, diameter bias, repeatability, and missed touching particles by image type. State acceptance limits before the test.</td></tr>
+      <tr><td>P0</td><td>Replace the mismatched ground-truth fixture.</td><td>Pair each image with an annotation from that exact image. Record the image hash, mask hash, annotator, and review status. Then run quantitative accuracy checks.</td></tr>
+      <tr><td>P0 if users have prior sessions</td><td>Older sessions can remain inside a prior app folder or the old development folder.</td><td>Back up that folder before an update. Test a migration or an explicit export and import path. The new data path does not migrate old sessions automatically.</td></tr>
+      <tr><td>P1</td><td>Windows and clean-machine startup remain unverified.</td><td>Install on a clean Windows machine and a clean supported Mac. Check WebView2, GPU and CPU model paths, model downloads, permissions, long paths, and port conflicts.</td></tr>
+      <tr><td>P1</td><td>Model files require about 1 GB of downloads before first use.</td><td>Download only the models a user selects. Show total size, free space, retry state, and an offline install path.</td></tr>
+      <tr><td>P1</td><td>Uploads and ZIP exports have no practical memory or disk budget.</td><td>Set a size policy for TEM files. Stream ZIP output to disk or to the response. Test large TIFF and EMD files under low free space.</td></tr>
+      <tr><td>P1</td><td>A local process can still call the loopback API. Browser requests with no Origin header are accepted.</td><td>For a stricter desktop boundary, use a launch token for API calls and place it in the native bridge. Review compatibility with the static frontend.</td></tr>
+      <tr><td>P1</td><td>Small particles below the fixed 50-pixel instance floor are dropped.</td><td>Make the floor visible in physical units and test it against the image scale. Save the chosen value in the analysis manifest.</td></tr>
+      <tr><td>P2</td><td>Missing requested export items are skipped. ZIP creation is in memory.</td><td>Return a list of missing items or fail the request. Test a large source image export.</td></tr>
+      <tr><td>P2</td><td>Build dependencies and signing need a release record.</td><td>Pin the build toolchain, keep a software bill of materials, sign and notarize the Mac app, sign the Windows binary, and verify the installed artifacts.</td></tr>
+      <tr><td>P2</td><td>The original source file can contain instrument or operator metadata.</td><td>Warn users before they share an export. Offer a separate metadata review or scrub option for public data.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>6. Features that would help a TEM analyst</h2>
+    <table>
+      <tr><th>Order</th><th>Feature</th><th>Why it helps</th><th>Small first version</th></tr>
+      <tr><td>1</td><td>Review queue for uncertain particles</td><td>A scientist can spend time on merged, cut, or low-contrast particles instead of every mask.</td><td>Rank masks by edge contact, unusual size, low solidity, and model disagreement. Let the user accept or edit each mask.</td></tr>
+      <tr><td>2</td><td>Edge and region rules</td><td>Users need one clear rule for cut particles and scale bars in the image.</td><td>Add an edge exclusion switch and a saved region of interest. Show included and excluded counts in each plot and CSV.</td></tr>
+      <tr><td>3</td><td>Field and replicate summary</td><td>A batch is a set of image fields, not only one pooled list of particles.</td><td>Group images by sample, condition, grid, and field. Report per-field values before pooled values.</td></tr>
+      <tr><td>4</td><td>Fiji and ImageJ exchange</td><td>Many labs already check masks in Fiji and use its Results table.</td><td>Export a Results-style CSV and ROI ZIP with calibrated units. Import reviewed ROI sets into a new analysis copy.</td></tr>
+      <tr><td>5</td><td>Measurement panel</td><td>Equivalent diameter alone hides rods and faceted particles.</td><td>Add Feret max/min, perimeter method, area method, and number-weighted D10/D50/D90. State each definition.</td></tr>
+      <tr><td>6</td><td>Calibration record</td><td>Manual scale entry is hard to audit months later.</td><td>Save line end points, stated bar length, unit, operator note, source metadata, and date in the manifest.</td></tr>
+      <tr><td>7</td><td>Study export</td><td>Users need one clean handoff to analysis notebooks and papers.</td><td>Export one long table with image, sample, field, particle ID, masks, units, exclusions, and software/model versions.</td></tr>
+    </table>
+    <p>Keep each particle ID stable when a user edits a mask. Give each export a manifest and a separate analysis copy. This makes a later correction traceable.</p>
+  </section>
+
+  <section>
+    <h2>7. Literature and workflow basis</h2>
+    <ul>
+      <li><a href="https://www.nist.gov/publications/measuring-size-nanoparticles-using-transmission-electron-microscopy-tem">NIST: Measuring the size of nanoparticles using TEM</a>. This source describes projected-size measurement and its limits.</li>
+      <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4562322/">NIST interlaboratory study of nanoparticle size by TEM</a>. The study shows why repeatability and between-lab uncertainty matter.</li>
+      <li><a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.1200-22.pdf">NIST SP 1200-22: ImageJ-based TEM particle measurement protocol</a>. The protocol informs calibration, threshold review, and measurement records.</li>
+      <li><a href="https://imagej.net/ij/docs/menus/analyze">ImageJ Analyze menu documentation</a>. It lists edge exclusion, Feret measurements, ROI handling, and results export that users may expect.</li>
+      <li><a href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.goodness_of_fit.html">SciPy goodness-of-fit documentation</a>. It explains why fitted parameters need a different goodness-of-fit procedure.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>8. Work not completed in this audit</h2>
+    <p>The user asked me to pack up the work before the original one-hour work period ended. I stopped new feature changes and prepared reviewable commits. The following work remains:</p>
+    <ul>
+      <li><strong>Prior-session migration:</strong> I moved new runtime data to a stable user directory. I did not copy older sessions. A safe migration needs a backup and a test with real prior data. An app update may remove files that remain inside an old bundle.</li>
+      <li><strong>Clean-machine release checks:</strong> I could use this Mac and its cached weights. I did not have a clean Windows machine, a clean Mac account, a signed installer, or an offline machine to test.</li>
+      <li><strong>Reference accuracy:</strong> The supplied mask is not paired with the EMD image. I did not invent an accuracy result from it. A real annotated data set and acceptance limits are required.</li>
+      <li><strong>Large-file and failure tests:</strong> I did not stress the API with multi-gigabyte images, full disks, interrupted downloads, or concurrent users. These can still fail on a new machine.</li>
+      <li><strong>Planned analyst features:</strong> I did not add an edge exclusion switch, a Fiji ROI exchange, field-level statistics, or an uncertainty review queue. Section 6 gives small first versions.</li>
+      <li><strong>Permission limit:</strong> Automatic approval review rejected a recursive deletion of a failed upload session. I used a staged upload file instead. It prevents a bad image from creating a session and passed a local test.</li>
+    </ul>
+  </section>
+</body>
+</html>
