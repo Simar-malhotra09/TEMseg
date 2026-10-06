@@ -1,4 +1,5 @@
 import json
+import hashlib
 import math
 import operator
 import tomllib
@@ -260,11 +261,14 @@ def _fit_distributions(diameters: list[float]) -> dict:
     # Normal
     try:
         mu, std = sp_stats.norm.fit(arr)
-        ks_stat, ks_p = sp_stats.kstest(arr, "norm", args=(mu, std))
+        ks_stat = sp_stats.kstest(arr, "norm", args=(mu, std)).statistic
+        aic = 4 - 2 * float(np.sum(sp_stats.norm.logpdf(arr, mu, std)))
+        if not np.isfinite(aic) or not np.isfinite(ks_stat):
+            raise ValueError("Normal fit produced non-finite statistics")
         results["normal"] = {
             "params": {"mean": float(mu), "std": float(std)},
             "ks_statistic": float(ks_stat),
-            "ks_pvalue": float(ks_p),
+            "aic": aic,
         }
     except Exception:
         pass
@@ -274,7 +278,10 @@ def _fit_distributions(diameters: list[float]) -> dict:
         shape, loc, scale = sp_stats.lognorm.fit(arr, floc=0)
         mu_log = float(np.log(scale))
         sigma_log = float(shape)
-        ks_stat, ks_p = sp_stats.kstest(arr, "lognorm", args=(shape, loc, scale))
+        ks_stat = sp_stats.kstest(arr, "lognorm", args=(shape, loc, scale)).statistic
+        aic = 4 - 2 * float(np.sum(sp_stats.lognorm.logpdf(arr, shape, loc, scale)))
+        if not np.isfinite(aic) or not np.isfinite(ks_stat):
+            raise ValueError("Lognormal fit produced non-finite statistics")
         results["lognormal"] = {
             "params": {
                 "mu_log": mu_log,
@@ -282,7 +289,7 @@ def _fit_distributions(diameters: list[float]) -> dict:
                 "geometric_mean": float(scale),
             },
             "ks_statistic": float(ks_stat),
-            "ks_pvalue": float(ks_p),
+            "aic": aic,
         }
     except Exception:
         pass
@@ -290,11 +297,14 @@ def _fit_distributions(diameters: list[float]) -> dict:
     # Weibull
     try:
         c, loc, scale = sp_stats.weibull_min.fit(arr, floc=0)
-        ks_stat, ks_p = sp_stats.kstest(arr, "weibull_min", args=(c, loc, scale))
+        ks_stat = sp_stats.kstest(arr, "weibull_min", args=(c, loc, scale)).statistic
+        aic = 4 - 2 * float(np.sum(sp_stats.weibull_min.logpdf(arr, c, loc, scale)))
+        if not np.isfinite(aic) or not np.isfinite(ks_stat):
+            raise ValueError("Weibull fit produced non-finite statistics")
         results["weibull"] = {
             "params": {"shape": float(c), "scale": float(scale)},
             "ks_statistic": float(ks_stat),
-            "ks_pvalue": float(ks_p),
+            "aic": aic,
         }
     except Exception:
         pass
@@ -302,12 +312,14 @@ def _fit_distributions(diameters: list[float]) -> dict:
     if not results:
         return {"reliable": False, "reason": "all fits failed"}
 
-    # pick best model by highest KS p-value (least evidence against fit)
-    best = max(results.items(), key=lambda x: x[1]["ks_pvalue"])
+    # AIC compares descriptive fits; nominal KS p-values are not used for selection.
+    best = min(results.items(), key=lambda x: x[1]["aic"])
 
     return {
         "reliable": True,
         "best_model": best[0],
+        "selection_method": "minimum AIC",
+        "fit_caveat": "Fits describe the measured particles. Segmentation and sampling uncertainty are not included.",
         "fits": results,
     }
 
@@ -328,7 +340,14 @@ def compute_stats_from_instances(
 
     # I added this placeholder '-' in commit 836855bd05011e60c1d96038b00240566da4756f
     # this is hacky and needs to be fixed later.
-    has_scale = pixel_size != "-" and pixel_size is not None and pixel_size > 0
+    has_scale = (
+        isinstance(pixel_size, (int, float))
+        and math.isfinite(pixel_size)
+        and pixel_size > 0
+        and isinstance(pixel_unit, str)
+        and bool(pixel_unit.strip())
+        and pixel_unit != "-"
+    )
     scale = pixel_size if has_scale else 1.0
     scale_sq = scale * scale if scale else 1.0
     unit = pixel_unit if has_scale else "px"
@@ -343,6 +362,9 @@ def compute_stats_from_instances(
 
     # load shape classification rules once, outside the per-instance loop
     shape_config = load_shape_classification_config(settings.SHAPE_CONFIG_PATH)
+    shape_config_sha256 = hashlib.sha256(
+        settings.SHAPE_CONFIG_PATH.read_bytes()
+    ).hexdigest()
 
     # bounding-box slice per label, so each component is compared/scanned
     # only within its own crop instead of against the full frame. Metrics
@@ -462,6 +484,7 @@ def compute_stats_from_instances(
             "bbox": inst["bbox"],
             "border_distance_px": float(border_px),
             "border_edge": border_edge,
+            "touches_image_edge": border_px <= 0,
             "nearest_neighbor_px": None,  # filled after the loop, needs all centroids
             "nearest_neighbor_id": None,
         }
@@ -496,10 +519,12 @@ def compute_stats_from_instances(
     if count == 0:
         return {
             "pixel_size": pixel_size,
+            "shape_config_sha256": shape_config_sha256,
             "pixel_unit": pixel_unit,
             "unit": unit,
             "has_scale": has_scale,
             "particle_count": 0,
+            "edge_particle_count": 0,
             "coverage": coverage,
             "avg_size": 0.0,
             "avg_circularity": 0.0,
@@ -516,6 +541,7 @@ def compute_stats_from_instances(
         }
 
     areas_px = [p["area_px"] for p in particles]
+    edge_particle_count = sum(p["touches_image_edge"] for p in particles)
     diameters_px = [p["diameter_px"] for p in particles]
     circularities = [p["circularity"] for p in particles]
     aspect_ratios = [p["aspect_ratio"] for p in particles]
@@ -550,10 +576,12 @@ def compute_stats_from_instances(
 
     return {
         "pixel_size": pixel_size,
+        "shape_config_sha256": shape_config_sha256,
         "pixel_unit": pixel_unit,
         "unit": unit,
         "has_scale": has_scale,
         "particle_count": count,
+        "edge_particle_count": edge_particle_count,
         "coverage": float(coverage),
         "avg_size": float(np.mean(areas_px)),
         "avg_circularity": float(np.mean(circularities)),

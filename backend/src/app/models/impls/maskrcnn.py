@@ -10,6 +10,7 @@ from pathlib import Path
 from app.api.live_models import AvailableModels
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 from app.models.helpers.maskrcnn_utils import group_boxes_and_masks
+from app.models.helpers.image_io import load_rgb_uint8
 
 router = APIRouter(prefix="/models/maskrcnn")
 SESSIONS_DIR = Path("sessions")
@@ -52,7 +53,9 @@ class MaskRCNN(Model):
                 raise RuntimeError("_build_model() returned None")
 
             try:
-                checkpoint = torch.load(model_path, map_location=self.device)
+                checkpoint = torch.load(
+                    model_path, map_location=self.device, weights_only=True
+                )
             except Exception as e:
                 raise RuntimeError(f"Failed to load checkpoint: {e}") from e
 
@@ -88,37 +91,9 @@ class MaskRCNN(Model):
         return model
 
     def load_image(self, image_path: Path) -> np.ndarray:
-        if image_path.suffix == ".npy":
-            img = np.load(image_path)
-        elif image_path.suffix == ".emd":
-            import hyperspy.api as hs
-
-            result = hs.load(str(image_path))
-            s = result[0] if isinstance(result, list) else result
-            img = s.data
-
-        else:
-            img = cv.imread(str(image_path), cv.IMREAD_GRAYSCALE)
-            if img is None:
-                raise ValueError(f"Failed to load image: {image_path}")
-            img = cv.cvtColor(img, cv.COLOR_GRAY2RGB)
-
-        # normalize to (H, W, 3) uint8
-        if img.ndim == 2:
-            img = np.stack([img] * 3, axis=-1)  # grayscale → RGB
-        elif img.ndim == 3 and img.shape[0] in (1, 3):
-            img = np.transpose(img, (1, 2, 0))  # (C,H,W) → (H,W,C)
-        if img.shape[2] == 1:
-            img = np.repeat(img, 3, axis=2)  # (H,W,1) → (H,W,3)
-        elif img.shape[2] == 4:
-            img = img[:, :, :3]  # drop alpha
-
-        if img.dtype != np.uint8:
-            img = ((img - img.min()) / (img.max() - img.min() + 1e-8) * 255).astype(
-                "uint8"
-            )
-
-        return img.astype(np.float32) / 255.0
+        rgb = load_rgb_uint8(image_path)
+        gray = cv.cvtColor(rgb, cv.COLOR_RGB2GRAY)
+        return cv.cvtColor(gray, cv.COLOR_GRAY2RGB).astype(np.float32) / 255.0
 
     # def load_image(self, image_path: str) -> np.ndarray:
     #     img = cv.imread(str(image_path), cv.IMREAD_GRAYSCALE)

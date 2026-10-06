@@ -18,6 +18,7 @@ from torchvision.models.detection.transform import resize_boxes
 from app.api.live_models import AvailableModels
 from app.models.backends.selection import choose_yolo_backend, coreml_available
 from app.models.base_model import Model, ModelConfig, SegmentationResult
+from app.models.helpers.image_io import load_rgb_uint8
 
 router = APIRouter(prefix="/models/yolomaskrcnn")
 
@@ -77,7 +78,7 @@ class YoloMaskRCNN(Model):
                 model = self._build_model()
                 try:
                     checkpoint = torch.load(
-                        model_path, map_location="cpu", weights_only=False
+                        model_path, map_location="cpu", weights_only=True
                     )
                 except Exception as e:
                     raise RuntimeError(f"Failed to load checkpoint: {e}") from e
@@ -105,34 +106,9 @@ class YoloMaskRCNN(Model):
         return model
 
     def load_image(self, image_path: Path) -> np.ndarray:
-        if image_path.suffix == ".npy":
-            img = np.load(image_path)
-        elif image_path.suffix == ".emd":
-            import hyperspy.api as hs
-
-            result = hs.load(str(image_path))
-            s = result[0] if isinstance(result, list) else result
-            img = s.data
-        else:
-            img = cv.imread(str(image_path), cv.IMREAD_GRAYSCALE)
-            if img is None:
-                raise ValueError(f"Failed to load image: {image_path}")
-
-        # normalize to (H, W, 3) uint8
-        if img.ndim == 2:
-            img = np.stack([img] * 3, axis=-1)
-        elif img.ndim == 3 and img.shape[0] in (1, 3):
-            img = np.transpose(img, (1, 2, 0))
-        if img.shape[2] == 1:
-            img = np.repeat(img, 3, axis=2)
-        elif img.shape[2] == 4:
-            img = img[:, :, :3]
-
-        if img.dtype != np.uint8:
-            img = ((img - img.min()) / (img.max() - img.min() + 1e-8) * 255).astype(
-                "uint8"
-            )
-        return img
+        rgb = load_rgb_uint8(image_path)
+        gray = cv.cvtColor(rgb, cv.COLOR_RGB2GRAY)
+        return cv.cvtColor(gray, cv.COLOR_GRAY2RGB)
 
     def segment(
         self, image: np.ndarray, yolo_params: dict | None = None, **kwargs

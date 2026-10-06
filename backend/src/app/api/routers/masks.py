@@ -175,6 +175,17 @@ def _recompute_stats(
     return stats
 
 
+def _record_mask_edit(session_dir: Path) -> None:
+    meta_path = session_dir / "metadata.json"
+    if not meta_path.exists():
+        return
+    meta = json.loads(meta_path.read_text())
+    analysis = meta.get("analysis") or {"model": "manual", "edit_count": 0}
+    analysis["edit_count"] = int(analysis.get("edit_count", 0)) + 1
+    meta["analysis"] = analysis
+    meta_path.write_text(json.dumps(meta, indent=2))
+
+
 @router.post("/{session_id}/reclassify")
 async def reclassify(session_id: str):
     """Recompute stats.json under the current shape rules, geometry untouched.
@@ -278,6 +289,7 @@ async def api_save_instances(session_id: str, req: SaveInstancesRequest):
 
     # recompute stats from updated instances
     stats = _recompute_stats(session_dir, req.instances, labeled)
+    _record_mask_edit(session_dir)
 
     t.field("particles", len(req.instances))
     t.field("total", stats["particle_count"])
@@ -480,6 +492,7 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     stats_path = session_dir / "stats.json"
     with open(stats_path, "w") as f:
         json.dump(stats, f)
+    _record_mask_edit(session_dir)
 
     t.field("created", len(new_instances))
     t.stop()

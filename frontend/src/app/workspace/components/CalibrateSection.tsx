@@ -31,6 +31,7 @@ export default function CalibrateSection({
   const [pixelBusy, setPixelBusy] = useState(false);
   const [sbLength, setSbLength] = useState("");
   const [sbUnit, setSbUnit] = useState("nm");
+  const [calibrationError, setCalibrationError] = useState("");
 
   useEffect(() => {
     if (scaleBarPixels != null) {
@@ -45,6 +46,7 @@ export default function CalibrateSection({
 
   function startEdit() {
     if (!canEditPixel) return;
+    setCalibrationError("");
     setEditSize(pixelSizeMissing ? "" : String(pixelSize));
     setEditUnit(metadata?.pixel_unit ?? "nm");
     setEditingPixel(true);
@@ -59,13 +61,16 @@ export default function CalibrateSection({
   async function saveEdit() {
     if (!sessionId) return;
     const val = parseFloat(editSize);
-    if (Number.isNaN(val) || val <= 0) return;
+    if (!Number.isFinite(val) || val <= 0) {
+      setCalibrationError("Enter a positive pixel size.");
+      return;
+    }
+    setCalibrationError("");
     setPixelBusy(true);
     try {
       const result = await updatePixelSize(
         sessionId,
-        val,
-        editUnit.trim() || "nm",
+        { pixel_size: val, pixel_unit: editUnit.trim() || "nm", calibration_source: "manual" },
       );
       if (result.metadata) {
         onMetadataUpdate?.(
@@ -75,7 +80,7 @@ export default function CalibrateSection({
       }
       setEditingPixel(false);
     } catch (e) {
-      console.error("Failed to update pixel size:", e);
+      setCalibrationError(e instanceof Error ? e.message : "Could not save pixel size.");
     } finally {
       setPixelBusy(false);
     }
@@ -84,14 +89,23 @@ export default function CalibrateSection({
   async function confirmScaleBar() {
     if (!sessionId || scaleBarPixels == null) return;
     const length = parseFloat(sbLength);
-    if (Number.isNaN(length) || length <= 0) return;
+    if (!Number.isFinite(length) || length <= 0) {
+      setCalibrationError("Enter a positive scale bar length.");
+      return;
+    }
     const computed = length / scaleBarPixels;
+    setCalibrationError("");
     setPixelBusy(true);
     try {
       const result = await updatePixelSize(
         sessionId,
-        computed,
-        sbUnit.trim() || "nm",
+        {
+          pixel_size: computed,
+          pixel_unit: sbUnit.trim() || "nm",
+          calibration_source: "scale_bar",
+          scale_bar_pixels: scaleBarPixels,
+          scale_bar_length: length,
+        },
       );
       if (result.metadata) {
         onMetadataUpdate?.(
@@ -101,7 +115,7 @@ export default function CalibrateSection({
       }
       onScaleBarCancel();
     } catch (e) {
-      console.error("Failed to set pixel size from scale bar:", e);
+      setCalibrationError(e instanceof Error ? e.message : "Could not save scale bar.");
     } finally {
       setPixelBusy(false);
     }
@@ -109,7 +123,7 @@ export default function CalibrateSection({
 
   return (
     <div className={styles.wrap}>
-      {metadata?.pixel_size != null && (
+      {metadata && (
         <div className={styles.row}>
           <span className={styles.label}>Pixel Size</span>
           {!editingPixel ? (
@@ -124,6 +138,15 @@ export default function CalibrateSection({
                   ? ""
                   : " " + metadata.pixel_unit}
               </span>
+              {metadata.calibration?.source && (
+                <span className={styles.label} title="Source of the current pixel scale">
+                  {metadata.calibration.source === "scale_bar"
+                    ? "Scale bar"
+                    : metadata.calibration.source === "embedded"
+                      ? "Image metadata"
+                      : "Manual"}
+                </span>
+              )}
               {canEditPixel && (
                 <button
                   type="button"
@@ -184,6 +207,10 @@ export default function CalibrateSection({
           )}
         </div>
       )}
+      {metadata?.calibration_warning && (
+        <div className={styles.row}>{metadata.calibration_warning}</div>
+      )}
+      {calibrationError && <div className={styles.row} role="alert">{calibrationError}</div>}
 
       {scaleBarPixels == null && (
         <div className={styles.row}>

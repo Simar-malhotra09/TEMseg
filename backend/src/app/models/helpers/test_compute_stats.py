@@ -351,12 +351,11 @@ def test_distribution_fitting():
         print(f"  Best fit model: {fits['best_model']}")
         print(f"  Fits: {list(fits['fits'].keys())}")
         for model, f in fits["fits"].items():
-            print(f"    {model}: params={f['params']}, KS p={f['ks_pvalue']:.4f}")
+            print(f"    {model}: params={f['params']}, AIC={f['aic']:.4f}")
 
-        # lognormal should be best or at least a good fit since we generated lognormal
+        # Compare descriptive fits without treating fitted-parameter KS as a test.
         if "lognormal" in fits["fits"]:
-            ln_p = fits["fits"]["lognormal"]["ks_pvalue"]
-            print(f"  Lognormal KS p-value: {ln_p:.4f} (should be >0.05)")
+            print(f"  Lognormal AIC: {fits['fits']['lognormal']['aic']:.4f}")
     else:
         print(f"  Distribution fitting: {fits}")
 

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import math
 import uuid
 import re
 import shutil
@@ -7,107 +9,62 @@ from fastapi import APIRouter, File, UploadFile, Request, Form, HTTPException
 from fastapi.responses import FileResponse
 import numpy as np
 import cv2 as cv
-import sys
-import os
+from tifffile import TiffFileError
 from app.logutils import get_logger, ui_event
+from app.api.utils import validate_session_id
 from app.api.routers.sessions import update_mru, create_group
+from app.models.helpers.image_io import load_rgb_uint8
 from pydantic import BaseModel
+from typing import Literal
 
 router = APIRouter(prefix="/images")
 logger = get_logger("images")
-logger_rsciio = get_logger("images", sub="rsciio")
 logger_meta = get_logger("images", sub="meta")
 SESSIONS_DIR = Path("sessions")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".npy", ".emd"}
+PIXEL_UNIT_ALIASES = {
+    "pm": "pm",
+    "nm": "nm",
+    "um": "µm",
+    "µm": "µm",
+    "μm": "µm",
+    "micron": "µm",
+    "microns": "µm",
+    "mm": "mm",
+    "m": "m",
+    "a": "Å",
+    "å": "Å",
+    "angstrom": "Å",
+    "ångström": "Å",
+}
+
+
+def _validated_upload_name(filename: str | None) -> str:
+    if not filename or filename in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Image filename is required")
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(
+            status_code=400, detail="Image filename must not contain a path"
+        )
+    if len(filename) > 200 or any(
+        ord(char) < 32 or ord(char) == 127 for char in filename
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Image filename is too long or contains control characters",
+        )
+    if Path(filename).suffix.lower() not in IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported image file type")
+    return filename
 
 
 class UpdateMetadataRequest(BaseModel):
     pixel_size: float | None = None
     pixel_unit: str | None = None
-
-
-def _ensure_rsciio_plugins():
-    """
-    Fix rsciio IO plugin discovery in frozen (PyInstaller) apps.
-
-    HyperSpy 2.x discovers format readers via entry points at import time.
-    In a frozen app, entry points don't work, so we manually walk the rsciio
-    package directory for specifications.yaml files and inject them into
-    BOTH rsciio.IO_PLUGINS and hyperspy.io.IO_PLUGINS.
-    """
-    import hyperspy.io
-    import rsciio
-    import yaml
-
-    # If HyperSpy already has a full set of plugins, nothing to do.
-    # (In a working non-frozen env, this would typically be 30+ plugins)
-    if len(getattr(hyperspy.io, "IO_PLUGINS", [])) > 5:
-        return
-
-    logger_rsciio.info("Plugin registry incomplete — scanning for specifications.yaml")
-
-    # Find the rsciio package directory (works inside _MEIPASS too)
-    rsciio_dir = Path(rsciio.__file__).parent
-    logger_rsciio.info(f"rsciio dir: {rsciio_dir}")
-
-    # Also check _MEIPASS paths in case rsciio.__file__ doesn't point there
-    search_dirs = [rsciio_dir]
-    if getattr(sys, "frozen", False):
-        bundle = Path(sys._MEIPASS)
-        for candidate in [bundle / "rsciio", bundle / "lib" / "rsciio"]:
-            if candidate.exists() and candidate != rsciio_dir:
-                search_dirs.append(candidate)
-
-    plugins = []
-    seen_names = set()
-
-    for base in search_dirs:
-        if not base.exists():
-            continue
-        for dirpath, _, filenames in os.walk(str(base)):
-            if "specifications.yaml" not in filenames:
-                continue
-            spec_file = os.path.join(dirpath, "specifications.yaml")
-            try:
-                with open(spec_file, "r") as f:
-                    specs = yaml.safe_load(f)
-                plugin_name = os.path.basename(dirpath)
-                specs["api"] = f"rsciio.{plugin_name}"
-
-                # Deduplicate
-                name = specs.get("name", plugin_name)
-                if name not in seen_names:
-                    plugins.append(specs)
-                    seen_names.add(name)
-            except Exception as e:
-                logger_rsciio.warning(f"Failed to load {spec_file}: {e}")
-
-    logger_rsciio.info(f"Found {len(plugins)} plugins from specifications.yaml")
-
-    # Log which formats we found (especially check for emd)
-    for p in plugins:
-        exts = p.get("file_extensions", [])
-        logger_rsciio.info(f"  {p.get('name', '?')}: {exts}")
-
-    # Inject into BOTH registries
-    rsciio.IO_PLUGINS.clear()
-    rsciio.IO_PLUGINS.extend(plugins)
-
-    hyperspy.io.IO_PLUGINS.clear()
-    hyperspy.io.IO_PLUGINS.extend(plugins)
-
-    # Verify EMD is there
-    emd_found = any(
-        "emd" in [e.lower() for e in p.get("file_extensions", [])]
-        for p in hyperspy.io.IO_PLUGINS
-    )
-    if emd_found:
-        logger_rsciio.info(
-            f"EMD reader registered successfully ({len(plugins)} total plugins)"
-        )
-    else:
-        logger_rsciio.error("EMD reader NOT found after registration!")
+    calibration_source: Literal["manual", "scale_bar"] = "manual"
+    scale_bar_pixels: float | None = None
+    scale_bar_length: float | None = None
 
 
 def _extract_metadata(filepath: Path, filename: str) -> dict:
@@ -124,7 +81,6 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
 
     try:
         if fname.endswith(".emd"):
-            _ensure_rsciio_plugins()
             from rsciio.emd import file_reader
 
             signals = file_reader(str(filepath))
@@ -145,9 +101,41 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
                             "size": ax.get("size"),
                         }
                     )
-                if meta["axes"]:
-                    meta["pixel_size"] = meta["axes"][0].get("scale")
-                    meta["pixel_unit"] = meta["axes"][0].get("units")
+                spatial_axes = {
+                    str(axis["name"]).lower(): axis
+                    for axis in meta["axes"]
+                    if str(axis["name"]).lower() in {"x", "y"}
+                }
+                x_axis = spatial_axes.get("x")
+                y_axis = spatial_axes.get("y")
+                if x_axis and y_axis:
+                    x_scale = x_axis.get("scale")
+                    y_scale = y_axis.get("scale")
+                    x_unit = PIXEL_UNIT_ALIASES.get(
+                        str(x_axis.get("units") or "").strip().lower()
+                    )
+                    y_unit = PIXEL_UNIT_ALIASES.get(
+                        str(y_axis.get("units") or "").strip().lower()
+                    )
+                    if (
+                        x_scale is not None
+                        and y_scale is not None
+                        and math.isfinite(x_scale)
+                        and math.isfinite(y_scale)
+                        and x_scale > 0
+                        and y_scale > 0
+                        and x_unit
+                        and x_unit == y_unit
+                        and math.isclose(x_scale, y_scale, rel_tol=1e-5)
+                    ):
+                        meta["pixel_size"] = x_scale
+                        meta["pixel_unit"] = x_unit
+                        meta["calibration"] = {"source": "embedded"}
+                    else:
+                        meta["calibration_warning"] = (
+                            "Embedded x and y pixel scales differ or are incomplete. "
+                            "Set the pixel size before using physical measurements."
+                        )
 
             # original metadata is already a dict
             if "original_metadata" in s:
@@ -197,17 +185,17 @@ def _extract_metadata(filepath: Path, filename: str) -> dict:
     except Exception as e:
         logger_meta.warning(f"Metadata extraction failed (non-fatal): {e}")
 
-    if not meta.__contains__("pixel_size"):
-        meta["pixel_size"] = "-"
-    if not meta.__contains__("pixel_unit"):
-        meta["pixel_unit"] = "-"
+    if "pixel_size" not in meta:
+        meta["pixel_size"] = None
+    if "pixel_unit" not in meta:
+        meta["pixel_unit"] = None
 
     return meta
 
 
 @router.get("/{session_id}/preview")
 async def get_preview(session_id: str):
-    path = SESSIONS_DIR / session_id / "original_preview.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "original_preview.png"
     if not path.exists():
         return {"error": "No preview found"}
     return FileResponse(path)
@@ -216,7 +204,7 @@ async def get_preview(session_id: str):
 @router.get("/{session_id}/metadata")
 async def get_metadata(session_id: str):
     """Return session metadata (pixel scale, format, etc.)."""
-    path = SESSIONS_DIR / session_id / "metadata.json"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "metadata.json"
     if not path.exists():
         return {"pixel_size": None, "pixel_unit": None}
     with open(path) as f:
@@ -226,7 +214,7 @@ async def get_metadata(session_id: str):
 @router.put("/{session_id}/metadata")
 async def update_metadata(session_id: str, req: UpdateMetadataRequest):
     """Update pixel size / unit in session metadata and recompute stats if available."""
-    session_dir = SESSIONS_DIR / session_id
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
     meta_path = session_dir / "metadata.json"
     if not meta_path.exists():
         return {"error": "Session metadata not found"}
@@ -234,112 +222,113 @@ async def update_metadata(session_id: str, req: UpdateMetadataRequest):
     with open(meta_path) as f:
         meta = json.load(f)
 
-    if req.pixel_size is not None:
-        meta["pixel_size"] = req.pixel_size
-    if req.pixel_unit is not None:
-        meta["pixel_unit"] = req.pixel_unit
+    if (
+        req.pixel_size is None
+        or not math.isfinite(req.pixel_size)
+        or req.pixel_size <= 0
+    ):
+        raise HTTPException(
+            status_code=422, detail="Pixel size must be a positive finite number"
+        )
+    unit_key = req.pixel_unit.strip().lower() if req.pixel_unit else ""
+    unit = PIXEL_UNIT_ALIASES.get(unit_key)
+    if unit is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Use a supported length unit: pm, nm, µm, Å, mm, or m",
+        )
+    calibration: dict[str, str | float] = {"source": req.calibration_source}
+    if req.calibration_source == "scale_bar":
+        pixels = req.scale_bar_pixels
+        length = req.scale_bar_length
+        if (
+            pixels is None
+            or length is None
+            or not all(math.isfinite(value) and value > 0 for value in (pixels, length))
+        ):
+            raise HTTPException(
+                status_code=422, detail="Scale bar length and pixel span are required"
+            )
+        if not math.isclose(req.pixel_size, length / pixels, rel_tol=1e-6):
+            raise HTTPException(
+                status_code=422, detail="Pixel size does not match the scale bar"
+            )
+        calibration["scale_bar_pixels"] = pixels
+        calibration["scale_bar_length"] = length
+
+    meta["pixel_size"] = req.pixel_size
+    meta["pixel_unit"] = unit
+    meta["calibration"] = calibration
+    meta.pop("calibration_warning", None)
+
+    # Compute before persisting the new scale so failed stats cannot leave stale units.
+    stats_path = session_dir / "stats.json"
+    stats = None
+    if stats_path.exists():
+        from app.api.instances import load_instances
+        from app.models.helpers.compute_stats import compute_stats_from_instances
+
+        cached = load_instances(session_dir)
+        if cached is None:
+            raise HTTPException(
+                status_code=409, detail="Cannot update scale: particle data is missing"
+            )
+        instances, labeled = cached
+        binary = (labeled > 0).astype(np.uint8)
+        stats = compute_stats_from_instances(
+            instances,
+            binary,
+            pixel_size=req.pixel_size,
+            pixel_unit=unit,
+            labeled_mask=labeled,
+        )
 
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
-
-    # Recompute stats if we have instances + mask so the UI stays consistent
-    stats_path = session_dir / "stats.json"
-    if stats_path.exists():
-        try:
-            from app.api.instances import load_instances
-            from app.models.helpers.compute_stats import compute_stats_from_instances
-
-            cached = load_instances(session_dir)
-            if cached is not None:
-                instances, labeled = cached
-                binary = (labeled > 0).astype(np.uint8)
-                stats = compute_stats_from_instances(
-                    instances,
-                    binary,
-                    pixel_size=meta.get("pixel_size"),
-                    pixel_unit=meta.get("pixel_unit"),
-                    labeled_mask=labeled,
-                )
-                with open(stats_path, "w") as f:
-                    json.dump(stats, f)
-                logger_meta.info(
-                    f"Recomputed stats after pixel_size update | session={session_id}"
-                )
-                return {"metadata": meta, "stats": stats}
-        except Exception as e:
-            logger_meta.warning(f"Stats recompute failed after pixel_size update: {e}")
-
-    return {"metadata": meta}
+    if stats is not None:
+        with open(stats_path, "w") as f:
+            json.dump(stats, f)
+    return {"metadata": meta, "stats": stats}
 
 
 def _save_uploaded_image(file: UploadFile, session_id: str) -> dict:
     """Persist one uploaded file into its session dir; returns preview + info.
     Returns {"error": ...} when the format can't be loaded."""
-    session_dir = SESSIONS_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    dest = session_dir / f"org_{file.filename}"
-    with dest.open("wb") as f:
+    filename = _validated_upload_name(file.filename)
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    staged = SESSIONS_DIR / f".upload-{uuid.uuid4().hex}{Path(filename).suffix.lower()}"
+    with staged.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
     logger.info("Upload session: %s, filename: %s", session_id, file.filename)
 
-    metadata = _extract_metadata(dest, file.filename)
+    try:
+        display = load_rgb_uint8(staged)
+    except (ValueError, TiffFileError, ImportError, OSError) as error:
+        staged.unlink(missing_ok=True)
+        logger.warning("Could not decode image %s: %s", filename, error)
+        return {"error": f"Could not read {filename}: {error}"}
+
+    session_dir.mkdir(parents=True, exist_ok=False)
+    dest = session_dir / f"org_{filename}"
+    staged.replace(dest)
+
+    preview_path = session_dir / "original_preview.png"
+    if not cv.imwrite(str(preview_path), cv.cvtColor(display, cv.COLOR_RGB2BGR)):
+        raise OSError(f"Could not save image preview: {preview_path}")
+    preview_url = f"/images/{session_id}/preview"
+
+    metadata = _extract_metadata(dest, filename)
+    metadata["image_shape"] = [int(display.shape[0]), int(display.shape[1])]
+    with dest.open("rb") as source:
+        metadata["source_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
     meta_path = session_dir / "metadata.json"
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    fname = file.filename.lower()
-    arr = None
-    preview_url = f"/images/{session_id}/file"
-
-    if fname.endswith(".npy"):
-        arr = np.load(str(dest))
-    elif fname.endswith((".tif", ".tiff")):
-        import tifffile
-        from tifffile import TiffFileError
-
-        try:
-            arr = tifffile.imread(str(dest))
-        except TiffFileError as e:
-            logger.warning(f"Invalid TIFF/TIF file: {e}")
-            return {"error": "Not a valid TIFF/TIF file!"}
-    elif fname.endswith(".emd"):
-        try:
-            _ensure_rsciio_plugins()
-            from rsciio.emd import file_reader
-
-            signals = file_reader(str(dest))
-            s = signals[0]
-            arr = s["data"]
-        except ImportError:
-            logger.warning("HyperSpy not available — cannot load EMD files")
-            return {
-                "error": "EMD format requires HyperSpy which is not available in this build"
-            }
-    elif fname.endswith((".png", ".jpg", ".jpeg")):
-        img = cv.imread(str(dest))
-        if img is not None:
-            # save as preview directly
-            preview_path = session_dir / "original_preview.png"
-            cv.imwrite(str(preview_path), img)
-            preview_url = f"/images/{session_id}/preview"
-    if arr is not None:
-        logger.info(f"img shape: {arr.shape}")
-
-        arr_min, arr_max = arr.min(), arr.max()
-        display = (
-            ((arr - arr_min) / (arr_max - arr_min + 1e-8) * 255).astype("uint8")
-            if arr_max > arr_min
-            else np.zeros_like(arr, dtype="uint8")
-        )
-
-        preview_path = session_dir / "original_preview.png"
-        cv.imwrite(str(preview_path), display)
-        preview_url = f"/images/{session_id}/preview"
-
     return {
-        "filename": file.filename,
+        "filename": filename,
         "preview_url": preview_url,
         "image_info": {
             "file_path": metadata.get("file_path"),
@@ -424,7 +413,7 @@ Just sends the first file for now.
 
 @router.get("/{session_id}/file")
 async def get_image(session_id: str):
-    session_dir = SESSIONS_DIR / session_id
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
     image_exts = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".npy", ".emd"}
     files = [f for f in session_dir.glob("org_*") if f.suffix.lower() in image_exts]
 
@@ -446,16 +435,18 @@ async def get_image(session_id: str):
 
 @router.get("/{session_id}/mask")
 async def get_mask(session_id: str):
-    mask_path = SESSIONS_DIR / session_id / "mask.png"
+    mask_path = SESSIONS_DIR / validate_session_id(session_id) / "mask.png"
     return FileResponse(mask_path)
 
 
 @router.post("/{session_id}/gt")
 async def upload_ground_truth(session_id: str, file: UploadFile = File(...)):
-    session_dir = SESSIONS_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
+    filename = _validated_upload_name(file.filename)
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
+    if not session_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Session not found")
 
-    dest = session_dir / file.filename
+    dest = session_dir / f"ground_truth_{filename}"
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -469,7 +460,7 @@ async def upload_ground_truth(session_id: str, file: UploadFile = File(...)):
 
 @router.get("/{session_id}/instances-debug")
 async def get_instances_debug(session_id: str):
-    path = SESSIONS_DIR / session_id / "instances_debug.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "instances_debug.png"
     if not path.exists():
         return {"error": "No debug image — call /masks/{session_id}/instances first"}
     return FileResponse(path)
@@ -477,7 +468,7 @@ async def get_instances_debug(session_id: str):
 
 @router.get("/{session_id}/yolo-boxes-debug")
 async def get_yolo_boxes_debug(session_id: str):
-    path = SESSIONS_DIR / session_id / "yolo_boxes_debug.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "yolo_boxes_debug.png"
     if not path.exists():
         return {
             "error": "No YOLO boxes debug image — run segmentation with YoloSAM first"
@@ -489,7 +480,7 @@ async def get_yolo_boxes_debug(session_id: str):
 async def get_sam_debug(session_id: str):
     """Accumulated SAM prompt debug overlay, written by masks.from_points.
     Every click appends its point and its three candidate boundaries."""
-    path = SESSIONS_DIR / session_id / "sam_debug.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "sam_debug.png"
     if not path.exists():
         return {"error": "No SAM debug image — click points in augment mode first"}
     return FileResponse(path)
@@ -497,7 +488,7 @@ async def get_sam_debug(session_id: str):
 
 @router.get("/{session_id}/proposals-debug")
 async def get_proposals_debug(session_id: str):
-    path = SESSIONS_DIR / session_id / "proposals_debug.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "proposals_debug.png"
     if not path.exists():
         return {
             "error": "No proposals debug image — call /masks/{session_id}/propose-similar first"

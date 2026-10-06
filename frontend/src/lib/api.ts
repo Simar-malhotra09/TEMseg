@@ -89,6 +89,7 @@ export interface StatsResult {
 
   // aggregate (backward compat)
   particle_count: number;
+  edge_particle_count?: number;
   coverage: number;
   avg_size: number;
   avg_circularity: number;
@@ -126,7 +127,7 @@ export interface StatsResult {
       {
         params: Record<string, number>;
         ks_statistic: number;
-        ks_pvalue: number;
+        aic?: number;
       }
     >;
   };
@@ -140,7 +141,7 @@ export interface StatsResult {
       {
         params: Record<string, number>;
         ks_statistic: number;
-        ks_pvalue: number;
+        aic?: number;
       }
     >;
   };
@@ -179,6 +180,7 @@ export interface ParticleStats {
   border_distance_real?: number | null;
   // which edge that is
   border_edge?: "T" | "B" | "L" | "R" | null;
+  touches_image_edge?: boolean;
 }
 
 // Client side source of truth for which computed metrics are selectable in
@@ -312,6 +314,12 @@ export interface Metadata {
   original_format?: string;
   pixel_size: number | string | null;
   pixel_unit?: string | null;
+  calibration?: {
+    source: "embedded" | "manual" | "scale_bar";
+    scale_bar_pixels?: number;
+    scale_bar_length?: number;
+  };
+  calibration_warning?: string;
   axes?: { scale: number; size: number; units: string }[];
 }
 
@@ -545,13 +553,18 @@ export async function importFolderViaPyWebView(
 
 export async function updatePixelSize(
   sessionId: string,
-  pixelSize: number,
-  pixelUnit: string,
+  calibration: {
+    pixel_size: number;
+    pixel_unit: string;
+    calibration_source: "manual" | "scale_bar";
+    scale_bar_pixels?: number;
+    scale_bar_length?: number;
+  },
 ): Promise<{ metadata: Metadata; stats?: StatsResult }> {
   const res = await trackedFetch(`${BASE_URL}/images/${sessionId}/metadata`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pixel_size: pixelSize, pixel_unit: pixelUnit }),
+    body: JSON.stringify(calibration),
   });
   if (!res.ok) throw new Error(`updatePixelSize failed: ${res.status}`);
   return res.json();

@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Literal
 from pathlib import Path
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 import json
 import time
 import cv2 as cv
@@ -18,6 +18,7 @@ from app.api.utils import (
     batch_seg_patches,
 )
 from app.api.instances import extract_instances, colorize_labeled_mask
+from app.api.utils import validate_session_id
 from app.logutils import Timer, get_logger, ui_event
 
 
@@ -34,8 +35,8 @@ class SegmentRequest(BaseModel):
     # MaskRCNN variants.
     yolo_conf: float = Field(0.01, ge=0.0, le=1.0)
     yolo_iou: float = Field(0.5, ge=0.0, le=1.0)
-    yolo_max_det: int = Field(4000, ge=1)
-    regions: List[Box] = None
+    yolo_max_det: int = Field(4000, ge=1, le=65535)
+    regions: List[Box] = Field(default_factory=list)
     blackout: bool = False
     inverse_blackout: bool = False
     colorize: bool = True  # colorize masks for overlay
@@ -48,6 +49,7 @@ class SegmentResponse(BaseModel):
     stats: dict
     time_elapsed: float
     debug_boxes_url: str | None = None
+    warning: str | None = None
 
 
 router = APIRouter(prefix="/segment")
@@ -98,9 +100,12 @@ async def segment(req: SegmentRequest, request: Request):
         embedding = None
 
     if req.blackout and req.inverse_blackout:
-        raise ValueError(
-            "Only one of blackout_regions or inverse_blackout_regions may be True."
+        raise HTTPException(
+            status_code=422,
+            detail="Choose either exclude regions or keep regions, not both",
         )
+    if req.inverse_blackout and not req.regions:
+        raise HTTPException(status_code=422, detail="Select at least one region to keep")
 
     action = (
         "blackout"
@@ -115,7 +120,7 @@ async def segment(req: SegmentRequest, request: Request):
         f"yolo conf={req.yolo_conf} iou={req.yolo_iou} max_det={req.yolo_max_det}"
     )
 
-    session_dir = SESSIONS_DIR / req.session_id
+    session_dir = SESSIONS_DIR / validate_session_id(req.session_id)
     if not session_dir.exists():
         return {"error": "Invalid session"}
 
@@ -234,7 +239,8 @@ async def segment(req: SegmentRequest, request: Request):
             kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3))
             mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
 
-            if not np.any(mask):
+            empty_result = not np.any(mask)
+            if empty_result:
                 # Cache embedding even on empty result so user can bootstrap manually
                 # via /masks/{id}/from-points and /masks/{id}/propose-similar.
                 if hasattr(result, "embedding") and result.embedding is not None:
@@ -249,13 +255,6 @@ async def segment(req: SegmentRequest, request: Request):
                     "You can still add particles manually.",
                     level="warning",
                 )
-                return {
-                    "mask_url": None,
-                    "metadata": result.metadata,
-                    "stats": {},
-                    "model": req.model,
-                    "warning": "No particles were detected! ",
-                }
 
         if mask is None or mask.size == 0:
             ui_event(
@@ -351,6 +350,7 @@ async def segment(req: SegmentRequest, request: Request):
         # load pixel scale from session metadata (if available)
         pixel_size = None
         pixel_unit = None
+        meta = {}
         meta_path = session_dir / "metadata.json"
         if meta_path.exists():
             with open(meta_path) as f:
@@ -372,6 +372,16 @@ async def segment(req: SegmentRequest, request: Request):
         with open(stats_path, "w") as f:
             json.dump(stats_results, f)
         logger.info(f"Saved statistics to {stats_path.name}")
+    meta["analysis"] = {
+        "model": req.model.value,
+        "encoder_depth": req.encoder_depth,
+        "yolo": yolo_params if req.model in yolo_models else None,
+        "blackout": req.blackout,
+        "inverse_blackout": req.inverse_blackout,
+        "regions": [region.model_dump() for region in (req.regions or [])],
+        "edit_count": 0,
+    }
+    meta_path.write_text(json.dumps(meta, indent=2))
 
     ui_event(
         "SEGMENT_DONE",
@@ -386,4 +396,5 @@ async def segment(req: SegmentRequest, request: Request):
         model=req.model,
         time_elapsed=elapsed,
         debug_boxes_url=debug_boxes_url,
+        warning="No particles were detected" if empty_result else None,
     )

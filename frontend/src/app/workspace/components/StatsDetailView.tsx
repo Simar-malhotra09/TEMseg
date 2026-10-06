@@ -586,7 +586,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                   Distribution Fit — {sizeMode === "diameter" ? "Eq. Diameter" : "Area"} ({histUnit})
                 </h2>
                 <span className={styles.fitBest}>
-                  Best fit: <strong>{fits.best_model}</strong>
+                  {Object.values(fits.fits).every(fit => fit.aic != null) ? "Lowest AIC" : "Legacy fit"}: <strong>{fits.best_model}</strong>
                 </span>
               </div>
               <div className={styles.fitGrid}>
@@ -607,10 +607,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                         ))}
                       </div>
                       <div className={styles.fitGof}>
-                        <span>KS p-value: {fit.ks_pvalue < 0.001 ? "<0.001" : fmt(fit.ks_pvalue, 4)}</span>
-                        <span className={fit.ks_pvalue >= 0.05 ? styles.fitPass : styles.fitFail}>
-                          {fit.ks_pvalue >= 0.05 ? "✓ cannot reject" : "✗ poor fit"}
-                        </span>
+                        <span>AIC: {fit.aic != null ? fmt(fit.aic, 2) : "Recompute stats"}</span>
+                        <span>KS distance: {fmt(fit.ks_statistic, 4)}</span>
                       </div>
                     </div>
                   );
@@ -625,6 +623,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
       <div className={styles.cardsRow}>
         {[
           { label: "Particles", value: `${stats.particle_count}` },
+          { label: "At image edge", value: `${stats.edge_particle_count ?? 0}` },
           { label: "Coverage", value: `${(stats.coverage * 100).toFixed(1)}%` },
           {
             label: "Avg Eq. Diameter",
