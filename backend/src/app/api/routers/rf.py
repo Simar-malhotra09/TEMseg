@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.api.instances import extract_instances, load_instances
 from app.api.live_models import AvailableModels
-from app.api.utils import Stroke, mask_iou, strokes_to_mask
+from app.api.utils import Stroke, mask_iou, strokes_to_mask, validate_session_id
 from app.logutils import Timer, get_logger
 from app.models.helpers import rf_cache
 
@@ -44,7 +44,7 @@ class ProposeRequest(BaseModel):
 @router.post("/train")
 async def train_rf(req: TrainRequest):
     """Manually trigger RF training on an already-segmented session."""
-    session_dir = SESSIONS_DIR / req.session_id
+    session_dir = SESSIONS_DIR / validate_session_id(req.session_id)
     if not session_dir.exists():
         return {"error": "Invalid session"}
 
@@ -78,7 +78,7 @@ async def rf_propose(req: ProposeRequest, request: Request):
     """
     t = Timer(logger, "rf propose")
 
-    session_dir = SESSIONS_DIR / req.session_id
+    session_dir = SESSIONS_DIR / validate_session_id(req.session_id)
     if not session_dir.exists():
         return {"error": "Invalid session"}
 

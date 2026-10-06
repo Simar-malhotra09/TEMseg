@@ -1,4 +1,5 @@
 import numpy as np
+import re
 from pydantic import BaseModel
 import cv2 as cv
 from typing import List
@@ -14,6 +15,13 @@ router = APIRouter(prefix="/utils")
 logger = get_logger("utils")
 
 SESSIONS_DIR = Path("sessions")
+SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+\Z")
+
+
+def validate_session_id(session_id: str) -> str:
+    if SESSION_ID_PATTERN.fullmatch(session_id) is None:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    return session_id
 
 
 class Box(BaseModel):
@@ -31,7 +39,7 @@ class Stroke(BaseModel):
 
 
 def _session_dir(session_id: str) -> Path:
-    d = SESSIONS_DIR / session_id
+    d = SESSIONS_DIR / validate_session_id(session_id)
     if not d.exists():
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     return d
@@ -200,7 +208,10 @@ def batch_seg_patches(
         y2 = max(0, min(int(box.y + box.height), h))
 
         if x2 <= x1 or y2 <= y1:
-            logger.warning(f"Degenerate batch patch skipped: {box}")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Selected region {box.id} has no area after clipping to the image",
+            )
 
         patches.append(img[y1:y2, x1:x2])
         offsets.append((x1, y1))

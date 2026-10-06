@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict
 from uuid import uuid4
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import numpy as np
 from app.api.routers import (
     images,
@@ -85,12 +86,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+LOCAL_ORIGINS = ("http://localhost:3001", "http://127.0.0.1:3001")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(LOCAL_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def local_origin_middleware(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if origin is not None and origin not in LOCAL_ORIGINS:
+        return JSONResponse(status_code=403, content={"error": "Origin is not allowed"})
+    return await call_next(request)
 
 
 @app.middleware("http")

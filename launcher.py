@@ -190,7 +190,7 @@ def _bundle_dir() -> Path:
 
 
 def _project_root() -> Path:
-    return Path(__file__).parent
+    return Path(__file__).resolve().parent
 
 
 def _frontend_out_dir() -> Path:
@@ -232,9 +232,9 @@ def _load_manifest() -> list[dict]:
 
 
 def _verify_sha256(filepath: Path, expected: str) -> bool:
-    """Check SHA256 of a downloaded file. Skip if placeholder."""
-    if not expected or "PLACEHOLDER" in expected.upper():
-        return True  # can't verify, assume ok
+    """Check the required SHA256 digest of a model file."""
+    if re.fullmatch(r"[0-9a-fA-F]{64}", expected) is None:
+        raise ValueError(f"Missing or invalid SHA256 for {filepath.name}")
     h = hashlib.sha256()
     with open(filepath, "rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):
@@ -243,7 +243,9 @@ def _verify_sha256(filepath: Path, expected: str) -> bool:
     if actual != expected:
         log.warning(
             "SHA256 mismatch for %s: expected %s, got %s",
-            filepath.name, expected, actual,
+            filepath.name,
+            expected,
+            actual,
         )
     return actual == expected
 
@@ -259,7 +261,11 @@ def _coreml_variant_enabled() -> bool:
     root = _bundle_dir() if _is_frozen() else _project_root()
     if (root / "coreml_variant.marker").exists():
         return True
-    return os.environ.get("TEMSEG_COREML", "").strip().lower() not in ("0", "false", "no")
+    return os.environ.get("TEMSEG_COREML", "").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
 
 
 def _entry_applies(entry: dict) -> bool:
@@ -309,6 +315,15 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
             continue
         url = entry.get("url", "")
         sha256 = entry.get("sha256", "")
+        relative_name = Path(filename)
+        if relative_name.is_absolute() or ".." in relative_name.parts:
+            return False, f"Invalid weight path in manifest: {filename}"
+        if re.fullmatch(r"[0-9a-fA-F]{64}", sha256) is None:
+            return False, f"Missing or invalid SHA256 for weight: {filename}"
+        if not url or "PLACEHOLDER" in url.upper():
+            return False, f"No download URL is configured for weight: {filename}"
+        if not url.startswith("https://"):
+            return False, f"Weight URL must use HTTPS: {filename}"
         dest = weights_dir / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -318,42 +333,53 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
                 continue
             else:
                 log.warning(f"Checksum mismatch for {filename}, re-downloading")
-                dest.unlink()
-
-        if not url or "PLACEHOLDER" in url.upper():
-            return False, (
-                f"Weight '{filename}' is missing and no download URL is configured.\n"
-                f"Please place it manually in:\n{weights_dir}"
-            )
 
         log.info(f"Downloading {filename} from {url}")
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "TEMseg/1.0"})
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                total = int(resp.headers.get("Content-Length", 0))
-                downloaded = 0
-                tmp = dest.with_suffix(".tmp")
-                with open(tmp, "wb") as out:
-                    while True:
-                        chunk = resp.read(1024 * 256)  # 256KB chunks
-                        if not chunk:
-                            break
-                        out.write(chunk)
-                        downloaded += len(chunk)
-                        if progress_callback and total > 0:
-                            pct = int(downloaded / total * 100)
-                            progress_callback(filename, pct)
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "TEMseg/1.0"})
+                with urllib.request.urlopen(req, timeout=300) as resp:
+                    if not resp.geturl().startswith("https://"):
+                        raise ValueError(f"Weight download left HTTPS: {filename}")
+                    total = int(resp.headers.get("Content-Length", 0))
+                    downloaded = 0
+                    tmp = dest.with_suffix(dest.suffix + ".tmp")
+                    with open(tmp, "wb") as out:
+                        while True:
+                            chunk = resp.read(1024 * 256)
+                            if not chunk:
+                                break
+                            out.write(chunk)
+                            downloaded += len(chunk)
+                            if progress_callback and total > 0:
+                                progress_callback(
+                                    filename, int(downloaded / total * 100)
+                                )
 
-                # verify
                 if not _verify_sha256(tmp, sha256):
-                    tmp.unlink()
-                    return False, f"Checksum verification failed for {filename}"
-
-                tmp.rename(dest)
+                    raise ValueError(f"Checksum verification failed for {filename}")
+                tmp.replace(dest)
                 log.info(f"Downloaded: {filename}")
-
-        except Exception as e:
-            return False, f"Failed to download {filename}: {e}"
+                last_error = None
+                break
+            except (OSError, ValueError) as error:
+                last_error = error
+                tmp = dest.with_suffix(dest.suffix + ".tmp")
+                tmp.unlink(missing_ok=True)
+                log.warning(
+                    "Weight download failed: %s, attempt %d/3: %s",
+                    filename,
+                    attempt,
+                    error,
+                )
+                if attempt < 3:
+                    time.sleep(attempt)
+        if last_error is not None:
+            return (
+                False,
+                f"Failed to download {filename} after 3 attempts: {last_error}",
+            )
 
     return True, "All weights ready"
 
@@ -400,9 +426,13 @@ def start_backend_server():
     """Run the FastAPI app via uvicorn in the current thread."""
     import uvicorn
 
-    # Set CWD so that relative paths (sessions/) resolve correctly
+    # Keep sessions and indexes outside the app bundle so updates preserve them.
     backend_src = _backend_src_dir()
-    os.chdir(str(backend_src))
+    from app.models.helpers.settings import app_data_dir
+
+    data_dir = app_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(str(data_dir))
 
     # If frozen, tell settings.py where weights are
     if _is_frozen():
@@ -415,7 +445,7 @@ def start_backend_server():
 
     uvicorn.run(
         "app.api.main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=BACKEND_PORT,
         log_level="info",
     )
@@ -534,7 +564,7 @@ class Api:
                 body += b"\r\n"
             group_disp = (
                 f'form-data; name="group_name"\r\n\r\n'
-                f'{group_name.strip() or folder.name}\r\n'
+                f"{group_name.strip() or folder.name}\r\n"
             )
             body += f"--{boundary}\r\nContent-Disposition: {group_disp}".encode()
             body += f"--{boundary}--\r\n".encode()
@@ -782,7 +812,9 @@ def main():
             ui_eval('setStatus("Loading models…");')
             if not wait_for_server(BACKEND_PORT, timeout=120):
                 log.error("Backend failed to start.")
-                ui_eval('setError("Backend failed to start. Check console for errors.");')
+                ui_eval(
+                    'setError("Backend failed to start. Check console for errors.");'
+                )
                 return False
 
             ui_eval('setStatus("Almost ready…"); setProgress(80);')

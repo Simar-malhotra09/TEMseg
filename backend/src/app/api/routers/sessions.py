@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.api.utils import SESSIONS_DIR
+from app.api.utils import SESSIONS_DIR, validate_session_id
 from app.logutils import get_logger
 
 logger = get_logger("sessions")
@@ -31,7 +31,7 @@ def _read_mru() -> list[dict]:
 
 def update_mru(session_id: str) -> None:
     """Record a session as just-used. Best-effort: never raises."""
-    meta_path = SESSIONS_DIR / session_id / "metadata.json"
+    meta_path = SESSIONS_DIR / validate_session_id(session_id) / "metadata.json"
     if not meta_path.exists():
         logger.warning(f"MRU skip — no metadata.json | session={session_id}")
         return
@@ -90,7 +90,7 @@ def create_group(name: str, session_ids: list[str]) -> dict:
 
 def _session_display_name(session_id: str) -> str | None:
     """Current display name (with extension) from metadata.json, or None."""
-    meta_path = SESSIONS_DIR / session_id / "metadata.json"
+    meta_path = SESSIONS_DIR / validate_session_id(session_id) / "metadata.json"
     if not meta_path.exists():
         return None
     try:
@@ -155,7 +155,7 @@ def _clean_name(name: str) -> str:
 @router.patch("/sessions/{session_id}")
 def rename_session(session_id: str, req: RenameRequest):
     """Rename the display name in metadata.json; the file on disk is untouched."""
-    meta_path = SESSIONS_DIR / session_id / "metadata.json"
+    meta_path = SESSIONS_DIR / validate_session_id(session_id) / "metadata.json"
     if not meta_path.exists():
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     meta = json.loads(meta_path.read_text())
@@ -173,7 +173,7 @@ def rename_session(session_id: str, req: RenameRequest):
 def delete_session(session_id: str):
     """Remove the session dir and drop it from the MRU and every group.
     A group left with no sessions is removed too."""
-    session_dir = SESSIONS_DIR / session_id
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     shutil.rmtree(session_dir)
