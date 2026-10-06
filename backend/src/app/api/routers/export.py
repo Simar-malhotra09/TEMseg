@@ -1,4 +1,5 @@
 import io
+import hashlib
 import json
 import zipfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 
 from app.logutils import Timer, get_logger, ui_event
 from app.api.utils import _session_dir
+from app.models.helpers.stats_export import build_stats_csv
 
 logger = get_logger("export")
 router = APIRouter(prefix="/export", tags=["export"])
@@ -36,9 +38,47 @@ VALID_ITEMS = {
 # a org preview which we use to mount on workspace.
 # instead of the org file format we could just save a npy file I guess.
 def _find_original_image(session_dir: Path) -> Path | None:
-    """Original image is saved as original_preview.png for all formats."""
+    """Return the display preview used for COCO image export."""
     p = session_dir / "original_preview.png"
     return p if p.exists() else None
+
+
+def _find_source_image(session_dir: Path) -> Path | None:
+    sources = sorted(path for path in session_dir.glob("org_*") if path.is_file())
+    return sources[0] if sources else None
+
+
+def _analysis_manifest(session_dir: Path, requested_items: list[str]) -> bytes:
+    metadata_path = session_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+    stats_path = session_dir / "stats.json"
+    stats = json.loads(stats_path.read_text()) if stats_path.exists() else {}
+    source = _find_source_image(session_dir)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source image is missing")
+    with source.open("rb") as source_file:
+        source_sha256 = hashlib.file_digest(source_file, "sha256").hexdigest()
+    labeled_path = session_dir / "instances.npy"
+    mask_sha256 = None
+    if labeled_path.exists():
+        with labeled_path.open("rb") as labeled_file:
+            mask_sha256 = hashlib.file_digest(labeled_file, "sha256").hexdigest()
+    manifest = {
+        "schema_version": 1,
+        "source_name": source.name.removeprefix("org_"),
+        "source_sha256": source_sha256,
+        "image_shape": metadata.get("image_shape"),
+        "pixel_size": metadata.get("pixel_size"),
+        "pixel_unit": metadata.get("pixel_unit"),
+        "calibration": metadata.get("calibration"),
+        "analysis": metadata.get("analysis"),
+        "shape_config_sha256": stats.get("shape_config_sha256"),
+        "labeled_mask_sha256": mask_sha256,
+        "particle_count": stats.get("particle_count"),
+        "edge_particle_count": stats.get("edge_particle_count"),
+        "requested_items": requested_items,
+    }
+    return json.dumps(manifest, indent=2).encode("utf-8")
 
 
 def _image_dimensions(session_dir: Path) -> tuple[int, int]:
@@ -147,7 +187,7 @@ async def export_session(session_id: str, body: ExportRequest):
     Build a ZIP of requested export items and stream it to the client.
 
     Available items:
-      original_image    — original_preview.png
+      original_image    — original source file
       seg_mask_png      — mask.png
       seg_mask_npy      — instances.npy (labeled integer mask)
       refined_mask_png  — mask.png (same file, post-refinement if saved)
@@ -174,11 +214,11 @@ async def export_session(session_id: str, body: ExportRequest):
 
     for item in body.items:
         if item == "original_image":
-            path = _find_original_image(session_dir)
+            path = _find_source_image(session_dir)
             if path is None:
                 logger.warning(f"original_image not found | session={session_id}")
                 continue
-            entries.append(("original_image.png", path))
+            entries.append((f"source_image{path.suffix.lower()}", path))
             logger.info(f"Adding original_image | {path.name}")
 
         elif item == "seg_mask_png":
@@ -254,54 +294,20 @@ async def export_session(session_id: str, body: ExportRequest):
             with open(stats_path) as f:
                 stats = json.load(f)
 
-            # build per-particle CSV
-            particles = stats.get("particles", [])
-            unit = stats.get("unit", "px")
-            has_scale = stats.get("has_scale", False)
-
-            header = f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape,nearest_neighbor_{unit},nearest_neighbor_id,border_distance_{unit},border_edge\n"
-            rows = []
-            for p in particles:
-                area = p.get("area_real", p["area_px"]) if has_scale else p["area_px"]
-                diam = (
-                    p.get("diameter_real", p["diameter_px"])
-                    if has_scale
-                    else p["diameter_px"]
-                )
-                perim = (
-                    p.get("perimeter_real", p["perimeter_px"])
-                    if has_scale
-                    else p["perimeter_px"]
-                )
-                nn = (
-                    p.get("nearest_neighbor_real", p.get("nearest_neighbor_px"))
-                    if has_scale
-                    else p.get("nearest_neighbor_px")
-                )
-                nn_id = p.get("nearest_neighbor_id")
-                border = (
-                    p.get("border_distance_real", p.get("border_distance_px"))
-                    if has_scale
-                    else p.get("border_distance_px")
-                )
-                border_edge = p.get("border_edge", "")
-                rows.append(
-                    f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
-                    f"{p['circularity']:.4f},{p.get('solidity', 0):.4f},"
-                    f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']},"
-                    f"{(f'{nn:.4f}' if nn is not None else '')},{nn_id if nn_id is not None else ''},"
-                    f"{(f'{border:.4f}' if border is not None else '')},{border_edge}\n"
-                )
-
-            csv_bytes = (header + "".join(rows)).encode("utf-8")
-            entries.append(("stats.csv", csv_bytes))
-            logger.info(f"Adding stats_csv | {len(particles)} particles")
+            entries.append(("stats.csv", build_stats_csv(stats)))
+            logger.info(
+                f"Adding stats_csv | {len(stats.get('particles', []))} particles"
+            )
 
     if not entries:
         logger.warning(f"No files found to export | session={session_id}")
         raise HTTPException(
             status_code=404, detail="None of the requested items exist for this session"
         )
+
+    entries.append(
+        ("analysis_manifest.json", _analysis_manifest(session_dir, body.items))
+    )
 
     # build zip in memory
     buf = io.BytesIO()

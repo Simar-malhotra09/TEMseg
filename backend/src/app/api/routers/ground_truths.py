@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from pathlib import Path
 from pydantic import BaseModel
@@ -6,6 +6,7 @@ from typing import List, Optional
 import numpy as np
 import cv2 as cv
 from app.api.utils import Box, blackout_regions, inverse_blackout_regions
+from app.api.utils import validate_session_id
 from app.scripts.compare_gt import normalize_mask, compute_metrics
 from app.logutils import get_logger
 
@@ -29,7 +30,7 @@ class GTResponse(BaseModel):
 
 @router.post("/{session_id}")
 async def upload_gt(session_id: str, file: UploadFile = File(...)):
-    session_dir = SESSIONS_DIR / session_id
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
     if not session_dir.exists():
         return {"error": "Invalid session"}
 
@@ -77,18 +78,22 @@ async def compute_gt(session_id: str, req: ComputeRequest):
             "Only one of blackout_regions or inverse_blackout_regions may be True."
         )
 
-    session_dir = SESSIONS_DIR / session_id
+    session_dir = SESSIONS_DIR / validate_session_id(session_id)
     gt_path = session_dir / "gt_mask.npy"
-    mask_path = session_dir / "mask.png"
+    mask_path = session_dir / "instances.npy"
 
     if not gt_path.exists():
         return {"error": "No GT uploaded"}
     if not mask_path.exists():
-        return {"error": "No segmentation mask found"}
+        raise HTTPException(status_code=404, detail="No labeled mask found")
 
-    gt_mask = np.load(str(gt_path))
-    pred = cv.imread(str(mask_path), cv.IMREAD_GRAYSCALE)
-    pred = (pred > 127).astype(np.uint8)  # convert 0/255 to 0/1
+    gt_mask = np.load(gt_path, allow_pickle=False)
+    pred = (np.load(mask_path, allow_pickle=False) > 0).astype(np.uint8)
+    if gt_mask.shape != pred.shape:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ground truth shape {gt_mask.shape} does not match mask shape {pred.shape}",
+        )
 
     # apply same operations to gt before computing
     if blackout:
@@ -106,7 +111,7 @@ async def compute_gt(session_id: str, req: ComputeRequest):
 
 @router.get("/{session_id}/preview")
 async def gt_preview(session_id: str):
-    path = SESSIONS_DIR / session_id / "gt_preview.png"
+    path = SESSIONS_DIR / validate_session_id(session_id) / "gt_preview.png"
     if not path.exists():
         return {"error": "No GT preview"}
     return FileResponse(path)

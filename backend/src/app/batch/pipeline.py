@@ -23,6 +23,7 @@ from app.batch.types import (
 )
 from app.models.base_model import Model
 from app.models.helpers.compute_stats import compute_stats_from_instances
+from app.models.helpers.stats_export import build_stats_csv
 from app.models.helpers.config import (
     house_synthetic_config,
     nano_config,
@@ -135,47 +136,7 @@ def _write_stats_csv(stats: dict, image_output_dir: Path) -> None:
     with open(image_output_dir / "stats.json", "w") as f:
         json.dump(stats, f)
 
-    particles = stats.get("particles", [])
-    unit = stats.get("unit", "px")
-    has_scale = stats.get("has_scale", False)
-
-    header = (
-        f"id,area_{unit}{'²' if unit != 'px' else ''},eq_diameter_{unit},"
-        f"perimeter_{unit},circularity,solidity,aspect_ratio,n_vertices,shape,"
-        f"nearest_neighbor_{unit},nearest_neighbor_id,border_distance_{unit},border_edge\n"
-    )
-    rows = []
-    for p in particles:
-        area = p.get("area_real", p["area_px"]) if has_scale else p["area_px"]
-        diam = (
-            p.get("diameter_real", p["diameter_px"]) if has_scale else p["diameter_px"]
-        )
-        perim = (
-            p.get("perimeter_real", p["perimeter_px"])
-            if has_scale
-            else p["perimeter_px"]
-        )
-        nn = (
-            p.get("nearest_neighbor_real", p.get("nearest_neighbor_px"))
-            if has_scale
-            else p.get("nearest_neighbor_px")
-        )
-        nn_id = p.get("nearest_neighbor_id")
-        border = (
-            p.get("border_distance_real", p.get("border_distance_px"))
-            if has_scale
-            else p.get("border_distance_px")
-        )
-        border_edge = p.get("border_edge", "")
-        rows.append(
-            f"{p['id']},{area:.4f},{diam:.4f},{perim:.4f},"
-            f"{p['circularity']:.4f},{p.get('solidity', 0):.4f},"
-            f"{p['aspect_ratio']:.4f},{p.get('n_vertices', 0)},{p['shape']},"
-            f"{(f'{nn:.4f}' if nn is not None else '')},{nn_id if nn_id is not None else ''},"
-            f"{(f'{border:.4f}' if border is not None else '')},{border_edge}\n"
-        )
-
-    (image_output_dir / "stats.csv").write_text(header + "".join(rows))
+    (image_output_dir / "stats.csv").write_bytes(build_stats_csv(stats))
 
 
 def _write_exports(
