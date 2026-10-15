@@ -197,6 +197,7 @@ hiddenimports += collect_submodules("hyperspy")
 hiddenimports += collect_submodules("rosettasciio")
 hiddenimports += collect_submodules("rsciio")  # actual package providing IO plugins
 hiddenimports += extra_hiddenimports  # from collect_all("hyperspy")
+hiddenimports += collect_submodules("mobile_sam")
 
 # Windows-only: pywebview uses MS Edge WebView2 backend, which pulls pywin32 COM bits
 if IS_WIN:

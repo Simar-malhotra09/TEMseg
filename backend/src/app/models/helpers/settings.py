@@ -85,6 +85,8 @@ class Settings:
     WEIGHTS_DIR = WEIGHTS_DIR
     YOLO_MODEL_PATH = WEIGHTS_DIR / "best12x.onnx"
     SAM_MODEL_PATH = WEIGHTS_DIR / "sam_vit_b_01ec64.pth"
+    MOBILE_SAM_MODEL_PATH = WEIGHTS_DIR / "mobile_sam.pt"
+    MICROSAM_EM_MODEL_PATH = WEIGHTS_DIR / "micro_sam_vit_b_em_organelles.pt"
     MASKRCNN_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model.pth"
     MASKRCNN_SYNTHETIC_MODEL_PATH = WEIGHTS_DIR / "maskrcnn_best_model_synthetic.pth"
 

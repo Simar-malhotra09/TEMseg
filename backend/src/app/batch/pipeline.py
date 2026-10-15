@@ -63,6 +63,14 @@ def build_model(model_id: AvailableModels) -> Model:
         return YoloSam(nano_config, device=device)
     elif model_id == AvailableModels.fasteryolosam:
         return FasterYoloSam(nano_config, device=device)
+    elif model_id == AvailableModels.microsam_em:
+        from app.api.model_registry import build_microsam_em
+
+        return build_microsam_em({}, device)
+    elif model_id == AvailableModels.mobile_sam:
+        from app.api.model_registry import build_mobile_sam
+
+        return build_mobile_sam({}, device)
     elif model_id == AvailableModels.yolomaskrcnn:
         return YoloMaskRCNN(
             yolomaskrcnn_config, AvailableModels.yolomaskrcnn, device=device
@@ -229,7 +237,13 @@ def process_image(
     binary = (mask > 0).astype(np.uint8)
     epsilon_scale = (
         0.75
-        if model_id in (AvailableModels.yolosam, AvailableModels.fasteryolosam)
+        if model_id
+        in (
+            AvailableModels.yolosam,
+            AvailableModels.fasteryolosam,
+            AvailableModels.mobile_sam,
+            AvailableModels.microsam_em,
+        )
         else 1.0
     )
     instances, labeled = extract_instances(

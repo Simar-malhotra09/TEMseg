@@ -203,6 +203,7 @@ hiddenimports += collect_submodules("webview")
 hiddenimports += collect_submodules("torchvision")
 hiddenimports += collect_submodules("onnxruntime")
 hiddenimports += collect_submodules("ultralytics")
+hiddenimports += collect_submodules("mobile_sam")
 # TIER2: collect_submodules("hyperspy") removed - collect_all("hyperspy")
 #        above already provides the full list in extra_hiddenimports.
 hiddenimports += collect_submodules("rsciio")  # actual package providing IO plugins

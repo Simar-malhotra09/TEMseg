@@ -28,7 +28,7 @@ class SegmentRequest(BaseModel):
     session_id: str
     model: AvailableModels
     # SAM ViT-B encoder depth (12 = full, 8 = early-exit). YoloSAM/FasterYoloSAM
-    # only; ignored by MaskRCNN variants.
+    # only; ignored by MaskRCNN variants. micro-SAM uses the full ViT-B depth.
     encoder_depth: Literal[8, 12] = 12
     # YOLO detection thresholds, tunable by the user per run. Ignored by
     # MaskRCNN variants.
@@ -63,7 +63,18 @@ async def segment(req: SegmentRequest, request: Request):
     # startup warmup is still compiling its CoreML session, wait for it
     # rather than racing it with a duplicate compile (ultralytics builds the
     # predictor lazily on first predict() with no locking).
-    if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam):
+    sam_models = (
+        AvailableModels.yolosam,
+        AvailableModels.fasteryolosam,
+        AvailableModels.mobile_sam,
+        AvailableModels.microsam_em,
+    )
+    encoder_depth = (
+        req.encoder_depth
+        if req.model in (AvailableModels.yolosam, AvailableModels.fasteryolosam)
+        else 12
+    )
+    if req.model in sam_models:
         warm_event = getattr(request.app.state, "yolo_warm", None)
         if warm_event is not None and not warm_event.is_set():
             logger.info("Awaiting startup YOLO warmup before segment")
@@ -72,15 +83,17 @@ async def segment(req: SegmentRequest, request: Request):
     model_inst = get_or_load_model(request.app.state.models, req.model)
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)
+    if request.app.state.embedding_model_cache.get(req.session_id) != req.model:
+        embedding = None
     # A cached embedding serves exactly one encoder depth: features computed
     # at d12 cannot be decoded into d8 results. Re-encode on depth switch.
     if (
         embedding is not None
-        and getattr(embedding, "encoder_depth", None) != req.encoder_depth
+        and getattr(embedding, "encoder_depth", None) != encoder_depth
     ):
         logger.info(
             f"Cached embedding depth mismatches request "
-            f"(requested {req.encoder_depth}) — re-encoding"
+            f"(requested {encoder_depth}) — re-encoding"
         )
         embedding = None
 
@@ -98,7 +111,7 @@ async def segment(req: SegmentRequest, request: Request):
     )
     logger.info(
         f"segment request: session={req.session_id}, model={req.model.value}, "
-        f"depth={req.encoder_depth}, regions={len(req.regions or [])}, mode={action}, "
+        f"depth={encoder_depth}, regions={len(req.regions or [])}, mode={action}, "
         f"yolo conf={req.yolo_conf} iou={req.yolo_iou} max_det={req.yolo_max_det}"
     )
 
@@ -124,6 +137,8 @@ async def segment(req: SegmentRequest, request: Request):
     yolo_models = (
         AvailableModels.yolosam,
         AvailableModels.fasteryolosam,
+        AvailableModels.mobile_sam,
+        AvailableModels.microsam_em,
         AvailableModels.yolomaskrcnn,
     )
     if req.model in yolo_models:
@@ -146,6 +161,8 @@ async def segment(req: SegmentRequest, request: Request):
                 if req.model in (
                     AvailableModels.yolosam,
                     AvailableModels.fasteryolosam,
+                    AvailableModels.mobile_sam,
+                    AvailableModels.microsam_em,
                 ):
                     logger.info(
                         f"Running batch segmentation on {len(req.regions)} patches"
@@ -154,7 +171,7 @@ async def segment(req: SegmentRequest, request: Request):
                         img,
                         req.regions,
                         model_inst,
-                        encoder_depth=req.encoder_depth,
+                        encoder_depth=encoder_depth,
                         yolo_params=yolo_params,
                     )
                 # yolomaskrcnn and maskrcnn_synthetic do not support batch segmentation
@@ -184,11 +201,13 @@ async def segment(req: SegmentRequest, request: Request):
                 if req.model in (
                     AvailableModels.yolosam,
                     AvailableModels.fasteryolosam,
+                    AvailableModels.mobile_sam,
+                    AvailableModels.microsam_em,
                 ):
                     result = model_inst.segment(
                         img,
                         embedding,
-                        encoder_depth=req.encoder_depth,
+                        encoder_depth=encoder_depth,
                         yolo_params=yolo_params,
                     )
                 else:
@@ -220,6 +239,7 @@ async def segment(req: SegmentRequest, request: Request):
                 # via /masks/{id}/from-points and /masks/{id}/propose-similar.
                 if hasattr(result, "embedding") and result.embedding is not None:
                     cache[req.session_id] = result.embedding
+                    request.app.state.embedding_model_cache[req.session_id] = req.model
                     logger.info(
                         f"Cached SAM embedding for session {req.session_id} (no particles detected)"
                     )
@@ -273,6 +293,7 @@ async def segment(req: SegmentRequest, request: Request):
         # ── cache embedding ──────────────────────────────────────────
         if hasattr(result, "embedding") and result.embedding is not None:
             cache[req.session_id] = result.embedding
+            request.app.state.embedding_model_cache[req.session_id] = req.model
             logger.info(f"Cached SAM embedding for session {req.session_id}")
 
         # evict stale RF so /rf/propose trains fresh on the new mask
@@ -286,12 +307,7 @@ async def segment(req: SegmentRequest, request: Request):
         labeled = None
         try:
             binary = (mask > 0).astype(np.uint8)
-            sam_epsilon_scale = (
-                0.75
-                if result.model
-                in (AvailableModels.yolosam, AvailableModels.fasteryolosam)
-                else 1.0
-            )
+            sam_epsilon_scale = 0.75 if result.model in sam_models else 1.0
             instances, labeled = extract_instances(
                 binary,
                 session_dir,

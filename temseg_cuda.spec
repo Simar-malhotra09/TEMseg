@@ -181,6 +181,7 @@ hiddenimports += collect_submodules("hyperspy")
 hiddenimports += collect_submodules("rosettasciio")
 hiddenimports += collect_submodules("rsciio")
 hiddenimports += extra_hiddenimports
+hiddenimports += collect_submodules("mobile_sam")
 
 hiddenimports = list(set(hiddenimports))
 

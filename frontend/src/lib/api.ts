@@ -7,6 +7,7 @@ type RequestActivityListener = () => void;
 
 let activeRequestCount = 0;
 const requestActivityListeners = new Set<RequestActivityListener>();
+const inFlightRequestControllers = new Set<AbortController>();
 
 export function subscribeToRequestActivity(
   listener: RequestActivityListener,
@@ -19,18 +20,39 @@ export function getActiveRequestCount(): number {
   return activeRequestCount;
 }
 
+export function abortInFlightRequests(): void {
+  for (const controller of inFlightRequestControllers) {
+    controller.abort();
+  }
+}
+
 async function trackedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  const controller = new AbortController();
+  const callerSignal = init?.signal;
+  const abortFromCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  }
+  inFlightRequestControllers.add(controller);
   activeRequestCount += 1;
   requestActivityListeners.forEach((listener) => listener());
   try {
-    return await fetch(input, init);
+    return await fetch(input, { ...init, signal: controller.signal });
   } finally {
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+    inFlightRequestControllers.delete(controller);
     activeRequestCount -= 1;
     requestActivityListeners.forEach((listener) => listener());
   }
+}
+
+export function isRequestAborted(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 // These are mirrors of the pydantic model the server defines

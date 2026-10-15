@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { segmentImage, uploadGroundTruth, computeGTScore, YoloParams } from "@/lib/api";
+import { segmentImage, uploadGroundTruth, computeGTScore, isRequestAborted, YoloParams } from "@/lib/api";
 import { BASE_URL, StatsResult } from "@/lib/api";
 import { BlackoutRect } from "../components/BlackOutCanvas" 
 
@@ -86,6 +86,7 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
       setMasksVisible(true);
       return `Segmentation completed in ${result.time_elapsed.toFixed(2)}s.`;
     } catch (err) {
+      if (isRequestAborted(err)) throw err;
       console.error("Segmentation failed:", err);
       return null;
     } finally {
@@ -156,6 +157,7 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
   // reset everything. called when new image is loaded
   const reset = useCallback(() => {
     setSegDone(false);
+    setIsSegmenting(false);
     setMaskUrl(null);
     setMasksVisible(true);
     setBoxesUrl(null);

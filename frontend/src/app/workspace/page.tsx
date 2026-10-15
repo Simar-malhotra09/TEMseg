@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -49,6 +49,14 @@ const YOLO_DEFAULTS: YoloConfig = {
   conf: { default: 0.01, override: null },
   iou: { default: 0.5, override: null },
   max_det: { default: 4000, override: null },
+};
+const MODEL_DESCRIPTIONS: Record<string, string> = {
+  YoloSAM: "YOLO boxes + SAM ViT-B masks",
+  FasterYoloSAM: "YOLO boxes + optimized SAM ViT-B masks",
+  MobileSAM: "YOLO boxes + lightweight TinyViT masks",
+  "micro-SAM EM (ViT-B)": "YOLO boxes + EM-tuned SAM ViT-B masks",
+  YoloMaskRCNN: "YOLO boxes + Mask R-CNN masks",
+  "MaskRCNN-Synthetic": "Mask R-CNN trained on synthetic particles",
 };
 type AugmentMethod = "click" | "box" | "similar";
 
@@ -681,6 +689,7 @@ export default function Workspace() {
 
   // image upload
   function resetForNewImage() {
+    abortInFlightRequests();
     seg.reset();
     setRefineMode(false);
     setLoadedInstances([]);
@@ -869,11 +878,20 @@ export default function Workspace() {
     const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
     setStatus(`Running ${selectedModel}...`);
-    const msg = await seg.runSegmentation(activeRegions, blackout, inverse, {
-      conf: yoloValue("conf"),
-      iou: yoloValue("iou"),
-      max_det: yoloValue("max_det"),
-    });
+    let msg: string | null;
+    try {
+      msg = await seg.runSegmentation(activeRegions, blackout, inverse, {
+        conf: yoloValue("conf"),
+        iou: yoloValue("iou"),
+        max_det: yoloValue("max_det"),
+      });
+    } catch (err) {
+      if (isRequestAborted(err)) return;
+      throw err;
+    }
+    getSystemInfo()
+      .then(setSystemInfo)
+      .catch(err => console.error("getSystemInfo failed:", err));
 
     // if gt available, compute scores 
     if (msg) {
@@ -1745,7 +1763,7 @@ export default function Workspace() {
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
             <button type="button" className={styles.brandWrap}
-              onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
+              onClick={() => { abortInFlightRequests(); setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
               title="New workspace"
             >
               <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
@@ -1802,7 +1820,7 @@ export default function Workspace() {
                       onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
                     >
                       {m}
-                      <span className={styles.dropdownItemDesc}>stub — description to be written</span>
+                      <span className={styles.dropdownItemDesc}>{MODEL_DESCRIPTIONS[m] ?? "Segmentation model"}</span>
                     </li>
                   ))}
                 </ul>
@@ -3378,9 +3396,23 @@ export default function Workspace() {
                       {systemInfo.models.map(m => (
                         <div key={m.key}>
                           <div className={styles.settingsRow}>
-                            <span className={styles.settingsName}>{m.name}</span>
+                            <span className={styles.settingsName}>
+                              {m.loaded && (
+                                <span
+                                  className={styles.deviceLed}
+                                  role="img"
+                                  aria-label="Loaded in memory"
+                                  title="Loaded in memory"
+                                />
+                              )}
+                              <span className={styles.settingsModelLabel}>{m.name}</span>
+                            </span>
                             <span className={styles.settingsNum}>
-                              {m.loaded && m.ram_bytes ? formatBytes(m.ram_bytes) : ""}
+                              {m.loaded
+                                ? [m.engine ?? "loaded", m.runs_on, m.ram_bytes ? formatBytes(m.ram_bytes) : null]
+                                  .filter(Boolean)
+                                  .join(" · ")
+                                : "not loaded"}
                             </span>
                             <span>
                               {m.key === "yolo" && (

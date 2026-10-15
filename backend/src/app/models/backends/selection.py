@@ -102,13 +102,16 @@ def choose_yolo_backend(components: Dict[str, Any], device: str) -> YoloBackend:
 
 
 def choose_backends(
-    components: Dict[str, Any], device: str, faster: bool = False
+    components: Dict[str, Any],
+    device: str,
+    faster: bool,
+    use_coreml_sam: bool,
 ) -> tuple[YoloBackend, SamBackend, SamBackend | None]:
     """(yolo, sam, prompt_sam). prompt_sam is a torch SAM for point-prompt
     endpoints; it may be the same object as sam on the classic path.
     Cached: same key -> same instances, no recompile."""
     yolo = choose_yolo_backend(components, device)
-    if coreml_available():
+    if use_coreml_sam and coreml_available():
         key = (
             "coreml",
             str(YOLO_PKG),
@@ -129,7 +132,7 @@ def choose_backends(
         cached = (yolo, sam, prompt_sam)
         _backend_cache[key] = cached
         return cached
-    key = ("classic", faster, id(components["yolo"]), id(components["sam"]), device)
+    key = ("classic", faster, id(yolo), id(components["sam"]), device)
     if key in _backend_cache:
         return _backend_cache[key]
     sam_cls = FasterTorchSamBackend if faster else TorchSamBackend

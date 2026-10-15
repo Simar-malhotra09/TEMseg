@@ -27,8 +27,6 @@ from app.models.backends.selection import (
 from app.models.base_model import Model, ModelConfig, SegmentationResult
 
 router = APIRouter(prefix="/models/yolosam")
-logger = get_logger("YoloSAM")
-log_batch = get_logger("YoloSAM", sub="Batch")
 SESSIONS_DIR = Path("sessions")
 
 
@@ -45,6 +43,7 @@ class YoloSam(Model):
     # Which AvailableModels enum results report; FasterYoloSam overrides this
     # so the shared segment()/segment_batch() implementations stay reusable.
     MODEL_ENUM = AvailableModels.yolosam
+    USE_COREML_SAM = True
 
     def __init__(
         self,
@@ -53,12 +52,17 @@ class YoloSam(Model):
         components: Dict[str, Any] | None = None,
         _faster: bool = False,
     ):
-        logger.info("Initializing YoloSam")
+        self._logger = get_logger(self.MODEL_ENUM.value)
+        self._batch_logger = get_logger(self.MODEL_ENUM.value, sub="Batch")
+        self._logger.info("Initializing %s", self.MODEL_ENUM.value)
         self.device = device
         self._shared_components = components
         super().__init__(config)  # calls self._load_components()
         self._yolo, self._sam, self._prompt_sam = choose_backends(
-            self.components, device, faster=_faster
+            self.components,
+            device,
+            faster=_faster,
+            use_coreml_sam=self.USE_COREML_SAM,
         )
 
     @property
@@ -78,19 +82,15 @@ class YoloSam(Model):
         src.sync_embedding(emb)
 
     def _load_components(self) -> Dict[str, Any]:
-        # Reuse components already loaded by another pipeline instance
-        # Both FYS and YoloSAM share the same components
-        if self._shared_components is not None:
-            logger.info("Reusing shared model components")
-            return self._shared_components
-
         if not hasattr(self, "config") or not hasattr(self.config, "components"):
             raise ValueError("Invalid config: missing 'components'")
 
         if not self.config.components:
             raise ValueError("Config contains no components")
 
-        components: Dict[str, Any] = {}
+        components: Dict[str, Any] = dict(self._shared_components or {})
+        if components:
+            self._logger.info("Reusing shared model components")
 
         for comp in self.config.components:
             if not hasattr(comp, "name") or not hasattr(comp, "path"):
@@ -100,6 +100,8 @@ class YoloSam(Model):
                 raise TypeError("Component name must be a string")
 
             name = comp.name.lower()
+            if name in components:
+                continue
             model_path = Path(comp.path)
 
             if not model_path.exists():
@@ -114,11 +116,11 @@ class YoloSam(Model):
                 if coreml_available():
                     # the CoreML yolo backend serves detections; the onnx
                     # session would be loaded and never used
-                    logger.info("CoreML yolo active — skipping ONNX yolo load")
+                    self._logger.info("CoreML yolo active — skipping ONNX yolo load")
                     continue
                 try:
                     model = YOLO(str(model_path), task="detect")
-                    logger.info(f"Loading YOLO model from {model_path.name}")
+                    self._logger.info("Loading YOLO model from %s", model_path.name)
                 except Exception as e:
                     raise RuntimeError(f"Failed to load YOLO: {e}") from e
                 components["yolo"] = model
@@ -135,7 +137,7 @@ class YoloSam(Model):
                 )
                 try:
                     sam = sam_model_registry["vit_b"](checkpoint=str(model_path))
-                    logger.info(f"Loading SAM model from {model_path.name}")
+                    self._logger.info("Loading SAM model from %s", model_path.name)
 
                 except Exception as e:
                     raise RuntimeError(f"Failed to initialize SAM: {e}") from e
@@ -147,6 +149,44 @@ class YoloSam(Model):
                         f"Failed to move SAM to device {self.device}: {e}"
                     ) from e
 
+                sam.ram_bytes = ram_since(ram_before, self.device)
+                components["sam"] = sam
+
+            elif name == "microsam_em":
+                from segment_anything import sam_model_registry
+
+                if "vit_b" not in sam_model_registry:
+                    raise ValueError("SAM registry missing 'vit_b'")
+                ram_before = (
+                    process_peak_rss_bytes(),
+                    device_allocated_bytes(self.device),
+                )
+                checkpoint = torch.load(
+                    model_path, map_location="cpu", weights_only=False
+                )
+                if not isinstance(checkpoint, dict):
+                    raise ValueError("micro-SAM EM checkpoint is not a dictionary")
+                state = checkpoint.get("model_state", checkpoint)
+                if not isinstance(state, dict):
+                    raise ValueError("micro-SAM EM checkpoint has no state dictionary")
+                state = {
+                    key.removeprefix("sam."): value for key, value in state.items()
+                }
+                sam = sam_model_registry["vit_b"]()
+                sam.load_state_dict(state)
+                sam.to(device=self.device)
+                sam.ram_bytes = ram_since(ram_before, self.device)
+                components["sam"] = sam
+
+            elif name == "mobile_sam":
+                from mobile_sam import sam_model_registry
+
+                ram_before = (
+                    process_peak_rss_bytes(),
+                    device_allocated_bytes(self.device),
+                )
+                sam = sam_model_registry["vit_t"](checkpoint=str(model_path))
+                sam.to(device=self.device)
                 sam.ram_bytes = ram_since(ram_before, self.device)
                 components["sam"] = sam
 
@@ -196,10 +236,10 @@ class YoloSam(Model):
         yolo_params: dict | None = None,
         **kwargs,
     ) -> YoloSAMSegmentationResult:
-        logger.info(f"input image shape: {image.shape}, dtype: {image.dtype}")
+        self._logger.info("input image shape: %s, dtype: %s", image.shape, image.dtype)
 
         # YOLO Detection
-        with Timer(logger, "yolo") as t_yolo:
+        with Timer(self._logger, "yolo") as t_yolo:
             with t_yolo.step("predict"):
                 boxes = self._yolo.detect(image, **(yolo_params or {}))
             t_yolo.field("boxes", len(boxes))
@@ -207,7 +247,7 @@ class YoloSam(Model):
         # Always prime SAM with the image so the embedding is available for
         # downstream point-prompt endpoints (/split, /from-points, /propose-similar)
         # even when YOLO found nothing.
-        with Timer(logger, "sam") as t_sam:
+        with Timer(self._logger, "sam") as t_sam:
             if embedding_cache:
                 emb = embedding_cache
                 t_sam.field("encode", "cached")
@@ -222,7 +262,7 @@ class YoloSam(Model):
                 self._prompt_sam.sync_embedding(emb)
 
             if len(boxes) == 0:
-                logger.info(
+                self._logger.info(
                     "YOLO found 0 boxes — returning empty mask with SAM embedding cached"
                 )
                 return YoloSAMSegmentationResult(
@@ -276,7 +316,9 @@ class YoloSam(Model):
         combined = np.zeros((h_full, w_full), dtype="uint8")
         combined_labels = np.zeros((h_full, w_full), dtype=np.uint16)
 
-        log_batch.info(f"segment_batch: {len(patches)} patches, output {img_shape}")
+        self._batch_logger.info(
+            "segment_batch: %s patches, output %s", len(patches), img_shape
+        )
 
         total_detections = 0
         all_boxes: list[np.ndarray] = []
@@ -285,9 +327,9 @@ class YoloSam(Model):
         for i, (patch, (x1, y1)) in enumerate(zip(patches, offsets)):
             boxes_np = self._yolo.detect(patch, **(yolo_params or {}))
             if len(boxes_np) == 0:
-                log_batch.debug(f"patch {i}: no detections, skipping")
+                self._batch_logger.debug("patch %s: no detections, skipping", i)
                 continue
-            log_batch.debug(f"patch {i}: {len(boxes_np)} detections")
+            self._batch_logger.debug("patch %s: %s detections", i, len(boxes_np))
 
             emb = self._sam.encode(patch, encoder_depth)
             patch_union, patch_labels = self._sam.decode_union(emb, boxes_np, 64)

@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
     app.state.models = {}
     get_or_load_model(app.state.models, AvailableModels.yolosam)
     app.state.embedding_cache: Dict[str, Dict] = {}
+    app.state.embedding_model_cache: Dict[str, AvailableModels] = {}
     ui_event(
         "MODELS_READY",
         "Analysis engine is ready — upload an image to begin.",
@@ -173,14 +174,14 @@ def system_info(request: Request):
         DEC_PKG,
         ENC_PKG,
         YOLO_PKG,
-        coreml_available,
         process_peak_rss_bytes,
     )
     from app.models.helpers.settings import settings
 
     device = get_device()
-    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-    coreml = coreml_available()
+    loaded_models = request.app.state.models
+    yolosam = loaded_models.get(AvailableModels.yolosam)
+    yolo_backend = yolosam._yolo if yolosam is not None else None
 
     def role(key, name, backend, weight_paths):
         engine = _engine_of(backend)
@@ -198,34 +199,51 @@ def system_info(request: Request):
             "weights": [_weight_entry(Path(p)) for p in weight_paths],
         }
 
-    yolo_backend = yolosam._yolo if yolosam is not None else None
-    sam_backend = yolosam._sam if yolosam is not None else None
     models = [
         role(
             "yolo",
-            "yolo",
+            "YOLO",
             yolo_backend,
-            [YOLO_PKG] if coreml else [settings.YOLO_MODEL_PATH],
-        ),
-        role(
-            "sam",
-            "sam",
-            sam_backend,
-            [ENC_PKG, DEC_PKG] if coreml else [settings.SAM_MODEL_PATH],
+            [YOLO_PKG]
+            if _engine_of(yolo_backend) == "coreml"
+            else [settings.YOLO_MODEL_PATH],
         ),
     ]
-    if coreml:
-        # classic path serves prompts from the same torch sam; only coreml
-        # keeps a separate prompt model
-        prompt_backend = yolosam._prompt_sam if yolosam is not None else None
+
+    sam_models = (
+        (AvailableModels.yolosam, settings.SAM_MODEL_PATH),
+        (AvailableModels.fasteryolosam, settings.SAM_MODEL_PATH),
+        (AvailableModels.mobile_sam, settings.MOBILE_SAM_MODEL_PATH),
+        (AvailableModels.microsam_em, settings.MICROSAM_EM_MODEL_PATH),
+    )
+    for model_id, weights_path in sam_models:
+        model_instance = loaded_models.get(model_id)
+        sam_backend = getattr(model_instance, "_sam", None)
+        sam_weights = (
+            [ENC_PKG, DEC_PKG]
+            if _engine_of(sam_backend) == "coreml"
+            else [weights_path]
+        )
+        models.append(
+            role(
+                model_id.value,
+                model_id.value,
+                sam_backend,
+                sam_weights,
+            )
+        )
+
+    prompt_backend = getattr(yolosam, "_prompt_sam", None)
+    if prompt_backend is not None:
         models.append(
             role(
                 "prompt_sam",
-                "sam (prompts)",
+                "SAM prompts",
                 prompt_backend,
                 [settings.SAM_MODEL_PATH],
             )
         )
+
     return {
         "device": device,
         "log_dir": str(default_log_dir()),

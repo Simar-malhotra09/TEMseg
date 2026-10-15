@@ -10,6 +10,8 @@ dependencies = [
   "pydantic>=2.10.0",
   "ultralytics>=8.3.0",
   "segment-anything>=1.0",
+  "mobile-sam @ git+https://github.com/ChaoningZhang/MobileSAM.git@01ea8d0f5590082f0c1ceb0a3e2272593f20154b",
+  "timm>=0.9.12,<1.0",
   "scipy>=1.13.0",
   "tifffile>=2024.1.1",
   "python-dotenv>=1.0.0",
@@ -21,9 +23,10 @@ dependencies = [
   "numba>=0.64.0",
   "matplotlib>=3.10.8",
   "lap>=0.5.13",
+  "xxhash>=3.5.0",
   "scikit-learn>=1.5.0",
   "scikit-image>=0.24.0",
-  # pywin32 only on Windows — pywebview's EdgeChromium backend uses COM
+  # pywin32 only on Windows 
   "pywin32>=306; sys_platform == 'win32'",
 ]
 
@@ -37,14 +40,15 @@ dev = [
 
 ]
 
-# ── torch is installed separately via install.py ─────────────────────────────
-# Do NOT add torch/torchvision here — the correct CUDA/CPU/MPS variant
+# Do NOT add torch/torchvision here! the correct CUDA/CPU/MPS variant
 # must be selected at install time based on platform and GPU availability.
-# See install.py at the project root.
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
