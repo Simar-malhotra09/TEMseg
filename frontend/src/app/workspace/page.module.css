@@ -419,6 +419,7 @@ margin-bottom: 2px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.settingsNumMissing { color: var(--warn); }
 .settingsCfg {
   background: none;
   border: 1px solid var(--border-soft);
@@ -589,6 +590,12 @@ color: var(--text);
 }
 .dropdownItem:hover { background: var(--bg-hover); }
 .dropdownItemActive { color: var(--accent); }
+.dropdownItemDisabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.dropdownItemDisabled:hover { background: transparent; }
 .dropdownItemDesc {
 display: block;
 font-size: 10px;

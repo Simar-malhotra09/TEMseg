@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Dict, Any, Literal
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
@@ -82,7 +83,9 @@ async def segment(req: SegmentRequest, request: Request):
             logger.info("Awaiting startup YOLO warmup before segment")
             await warm_event.wait()
 
-    model_inst = get_or_load_model(request.app.state.models, req.model)
+    model_inst = await asyncio.to_thread(
+        get_or_load_model, request.app.state.models, req.model
+    )
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)
     if request.app.state.embedding_model_cache.get(req.session_id) != req.model:

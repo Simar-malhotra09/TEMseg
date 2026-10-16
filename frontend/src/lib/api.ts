@@ -582,6 +582,8 @@ export interface SystemModel {
   key: string;
   name: string;
   loaded: boolean;
+  available: boolean;
+  missing_weights: string[];
   engine: "coreml" | "onnx" | "torch" | null;
   runs_on: string | null;
   ram_bytes: number | null;

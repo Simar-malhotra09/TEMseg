@@ -161,6 +161,10 @@ class YoloSam(Model):
                     process_peak_rss_bytes(),
                     device_allocated_bytes(self.device),
                 )
+                self._logger.info(
+                    "Loading micro-SAM EM checkpoint",
+                    extra={"path": str(model_path)},
+                )
                 checkpoint = torch.load(
                     model_path, map_location="cpu", weights_only=False
                 )
@@ -169,11 +173,20 @@ class YoloSam(Model):
                 state = checkpoint.get("model_state", checkpoint)
                 if not isinstance(state, dict):
                     raise ValueError("micro-SAM EM checkpoint has no state dictionary")
+                self._logger.info(
+                    "Building SAM ViT-B model",
+                    extra={"checkpoint_tensors": len(state)},
+                )
                 state = {
                     key.removeprefix("sam."): value for key, value in state.items()
                 }
                 sam = sam_model_registry["vit_b"]()
+                self._logger.info("Applying micro-SAM EM checkpoint weights")
                 sam.load_state_dict(state)
+                self._logger.info(
+                    "Moving micro-SAM EM model to device",
+                    extra={"device": self.device},
+                )
                 sam.to(device=self.device)
                 sam.ram_bytes = ram_since(ram_before, self.device)
                 components["sam"] = sam

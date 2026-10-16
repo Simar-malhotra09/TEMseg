@@ -194,12 +194,17 @@ def system_info(request: Request):
     yolosam = loaded_models.get(AvailableModels.yolosam)
     yolo_backend = yolosam._yolo if yolosam is not None else None
 
-    def role(key, name, backend, weight_paths):
+    def role(key, name, backend, weight_paths, required_weight_paths):
         engine = _engine_of(backend)
+        missing_weights = [
+            Path(path).name for path in required_weight_paths if not Path(path).exists()
+        ]
         return {
             "key": key,
             "name": name,
             "loaded": backend is not None,
+            "available": backend is not None or not missing_weights,
+            "missing_weights": missing_weights,
             "engine": engine,
             "runs_on": ("apple neural engine" if engine == "coreml" else device)
             if backend is not None
@@ -218,20 +223,39 @@ def system_info(request: Request):
             [YOLO_PKG]
             if _engine_of(yolo_backend) == "coreml"
             else [settings.YOLO_MODEL_PATH],
+            [settings.YOLO_MODEL_PATH],
         ),
     ]
 
+    yolo_requirements = [settings.YOLO_MODEL_PATH]
+    sam_requirements = [*yolo_requirements, settings.SAM_MODEL_PATH]
+    mobile_sam_requirements = [
+        *yolo_requirements,
+        settings.MOBILE_SAM_MODEL_PATH,
+    ]
+    microsam_requirements = [
+        *yolo_requirements,
+        settings.MICROSAM_EM_MODEL_PATH,
+    ]
     sam_models = (
-        (AvailableModels.yolosam, settings.SAM_MODEL_PATH),
-        (AvailableModels.fasteryolosam, settings.SAM_MODEL_PATH),
-        (AvailableModels.mobile_sam, settings.MOBILE_SAM_MODEL_PATH),
-        (AvailableModels.microsam_em, settings.MICROSAM_EM_MODEL_PATH),
+        (AvailableModels.yolosam, settings.SAM_MODEL_PATH, sam_requirements),
+        (AvailableModels.fasteryolosam, settings.SAM_MODEL_PATH, sam_requirements),
+        (
+            AvailableModels.mobile_sam,
+            settings.MOBILE_SAM_MODEL_PATH,
+            mobile_sam_requirements,
+        ),
+        (
+            AvailableModels.microsam_em,
+            settings.MICROSAM_EM_MODEL_PATH,
+            microsam_requirements,
+        ),
     )
-    for model_id, weights_path in sam_models:
+    for model_id, weights_path, required_weight_paths in sam_models:
         model_instance = loaded_models.get(model_id)
         sam_backend = getattr(model_instance, "_sam", None)
         sam_weights = (
-            [ENC_PKG, DEC_PKG]
+            [ENC_PKG, DEC_PKG, settings.SAM_MODEL_PATH]
             if _engine_of(sam_backend) == "coreml"
             else [weights_path]
         )
@@ -241,8 +265,39 @@ def system_info(request: Request):
                 model_id.value,
                 sam_backend,
                 sam_weights,
+                required_weight_paths,
             )
         )
+
+    yolomaskrcnn = loaded_models.get(AvailableModels.yolomaskrcnn)
+    models.append(
+        role(
+            AvailableModels.yolomaskrcnn.value,
+            AvailableModels.yolomaskrcnn.value,
+            (
+                yolomaskrcnn.components.get("maskrcnn")
+                if yolomaskrcnn is not None
+                else None
+            ),
+            [settings.MASKRCNN_MODEL_PATH],
+            [*yolo_requirements, settings.MASKRCNN_MODEL_PATH],
+        )
+    )
+
+    synthetic_maskrcnn = loaded_models.get(AvailableModels.maskrcnn_synthetic)
+    models.append(
+        role(
+            AvailableModels.maskrcnn_synthetic.value,
+            AvailableModels.maskrcnn_synthetic.value,
+            (
+                synthetic_maskrcnn.components.get("maskrcnn")
+                if synthetic_maskrcnn is not None
+                else None
+            ),
+            [settings.MASKRCNN_SYNTHETIC_MODEL_PATH],
+            [settings.MASKRCNN_SYNTHETIC_MODEL_PATH],
+        )
+    )
 
     prompt_backend = getattr(yolosam, "_prompt_sam", None)
     if prompt_backend is not None:
@@ -251,6 +306,7 @@ def system_info(request: Request):
                 "prompt_sam",
                 "SAM prompts",
                 prompt_backend,
+                [settings.SAM_MODEL_PATH],
                 [settings.SAM_MODEL_PATH],
             )
         )

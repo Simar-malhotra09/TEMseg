@@ -1,7 +1,7 @@
 "use client";
 import styles from "./page.module.css";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore, useCallback } from "react";
 // import {Image} from "next/Image"
 import {
   Upload, Play, Sliders,
@@ -284,11 +284,23 @@ export default function Workspace() {
   // system info feeds the footer device chip and the Settings modal; the
   // mount fetch covers the chip, the settings-open fetch refreshes the modal.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  useEffect(() => {
+  const refreshSystemInfo = useCallback(() => {
     getSystemInfo()
       .then(setSystemInfo)
       .catch(err => console.error("getSystemInfo failed:", err));
   }, []);
+  useEffect(() => { refreshSystemInfo(); }, [refreshSystemInfo]);
+  useEffect(() => {
+    if (!systemInfo || models.length === 0) return;
+    const selectedStatus = systemInfo.models.find(
+      model => model.key === selectedModel,
+    );
+    if (selectedStatus?.available) return;
+    const firstAvailable = models.find(
+      model => systemInfo.models.find(status => status.key === model)?.available,
+    );
+    setSelectedModel(firstAvailable ?? null);
+  }, [models, selectedModel, systemInfo]);
 
   // display adjustment (brightness/contrast multipliers, image layers only)
   const [brightness, setBrightness] = useState(1);
@@ -1809,20 +1821,40 @@ export default function Workspace() {
               Only YoloSAM/FasterYoloSAM support depth — hidden for MaskRCNN. */}
           <div className={styles.topbarCentre}>
             <div className={styles.dropdownWrap} ref={modelDropdownRef}>
-              <button type="button" className={styles.dropdownBtn} onClick={() => setModelDropdownOpen(o => !o)}>
+              <button type="button" className={styles.dropdownBtn} onClick={() => {
+                const nextOpen = !modelDropdownOpen;
+                setModelDropdownOpen(nextOpen);
+                if (nextOpen) refreshSystemInfo();
+              }}>
                 {selectedModel} <ChevronDown size={14} />
               </button>
               {modelDropdownOpen && (
                 <ul className={styles.dropdownList}>
-                  {models.map(m => (
-                    <li key={m}
-                      className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""}`}
-                      onClick={() => { setSelectedModel(m); setModelDropdownOpen(false); }}
-                    >
-                      {m}
-                      <span className={styles.dropdownItemDesc}>{MODEL_DESCRIPTIONS[m] ?? "Segmentation model"}</span>
-                    </li>
-                  ))}
+                  {models.map(m => {
+                    const modelStatus = systemInfo?.models.find(status => status.key === m);
+                    const unavailable = !modelStatus?.available;
+                    return (
+                      <li key={m}
+                        aria-disabled={unavailable}
+                        className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""} ${unavailable ? styles.dropdownItemDisabled : ""}`}
+                        title={modelStatus && !modelStatus.available ? `Weights needed: ${modelStatus.missing_weights.join(", ")}` : undefined}
+                        onClick={() => {
+                          if (unavailable) return;
+                          setSelectedModel(m);
+                          setModelDropdownOpen(false);
+                        }}
+                      >
+                        {m}
+                        <span className={styles.dropdownItemDesc}>
+                          {!modelStatus
+                            ? "Checking model weights…"
+                            : unavailable
+                            ? "Weights needed"
+                            : MODEL_DESCRIPTIONS[m] ?? "Segmentation model"}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -1933,7 +1965,10 @@ export default function Workspace() {
             <div className={styles.railSpacer} />
             <button type="button"
               className={`${styles.railBtn} ${settingsOpen ? styles.railBtnActive : ""}`}
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsOpen(true);
+                refreshSystemInfo();
+              }}
               title="Settings"
             >
               <Settings size={16} /><span className={styles.railLabel}>Settings</span>
@@ -3407,8 +3442,10 @@ export default function Workspace() {
                               )}
                               <span className={styles.settingsModelLabel}>{m.name}</span>
                             </span>
-                            <span className={styles.settingsNum}>
-                              {m.loaded
+                            <span className={`${styles.settingsNum} ${m.available ? "" : styles.settingsNumMissing}`}>
+                              {!m.available
+                                ? "weights needed"
+                                : m.loaded
                                 ? [m.engine ?? "loaded", m.runs_on, m.ram_bytes ? formatBytes(m.ram_bytes) : null]
                                   .filter(Boolean)
                                   .join(" · ")
