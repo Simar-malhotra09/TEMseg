@@ -111,6 +111,22 @@ def _extract_features(image: np.ndarray) -> np.ndarray:
     return feat_stack.reshape(H * W, -1)
 
 
+def sample_labeled_features(
+    image: np.ndarray, labeled_mask: np.ndarray, limit: int
+) -> np.ndarray:
+    """Freeze a bounded set of features from pixels the user labeled."""
+    if image.shape[:2] != labeled_mask.shape:
+        raise ValueError(
+            f"Label shape {labeled_mask.shape} differs from image shape {image.shape[:2]}"
+        )
+    indices = np.flatnonzero(labeled_mask.ravel())
+    if indices.size == 0:
+        raise ValueError("No labeled pixels were provided")
+    if indices.size > limit:
+        indices = np.random.default_rng(42).choice(indices, size=limit, replace=False)
+    return _extract_features(image)[indices].astype(np.float32)
+
+
 def _labels_from_mask(
     mask: np.ndarray, bg_mask: np.ndarray | None = None
 ) -> np.ndarray:
@@ -190,6 +206,18 @@ class RFRecovery:
         X, y = self._build_xy(image, mask, bg_mask)
         self._X_accum = [X]
         self._y_accum = [y]
+        self._fit()
+
+    def train_labeled_features(self, features: np.ndarray, labels: np.ndarray) -> None:
+        """Fit from explicit pixel examples collected across a batch."""
+        if features.ndim != 2 or features.shape[1] != 37:
+            raise ValueError(f"Expected a (n, 37) feature matrix, got {features.shape}")
+        if labels.shape != (len(features),):
+            raise ValueError("Feature and label counts differ")
+        if not np.array_equal(np.unique(labels), np.array([0, 1])):
+            raise ValueError("Both confirmed foreground and background are required")
+        self._X_accum = [features]
+        self._y_accum = [labels]
         self._fit()
 
     def update(

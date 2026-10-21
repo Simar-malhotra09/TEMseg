@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.api.utils import SESSIONS_DIR, validate_session_id
 from app.logutils import get_logger
+from app.models.helpers import batch_learning
 
 logger = get_logger("sessions")
 router = APIRouter(tags=["sessions"])
@@ -176,6 +177,9 @@ def delete_session(session_id: str):
     session_dir = SESSIONS_DIR / validate_session_id(session_id)
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    for group in _read_groups():
+        if session_id in group["session_ids"]:
+            batch_learning.retract_session(group["id"], session_id)
     shutil.rmtree(session_dir)
 
     mru = _read_mru()
@@ -185,15 +189,19 @@ def delete_session(session_id: str):
 
     changed = False
     kept_groups = []
+    empty_group_ids: list[str] = []
     for g in _read_groups():
         if session_id in g["session_ids"]:
             g["session_ids"] = [s for s in g["session_ids"] if s != session_id]
             changed = True
             if not g["session_ids"]:
+                empty_group_ids.append(g["id"])
                 continue
         kept_groups.append(g)
     if changed:
         _write_groups(kept_groups)
+    for group_id in empty_group_ids:
+        batch_learning.remove_group(group_id)
     return {"session_id": session_id}
 
 
@@ -216,4 +224,5 @@ def delete_group(group_id: str):
     if len(kept) == len(groups):
         raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
     _write_groups(kept)
+    batch_learning.remove_group(group_id)
     return {"deleted": group_id}

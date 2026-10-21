@@ -39,6 +39,7 @@ ui-re/
 data/
 backend/src/data/
 backend/src/sessions/
+backend/src/rf_batches/
 backend/src/mru_k_sessions.json
 backend/src/app/api/tests/
 backend/weights

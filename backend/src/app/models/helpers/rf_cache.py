@@ -17,7 +17,7 @@ _MIN_AREA_RATIO = 0.3
 _cache: dict[str, RFRecovery] = {}
 
 
-def _derive_min_area(session_key: str) -> tuple[int, str]:
+def derive_min_area(session_key: str) -> tuple[int, str]:
     """
     Min area for RF-recovered regions, derived from particles the model has
     already segmented for this session. Falls back to the app-wide minimum
@@ -48,7 +48,7 @@ def get_or_train(
         if min_area is not None:
             resolved_min_area, min_area_source = min_area, "explicit"
         else:
-            resolved_min_area, min_area_source = _derive_min_area(session_key)
+            resolved_min_area, min_area_source = derive_min_area(session_key)
         logger.info(
             f"Training new RFRecovery for session={session_key} "
             f"min_area={resolved_min_area} min_area_source={min_area_source}"
