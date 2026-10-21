@@ -136,10 +136,15 @@ def list_groups() -> list[dict]:
 
 @router.get("/groups/{group_id}")
 def get_group(group_id: str):
-    for g in _read_groups():
+    groups = _read_groups()
+    for g in groups:
         if g["id"] == group_id:
             return _group_response(g)
-    raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+    known = ", ".join(f"{g['id']} ({g['name']})" for g in groups) or "none"
+    raise HTTPException(
+        status_code=404,
+        detail=f"Group {group_id} not found; use a group id: {known}",
+    )
 
 
 def _write_groups(groups: list[dict]) -> None:
