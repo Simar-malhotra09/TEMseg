@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -468,6 +468,19 @@ export default function Workspace() {
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   // group context for the active session (prev/next navigation)
   const [groupCtx, setGroupCtx] = useState<Group | null>(null);
+  const [batchRFStatus, setBatchRFStatus] = useState<BatchRFStatus | null>(null);
+  useEffect(() => {
+    if (!groupCtx) {
+      setBatchRFStatus(null);
+      return;
+    }
+    let current = true;
+    setBatchRFStatus(null);
+    getBatchRFStatus(groupCtx.id)
+      .then(result => { if (current) setBatchRFStatus(result); })
+      .catch(err => { if (current) setStatus(`Batch learning unavailable: ${(err as Error).message}`); });
+    return () => { current = false; };
+  }, [groupCtx?.id]);
   useEffect(() => {
     getRecentSessions()
       .then(setRecentSessions)
@@ -505,6 +518,22 @@ export default function Workspace() {
       await refreshLists();
     } catch (err) {
       pushToast("err", "Delete failed", (err as Error).message);
+      return;
+    }
+    if (groupCtx?.sessions.some(session => session.session_id === sessionId)) {
+      const remaining = groupCtx.sessions.filter(session => session.session_id !== sessionId);
+      if (remaining.length === 0) {
+        setGroupCtx(null);
+        setBatchRFStatus(null);
+        return;
+      }
+      try {
+        const updatedGroup = await getGroup(groupCtx.id);
+        setGroupCtx(updatedGroup);
+        setBatchRFStatus(await getBatchRFStatus(updatedGroup.id));
+      } catch (err) {
+        pushToast("err", "Batch learning status refresh failed", (err as Error).message);
+      }
     }
   }
 
@@ -521,7 +550,7 @@ export default function Workspace() {
   }
 
   async function handleDeleteGroup(g: Group) {
-    if (!window.confirm(`Delete group "${g.name}"? Its images stay as individual sessions.`)) return;
+    if (!window.confirm(`Delete group "${g.name}" and its batch learning examples? Its images stay as individual sessions.`)) return;
     try {
       await deleteGroup(g.id);
       await refreshLists();
@@ -587,6 +616,9 @@ export default function Workspace() {
   const [rfBgMode, setRfBgMode] = useState(false);
   const [rfBgScribbles, setRfBgScribbles] = useState<Scribble[]>([]);
   const rfBgScribblesRef = useRef<Scribble[]>([]);
+  const [rfFgMode, setRfFgMode] = useState(false);
+  const [rfFgScribbles, setRfFgScribbles] = useState<Scribble[]>([]);
+  const rfFgScribblesRef = useRef<Scribble[]>([]);
   const [rfBgBrushSize, setRfBgBrushSize] = useState(60); // scroll-to-resize on the scribble canvas
 
   // refine mode
@@ -716,6 +748,9 @@ export default function Workspace() {
     setRfBgMode(false);
     setRfBgScribbles([]);
     rfBgScribblesRef.current = [];
+    setRfFgMode(false);
+    setRfFgScribbles([]);
+    rfFgScribblesRef.current = [];
     setMeasureMode(false);
     setMeasureVertices([]);
     setMeasureEdges([]);
@@ -1128,6 +1163,97 @@ export default function Workspace() {
     }
   }
 
+  async function handleEnableBatchRF() {
+    if (!groupCtx) return;
+    try {
+      await enableBatchRF(groupCtx.id);
+      setBatchRFStatus(await getBatchRFStatus(groupCtx.id));
+      setStatus(`Batch learning enabled for ${groupCtx.name}.`);
+    } catch (err) {
+      pushToast("err", "Cannot enable batch learning", (err as Error).message);
+    }
+  }
+
+  async function handleTeachBatchRF(label: "foreground" | "background") {
+    if (!groupCtx || !sessionId) return;
+    const strokes = label === "foreground" ? rfFgScribblesRef.current : rfBgScribblesRef.current;
+    if (strokes.length === 0) return;
+    setBootstrapBusy(true);
+    try {
+      const result = await teachBatchRF(groupCtx.id, sessionId, label, strokes);
+      setBatchRFStatus(result.status);
+      if (label === "foreground") {
+        rfFgScribblesRef.current = [];
+        setRfFgScribbles([]);
+        setRfFgMode(false);
+      } else {
+        rfBgScribblesRef.current = [];
+        setRfBgScribbles([]);
+        setRfBgMode(false);
+      }
+      setStatus(`Saved ${label} example for ${groupCtx.name}.`);
+    } catch (err) {
+      if (isRequestAborted(err)) return;
+      pushToast("err", `Cannot save ${label} example`, (err as Error).message);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
+  async function handleTeachReviewedMasks() {
+    if (!groupCtx || !sessionId) return;
+    setBootstrapBusy(true);
+    try {
+      const saved = await getInstances(sessionId);
+      const instanceIds = saved.instances.map(instance => instance.id);
+      if (instanceIds.length === 0) {
+        throw new Error("No saved particle masks to teach. Segment or annotate this image first.");
+      }
+      const result = await teachBatchRFInstances(groupCtx.id, sessionId, instanceIds);
+      setBatchRFStatus(result.status);
+      setStatus(`Saved ${instanceIds.length} reviewed particle masks as a batch example.`);
+    } catch (err) {
+      if (isRequestAborted(err)) return;
+      pushToast("err", "Cannot teach particle masks", (err as Error).message);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
+  async function handleRetractBatchRF(exampleId: string) {
+    if (!groupCtx) return;
+    try {
+      setBatchRFStatus(await retractBatchRFExample(groupCtx.id, exampleId));
+      setStatus("Batch example removed.");
+    } catch (err) {
+      pushToast("err", "Cannot remove example", (err as Error).message);
+    }
+  }
+
+  async function handleBatchRFPropose() {
+    if (!sessionId || !groupCtx) return;
+    if (pendingProposals.length > 0) {
+      setStatus("Review or discard pending proposals before running batch recovery again.");
+      return;
+    }
+    setBootstrapBusy(true);
+    setStatus("Running batch RF recovery...");
+    try {
+      const result = await batchRFPropose(groupCtx.id, sessionId);
+      if (result.proposals.length === 0) {
+        setStatus(result.message ?? "Batch RF found no missed regions.");
+        return;
+      }
+      setPendingProposals(result.proposals);
+      setStatus(`Batch RF and SAM found ${result.proposals.length} particle candidate(s). Review and accept or discard.`);
+    } catch (err) {
+      if (isRequestAborted(err)) return;
+      pushToast("err", "Batch RF recovery failed", (err as Error).message);
+    } finally {
+      setBootstrapBusy(false);
+    }
+  }
+
   async function enterRefineMode() {
     (document.activeElement as HTMLElement)?.blur();
     if (!sessionId) return;
@@ -1167,7 +1293,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode || analysisMode || scaleBarMode) return;
+    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode || rfFgMode || analysisMode || scaleBarMode) return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -1733,6 +1859,7 @@ export default function Workspace() {
     setBoxMode(false);
     setAnnotateMode(false);
     setRfBgMode(false);
+    setRfFgMode(false);
     setMeasureMode(false);
     setActiveMeasureVertex(null);
     setAngleMode(false);
@@ -2319,6 +2446,7 @@ export default function Workspace() {
                           annotateMode ||
                           boxMode ||
                           rfBgMode ||
+                          rfFgMode ||
                           !seg.segDone ||
                           !(seg.stats?.particle_count ?? 0) ||
                           bootstrapBusy
@@ -2362,6 +2490,21 @@ export default function Workspace() {
                 <div className={styles.subWindow}>
                   <p className={styles.subWindowTitle}>RF Recovery</p>
 
+                  {groupCtx && (
+                    <>
+                      <p className={styles.sidebarHint}>Batch: {groupCtx.name}</p>
+                      {!batchRFStatus?.enabled ? (
+                        <button type="button" className={styles.actionBtn} onClick={handleEnableBatchRF}>
+                          Enable Batch Learning
+                        </button>
+                      ) : (
+                        <p className={styles.sidebarHint}>
+                          Confirmed examples: {batchRFStatus.foreground_count} particle, {batchRFStatus.background_count} background
+                        </p>
+                      )}
+                    </>
+                  )}
+
                   {/* RF background scribble. mark patches that are definitely
                       background so the RF trains on real ground truth instead of
                       assuming everything far from a known particle is background
@@ -2377,7 +2520,7 @@ export default function Workspace() {
                       !seg.segDone ||
                       bootstrapBusy
                     }
-                    onClick={() => setRfBgMode(v => !v)}
+                    onClick={() => { setRfFgMode(false); setRfBgMode(v => !v); }}
                   >
                     <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
                   </button>
@@ -2389,6 +2532,56 @@ export default function Workspace() {
                     }}>
                       Clear Background Marks
                     </button>
+                  )}
+                  {batchRFStatus?.enabled && groupCtx && (
+                    <>
+                      <button type="button"
+                        className={`${styles.actionBtn} ${rfFgMode ? styles.actionBtnPrimary : ""}`}
+                        disabled={!sessionId || !seg.segDone || refineMode || annotateMode || boxMode || bootstrapBusy}
+                        onClick={() => { setRfBgMode(false); setRfFgMode(v => !v); }}
+                      >
+                        <PenTool size={14} /> {rfFgMode ? "Done Marking" : "Mark Confirmed Particles"}
+                      </button>
+                      <button type="button" className={styles.actionBtn}
+                        disabled={!sessionId || !seg.segDone || rfBgMode || rfFgMode || bootstrapBusy}
+                        onClick={handleTeachReviewedMasks}
+                      >
+                        Teach Reviewed Masks as Particles
+                      </button>
+                      <p className={styles.sidebarHint}>
+                        Use reviewed masks for this batch. Any incorrect particle masks will also teach the classifier.
+                      </p>
+                      {rfFgScribbles.length > 0 && !rfFgMode && (
+                        <button type="button" className={styles.actionBtn} onClick={() => {
+                          rfFgScribblesRef.current = [];
+                          setRfFgScribbles([]);
+                        }}>
+                          Clear Particle Marks
+                        </button>
+                      )}
+                      {rfFgScribbles.length > 0 && !rfFgMode && (
+                        <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                          onClick={() => handleTeachBatchRF("foreground")}
+                        >
+                          Teach Batch: Particles
+                        </button>
+                      )}
+                      {rfBgScribbles.length > 0 && !rfBgMode && (
+                        <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                          onClick={() => handleTeachBatchRF("background")}
+                        >
+                          Teach Batch: Background
+                        </button>
+                      )}
+                      {batchRFStatus.examples.map(example => (
+                        <div key={example.id} className={styles.sidebarHint}>
+                          {example.label} ({example.source_kind}) · image {groupCtx.sessions.find(s => s.session_id === example.session_id)?.file_name ?? example.session_id}
+                          <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                            onClick={() => handleRetractBatchRF(example.id)}
+                          >Remove example</button>
+                        </div>
+                      ))}
+                    </>
                   )}
                   {rfBgMode ? (
                     <>
@@ -2409,6 +2602,8 @@ export default function Workspace() {
                         · [scroll]: resize brush
                       </p>
                     </>
+                  ) : rfFgMode ? (
+                    <p className={styles.sidebarHint}>Mark only pixels inside particles you have checked.</p>
                   ) : (
                     <ExpandableHint summary="Why mark background">
                       <p className={styles.sidebarHint}>
@@ -2429,6 +2624,7 @@ export default function Workspace() {
                       annotateMode ||
                       boxMode ||
                       rfBgMode ||
+                      rfFgMode ||
                       !seg.segDone ||
                       rfBgScribbles.length === 0 ||
                       bootstrapBusy
@@ -2445,6 +2641,19 @@ export default function Workspace() {
                     <Sparkles size={14} />
                     {bootstrapBusy ? "Running..." : "RF Recover Missed"}
                   </button>
+                  {batchRFStatus?.enabled && groupCtx && (
+                    <button type="button" className={styles.actionBtn}
+                      disabled={!sessionId || !seg.segDone || refineMode || annotateMode || boxMode || rfBgMode || rfFgMode || bootstrapBusy || pendingProposals.length > 0 || batchRFStatus.foreground_count === 0 || batchRFStatus.background_count === 0}
+                      onClick={handleBatchRFPropose}
+                      title={pendingProposals.length > 0
+                        ? "Review or discard pending proposals first"
+                        : batchRFStatus.foreground_count === 0 || batchRFStatus.background_count === 0
+                          ? "Teach both confirmed particles and background before batch recovery"
+                          : undefined}
+                    >
+                      <Sparkles size={14} /> Batch RF Recover
+                    </button>
+                  )}
                   <ExpandableHint summary="RF recovery tips">
                     <p className={styles.sidebarHint}>
                       Train a classifier on your annotated particles as foreground and your marked background as the negative class to catch particles missed everywhere in the image.
@@ -2726,12 +2935,12 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || analysisMode
+                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || rfFgMode || analysisMode
                     ? "none"
                     : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
                   transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || analysisMode
+                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || rfFgMode || analysisMode
                     ? "default"
                     : panning ? "grabbing" : "grab",
                 }}
@@ -2743,7 +2952,7 @@ export default function Workspace() {
                   className={styles.temImage}
                   style={{
                     display: "block",
-                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode ? "hidden" : "visible",
+                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode || rfFgMode ? "hidden" : "visible",
                     filter: imgFilter,
                     ...(displayWidth > 0 && displayHeight > 0
                       ? { width: displayWidth, height: displayHeight }
@@ -2782,9 +2991,10 @@ export default function Workspace() {
                 )}
 
                 {/* RF background scribble canvas. Freehand brush strokes */}
-                {rfBgMode && imgSize.width > 0 && (
+                {(rfBgMode || rfFgMode) && imgSize.width > 0 && (
                   <div style={{ position: "absolute", top: 0, left: 0 }}>
                     <ScribbleCanvas
+                      key={rfFgMode ? "foreground" : "background"}
                       imageSrc={image}
                       width={viewportSize.width}
                       height={viewportSize.height}
@@ -2792,12 +3002,17 @@ export default function Workspace() {
                       imgHeight={imgSize.height}
                       imageBrightness={konvaBrightness}
                       imageContrast={konvaContrast}
-                      initialStrokes={rfBgScribbles}
+                      initialStrokes={rfFgMode ? rfFgScribbles : rfBgScribbles}
                       brushSize={rfBgBrushSize}
                       onBrushSizeChange={setRfBgBrushSize}
                       onChange={scribbles => {
-                        rfBgScribblesRef.current = scribbles;
-                        setRfBgScribbles(scribbles);
+                        if (rfFgMode) {
+                          rfFgScribblesRef.current = scribbles;
+                          setRfFgScribbles(scribbles);
+                        } else {
+                          rfBgScribblesRef.current = scribbles;
+                          setRfBgScribbles(scribbles);
+                        }
                       }}
                     />
                   </div>
@@ -2990,7 +3205,7 @@ export default function Workspace() {
 
                 {/* analysis measurement overlay. Vertices + explicit edges,
                     each edge labeled with its distance; stays visible after Done. */}
-                {(measureVertices.length > 0 || measureEdges.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && (
+                {(measureVertices.length > 0 || measureEdges.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && !rfFgMode && (
                   <svg
                     viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
                     preserveAspectRatio="xMidYMid meet"
@@ -3095,7 +3310,7 @@ export default function Workspace() {
 
                 {/* angle measurement overlay. draws the two arms + standard arc
                     and labels the angle in degrees (radians also computed). */}
-                {(angleMeasurements.length > 0 || anglePoints.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && (
+                {(angleMeasurements.length > 0 || anglePoints.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && !rfFgMode && (
                   <svg
                     viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
                     preserveAspectRatio="xMidYMid meet"

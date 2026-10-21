@@ -80,6 +80,10 @@ export interface Stroke {
   strokeWidth: number;
 }
 
+function strokeForApi(stroke: Stroke): { id: string; points: number[]; stroke_width: number } {
+  return { id: stroke.id, points: stroke.points, stroke_width: stroke.strokeWidth };
+}
+
 export interface StatsResult {
   // scale info
   pixel_size: number | null;
@@ -828,7 +832,7 @@ export async function computeGTScore(
   return res.json();
 }
 
-export async function getInstances(sessionId: string) {
+export async function getInstances(sessionId: string): Promise<{ instances: Instance[] }> {
   const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instances`, {
     method: "POST",
   });
@@ -878,7 +882,7 @@ export async function rfPropose(
     body: JSON.stringify({
       session_id: sessionId,
       top_n: topN,
-      bg_scribbles: bgScribbles,
+      bg_scribbles: bgScribbles.map(strokeForApi),
     }),
   });
   if (!res.ok) {
@@ -886,6 +890,97 @@ export async function rfPropose(
     throw new Error(`rfPropose failed (${res.status}): ${err}`);
   }
   return res.json();
+}
+
+export interface BatchRFExample {
+  id: string;
+  group_id: string;
+  session_id: string;
+  label: "foreground" | "background";
+  created_at: string;
+  image_shape: [number, number];
+  pixel_count: number;
+  feature_count: number;
+  source_kind: "strokes" | "instances";
+  instance_ids: number[];
+}
+
+export interface BatchRFStatus {
+  enabled: boolean;
+  foreground_count: number;
+  background_count: number;
+  examples: BatchRFExample[];
+}
+
+async function batchRFJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await trackedFetch(`${BASE_URL}/rf/batches/${path}`, init);
+  if (!res.ok) {
+    const body = await res.json() as { detail?: string };
+    throw new Error(body.detail ?? `Batch RF request failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function getBatchRFStatus(groupId: string): Promise<BatchRFStatus> {
+  return batchRFJson<BatchRFStatus>(encodeURIComponent(groupId));
+}
+
+export function enableBatchRF(groupId: string): Promise<{ enabled: boolean }> {
+  return batchRFJson<{ enabled: boolean }>(`${encodeURIComponent(groupId)}/enable`, {
+    method: "POST",
+  });
+}
+
+export function teachBatchRF(
+  groupId: string,
+  sessionId: string,
+  label: "foreground" | "background",
+  strokes: Stroke[],
+): Promise<{ example_id: string; status: BatchRFStatus }> {
+  return batchRFJson<{ example_id: string; status: BatchRFStatus }>(
+    `${encodeURIComponent(groupId)}/${label}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, strokes: strokes.map(strokeForApi) }),
+    },
+  );
+}
+
+export function teachBatchRFInstances(
+  groupId: string,
+  sessionId: string,
+  instanceIds: number[],
+): Promise<{ example_id: string; status: BatchRFStatus }> {
+  return batchRFJson<{ example_id: string; status: BatchRFStatus }>(
+    `${encodeURIComponent(groupId)}/foreground-instances`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, instance_ids: instanceIds }),
+    },
+  );
+}
+
+export function retractBatchRFExample(
+  groupId: string,
+  exampleId: string,
+): Promise<BatchRFStatus> {
+  return batchRFJson<BatchRFStatus>(
+    `${encodeURIComponent(groupId)}/examples/${encodeURIComponent(exampleId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function batchRFPropose(
+  groupId: string,
+  sessionId: string,
+): Promise<RFProposeResponse> {
+  return batchRFJson<RFProposeResponse>(`${encodeURIComponent(groupId)}/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
 }
 
 export async function exportSession(
