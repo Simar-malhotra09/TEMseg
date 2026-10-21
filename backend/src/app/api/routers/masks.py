@@ -709,6 +709,19 @@ def _pick_smallest_safe_mask(
     return k, a, m
 
 
+def box_sweep_widths(prior_areas: list[float]) -> np.ndarray | None:
+    """SAM box widths per click, derived from saved particle sizes."""
+    if not prior_areas:
+        return None
+    sqrt_areas = np.sqrt(np.array(prior_areas, dtype=float))
+    if len(sqrt_areas) >= 4:
+        box_base = np.percentile(sqrt_areas, [25, 50, 75])
+    else:
+        med = float(np.median(sqrt_areas))
+        box_base = np.array([0.7 * med, 1.0 * med, 1.3 * med])
+    return box_base * 1.2
+
+
 def _append_sam_debug(
     session_dir: Path,
     base_bgr: np.ndarray,
@@ -844,15 +857,9 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     # /propose-similar's per-seed logic. This makes click-produced masks track
     # the annotated scale rather than depending on SAM's scale lottery.
     prior_areas = [float(i["area"]) for i in instances]
-    has_prior = len(prior_areas) > 0
+    box_widths = box_sweep_widths(prior_areas)
+    has_prior = box_widths is not None
     if has_prior:
-        sqrt_areas = np.sqrt(np.array(prior_areas, dtype=float))
-        if len(sqrt_areas) >= 4:
-            box_base = np.percentile(sqrt_areas, [25, 50, 75])
-        else:
-            med = float(np.median(sqrt_areas))
-            box_base = np.array([0.7 * med, 1.0 * med, 1.3 * med])
-        box_widths = box_base * 1.2
         log_median = float(np.log(max(float(np.median(prior_areas)), 1.0)))
         logger.info(
             f"Using size prior from {len(prior_areas)} existing particles, "
