@@ -332,6 +332,31 @@ export default function RefineCanvas({
               />
             ))}
 
+            {/* TEMP for imaging: id label at each particle center, same look
+                as the stats table highlight. pointerEvents none so hover and
+                the tooltip panel stay unchanged */}
+            {(() => {
+              const cx = inst.bbox.x + inst.bbox.w / 2;
+              const cy = inst.bbox.y + inst.bbox.h / 2;
+              const bboxMinScreen = Math.min(inst.bbox.w, inst.bbox.h) / s2i;
+              const r = Math.max(6, Math.min(12, bboxMinScreen * 0.35)) * s2i;
+              return (
+                <g style={{ pointerEvents: "none" }}>
+                  <circle cx={cx} cy={cy} r={r} fill="#0d0d0d" fillOpacity={0.8} stroke={color} strokeWidth={1 * s2i} />
+                  <text
+                    x={cx}
+                    y={cy}
+                    fontSize={r * 0.9}
+                    fill="#fff"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {inst.id}
+                  </text>
+                </g>
+              );
+            })()}
+
             {isSelected && !splitMode && (
               <>
                 {/* wider invisible stroke over edges — click to insert vertex */}
