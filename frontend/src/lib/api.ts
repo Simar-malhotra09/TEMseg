@@ -402,6 +402,35 @@ export async function exportViaPyWebView(
   return window.pywebview!.api!.export_zip(sessionId, items);
 }
 
+export interface SamStatus {
+  weights_exist: boolean;
+  sam_loaded: boolean;
+  embedding_cached: boolean;
+}
+
+export async function getSamStatus(sessionId: string): Promise<SamStatus> {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/sam-status`);
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch SAM status (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function prepareSam(sessionId: string): Promise<{ status: string }> {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/prepare-sam`, {
+    method: "POST",
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`prepareSam failed (${res.status}): ${err.detail ?? ""}`);
+  }
+
+  return res.json();
+}
+
 export async function getModels(): Promise<string[]> {
   const res = await trackedFetch(`${BASE_URL}/models`);
 

@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -187,6 +187,32 @@ function distanceToSegment(
   const projX = x1 + t * dx;
   const projY = y1 + t * dy;
   return Math.hypot(px - projX, py - projY);
+}
+
+// note + action shown where the SAM tools live, when SAM cannot run yet
+function SamGateNote({
+  note,
+  canPrepare,
+  preparing,
+  actionLabel,
+  onPrepare,
+}: {
+  note: string;
+  canPrepare: boolean;
+  preparing: boolean;
+  actionLabel: string;
+  onPrepare: () => void;
+}) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <p className={styles.sidebarHint}>{note}</p>
+      {canPrepare && (
+        <button type="button" className={styles.actionBtn} disabled={preparing} onClick={onPrepare}>
+          {preparing ? "Preparing..." : actionLabel}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function Workspace() {
@@ -660,6 +686,46 @@ export default function Workspace() {
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel, encoderDepth });
 
+  // SAM prompts need the YoloSAM model and an embedding for this image.
+  // Mask R-CNN segmentation does not create that embedding.
+  const { data: samStatus, error: samStatusError, isLoading: samStatusLoading, refetch: refetchSamStatus } = useQuery({
+    queryKey: ["sam-status", sessionId],
+    queryFn: () => getSamStatus(sessionId!),
+    enabled: !!sessionId,
+  });
+  const [samPreparing, setSamPreparing] = useState(false);
+  const samReady = !!samStatus?.sam_loaded && !!samStatus.embedding_cached;
+  const samBlockNote = !sessionId
+    ? null
+    : samStatusError
+      ? `Could not check SAM readiness: ${samStatusError.message}`
+      : !samStatus
+        ? "Checking SAM readiness..."
+        : !samStatus.sam_loaded && !samStatus.weights_exist
+          ? "SAM weights are not installed. Download the weights to enable the SAM tools."
+          : !samStatus.sam_loaded
+            ? "Load YoloSAM and encode this image to use SAM prompts. This takes a few seconds."
+            : !samStatus.embedding_cached
+              ? "YoloSAM is loaded. Encode this image to use Split Instance and other SAM prompts."
+              : null;
+  const samCanPrepare = !!sessionId && !samStatusLoading && (!samStatus || samStatus.sam_loaded || samStatus.weights_exist);
+  const samPrepareLabel = samStatus?.sam_loaded ? "Encode Image for SAM" : "Load and Encode SAM";
+
+  async function handlePrepareSam() {
+    if (!sessionId) return;
+    setSamPreparing(true);
+    try {
+      await prepareSam(sessionId);
+      await refetchSamStatus();
+    } catch (err) {
+      console.error("prepare sam failed:", err);
+      setStatus(`Prepare SAM failed: ${(err as Error).message}`);
+      pushToast("err", "Prepare SAM failed", (err as Error).message);
+    } finally {
+      setSamPreparing(false);
+    }
+  }
+
   // entering refine hides the mask overlay (enterRefineMode) — restore it on
   // every exit path (Esc, save, mode switches, locate-particle), not just the
   // ones that remember to.
@@ -936,6 +1002,7 @@ export default function Workspace() {
       if (isRequestAborted(err)) return;
       throw err;
     }
+    await refetchSamStatus();
     getSystemInfo()
       .then(setSystemInfo)
       .catch(err => console.error("getSystemInfo failed:", err));
@@ -2312,7 +2379,21 @@ export default function Workspace() {
 
                     {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
                       <>
-                        <button type="button" className={styles.actionBtn} onClick={refine.handleEnterSplit}>
+                        {samBlockNote && (
+                          <SamGateNote
+                            note={samBlockNote}
+                            canPrepare={samCanPrepare}
+                            preparing={samPreparing}
+                            actionLabel={samPrepareLabel}
+                            onPrepare={handlePrepareSam}
+                          />
+                        )}
+                        <button type="button"
+                          className={styles.actionBtn}
+                          disabled={!samReady}
+                          title={samBlockNote ?? undefined}
+                          onClick={refine.handleEnterSplit}
+                        >
                           Split Instance
                         </button>
                         <button type="button" className={styles.actionBtn} onClick={refine.handleCopy}>
@@ -2382,18 +2463,26 @@ export default function Workspace() {
                       onClick={() => switchAugmentMethod("similar")}
                     >Similar</button>
                   </p>
+                  {samBlockNote && (
+                    <SamGateNote
+                      note={samBlockNote}
+                      canPrepare={samCanPrepare}
+                      preparing={samPreparing}
+                      actionLabel={samPrepareLabel}
+                      onPrepare={handlePrepareSam}
+                    />
+                  )}
 
                   {augmentMethod === "click" && (
                     <>
                       {/* bootstrap mode. click on the image to *propose* particles via
-                          SAM point-prompt. Requires a prior /segment run so the SAM
-                          image embedding is cached server-side (the backend 400s
-                          otherwise, but the disabled state is the clean UX). */}
+                          SAM point-prompt. needs the SAM embedding cached: automatic
+                          after a SAM segment run, or via Prepare SAM */}
                       <button type="button"
                         className={styles.actionBtn}
-                        disabled={!sessionId || refineMode || annotateMode || boxMode || !seg.segDone}
+                        disabled={!sessionId || refineMode || annotateMode || boxMode || !samReady}
                         onClick={() => setBootstrapMode(b => !b)}
-                        title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                        title={samBlockNote ?? undefined}
                       >
                         <MousePointerClick size={14} />
                         {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
@@ -2413,9 +2502,9 @@ export default function Workspace() {
                           prompts bleed; preferred over polygon for speed. */}
                       <button type="button"
                         className={styles.actionBtn}
-                        disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !seg.segDone}
+                        disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !samReady}
                         onClick={() => setBoxMode(m => !m)}
-                        title={!seg.segDone ? "Run segmentation first to cache the SAM embedding" : undefined}
+                        title={samBlockNote ?? undefined}
                       >
                         <BoxSelect size={14} />
                         {boxMode ? "Stop Boxing" : "Box to Add Particles"}
@@ -2447,15 +2536,16 @@ export default function Workspace() {
                           boxMode ||
                           rfBgMode ||
                           rfFgMode ||
-                          !seg.segDone ||
+                          !samReady ||
                           !(seg.stats?.particle_count ?? 0) ||
                           bootstrapBusy
                         }
                         onClick={handleProposeSimilar}
                         title={
-                          !(seg.stats?.particle_count ?? 0)
+                          samBlockNote ??
+                          (!(seg.stats?.particle_count ?? 0)
                             ? "Annotate at least one particle first to build the prior"
-                            : undefined
+                            : undefined)
                         }
                       >
                         <Sparkles size={14} />
