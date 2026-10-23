@@ -15,12 +15,14 @@ MIN_INSTANCE_AREA = 50
 # perimeter. Scaled by how much of the image the instance covers, so tiny
 # particles get aggressively simplified (fewer vertices to clutter the UI)
 # while large, significant ones keep more shape detail.
-MIN_EPSILON_FRAC = 0.005  # applied to instances at/above SIZE_REF_AREA_FRAC
-MAX_EPSILON_FRAC = 0.035  # applied to vanishingly small instances
+# TEMP for imaging figures: coarse polygons, about 4x fewer vertices.
+# Revert to 0.005 / 0.035 / 1.2 after the figures are made.
+MIN_EPSILON_FRAC = 0.02  # applied to instances at/above SIZE_REF_AREA_FRAC
+MAX_EPSILON_FRAC = 0.1  # applied to vanishingly small instances
 SIZE_REF_AREA_FRAC = 0.05  # area fraction (of full image) considered "large"
 # Without a cap, a fraction of a large perimeter grows into several pixels and
 # the polygon cuts convex corners, silently shaving ~5% off the true area
-EPSILON_CAP_PX = 1.2
+EPSILON_CAP_PX = 5.0
 
 
 def _simplification_epsilon(perimeter: float, area: int, image_area: int) -> float:
