@@ -62,14 +62,14 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
       if ('error' in result) {
         return "Segmentation returned no results.";
       }
-      if ('warning' in result) {
+      if (result.warning) {
         // Zero-detection case: backend still caches the SAM embedding, so the
         // bootstrap/box modes should be usable. Flip segDone to unlock them
         // without claiming we have particles.
         setCommittedRegions(blackout ? activeRegions : []);
         setInvCommittedRegions(inverse ? activeRegions : []);
         setSegDone(true);
-        return (result as { warning: string }).warning ?? "No particles detected.";
+        return result.warning;
       }
 
       setCommittedRegions(blackout ? activeRegions : []);

@@ -330,6 +330,7 @@ export interface SegmentResponse {
   stats: StatsResult;
   time_elapsed: number;
   debug_boxes_url?: string;
+  warning?: string | null;
 }
 
 export interface GTResponse {
