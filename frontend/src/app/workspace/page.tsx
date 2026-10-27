@@ -313,7 +313,7 @@ export default function Workspace() {
   const refreshSystemInfo = useCallback(() => {
     getSystemInfo()
       .then(setSystemInfo)
-      .catch(err => console.error("getSystemInfo failed:", err));
+      .catch(err => console.warn("getSystemInfo failed:", err));
   }, []);
   useEffect(() => { refreshSystemInfo(); }, [refreshSystemInfo]);
   useEffect(() => {
@@ -352,7 +352,7 @@ export default function Workspace() {
     if (!settingsOpen) return;
     getSystemInfo()
       .then(setSystemInfo)
-      .catch(err => console.error("getSystemInfo failed:", err));
+      .catch(err => console.warn("getSystemInfo failed:", err));
   }, [settingsOpen]);
 
   // which method is showing in the Point/Box/Similar sub-window
@@ -521,9 +521,10 @@ export default function Workspace() {
   const recentsShown = recentSessions.slice(0, 10 - groupsShown.length);
 
   async function refreshLists() {
-    const [r, g] = await Promise.all([getRecentSessions(), getGroups()]);
-    setRecentSessions(r);
-    setGroups(g);
+    // on failure keep the current lists, same as the mount fetch
+    const [r, g] = await Promise.all([getRecentSessions(), getGroups()]).catch(() => [null, null]);
+    if (r) setRecentSessions(r);
+    if (g) setGroups(g);
   }
 
   async function handleRenameSession(sessionId: string, current: string) {
@@ -718,7 +719,7 @@ export default function Workspace() {
       await prepareSam(sessionId);
       await refetchSamStatus();
     } catch (err) {
-      console.error("prepare sam failed:", err);
+      console.warn("prepare sam failed:", err);
       setStatus(`Prepare SAM failed: ${(err as Error).message}`);
       pushToast("err", "Prepare SAM failed", (err as Error).message);
     } finally {
@@ -878,7 +879,7 @@ export default function Workspace() {
       });
       setStatus(`Loaded: ${file.name} — ready to segment.`);
     } catch (err) {
-      console.error("upload failed:", err);
+      console.warn("upload failed:", err);
       setStatus(`Upload failed: ${(err as Error).message}`);
       pushToast("err", "Upload failed", (err as Error).message);
     }
@@ -910,7 +911,7 @@ export default function Workspace() {
       }
       setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
     } catch (err) {
-      console.error("multi-upload failed:", err);
+      console.warn("multi-upload failed:", err);
       setStatus(`Upload failed: ${(err as Error).message}`);
       pushToast("err", "Upload failed", (err as Error).message);
     }
@@ -944,7 +945,7 @@ export default function Workspace() {
       }
       setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
     } catch (err) {
-      console.error("folder import failed:", err);
+      console.warn("folder import failed:", err);
       setStatus(`Folder import failed: ${(err as Error).message}`);
       pushToast("err", "Folder import failed", (err as Error).message);
     }
@@ -1006,7 +1007,7 @@ export default function Workspace() {
     await refetchSamStatus();
     getSystemInfo()
       .then(setSystemInfo)
-      .catch(err => console.error("getSystemInfo failed:", err));
+      .catch(err => console.warn("getSystemInfo failed:", err));
 
     // if gt available, compute scores 
     if (msg) {
@@ -1047,7 +1048,7 @@ export default function Workspace() {
         `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
       );
     } catch (err) {
-      console.error("bootstrap click failed:", err);
+      console.warn("bootstrap click failed:", err);
       setStatus(`Bootstrap failed: ${(err as Error).message}`);
       pushToast("err", "Bootstrap failed", (err as Error).message);
     } finally {
@@ -1086,7 +1087,7 @@ export default function Workspace() {
       setStatus(`Added ${n} particle(s).`);
       pushToast("ok", `Added ${n} particle(s)`);
     } catch (err) {
-      console.error("accept proposals failed:", err);
+      console.warn("accept proposals failed:", err);
       setStatus(`Accept failed: ${(err as Error).message}`);
       pushToast("err", "Accept failed", (err as Error).message);
     } finally {
@@ -1166,7 +1167,7 @@ export default function Workspace() {
         `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
       );
     } catch (err) {
-      console.error("box drawn failed:", err);
+      console.warn("box drawn failed:", err);
       setStatus(`Box segment failed: ${(err as Error).message}`);
       pushToast("err", "Box segment failed", (err as Error).message);
     } finally {
@@ -1194,7 +1195,7 @@ export default function Workspace() {
         `Found ${res.proposals.length} candidate(s) from ${res.seed_count ?? "?"} seed(s). Review and accept or discard.`,
       );
     } catch (err) {
-      console.error("propose similar failed:", err);
+      console.warn("propose similar failed:", err);
       setStatus(`Find Similar failed: ${(err as Error).message}`);
       pushToast("err", "Find Similar failed", (err as Error).message);
     } finally {
@@ -1223,7 +1224,7 @@ export default function Workspace() {
         `RF found ${res.proposals.length} missed region(s). Review and accept or discard.`,
       );
     } catch (err) {
-      console.error("RF propose failed:", err);
+      console.warn("RF propose failed:", err);
       setStatus(`RF Recovery failed: ${(err as Error).message}`);
       pushToast("err", "RF Recovery failed", (err as Error).message);
     } finally {
@@ -1327,7 +1328,11 @@ export default function Workspace() {
     if (!sessionId) return;
     setZoom(1);           // reset zoom before entering
     setPan({ x: 0, y: 0 });  
-    const res = await getInstances(sessionId);
+    const res = await getInstances(sessionId).catch(() => null);
+    if (!res) {
+      pushToast("err", "Refine unavailable", "Could not load particles.");
+      return;
+    }
     refine.reinit(res.instances);  // feed instances into hook
     refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
     setRefineMode(true);
@@ -1419,9 +1424,11 @@ export default function Workspace() {
     setRefineMode(false);  
     let instances = loadedInstances;
     if (instances.length === 0) {
-      const res = await getInstances(sessionId); // this should always be up to date
-      instances = res.instances;
-      setLoadedInstances(instances);
+      const res = await getInstances(sessionId).catch(() => null); // this should always be up to date
+      if (res) {
+        instances = res.instances;
+        setLoadedInstances(instances);
+      }
     }
 
     setHighlightParticleIdx(particleIndex);
@@ -1447,9 +1454,11 @@ export default function Workspace() {
     setRefineMode(false);
     let instances= loadedInstances;
     if (instances.length === 0) {
-      const res = await getInstances(sessionId); // this should always be up to date
-      instances = res.instances;
-      setLoadedInstances(instances);
+      const res = await getInstances(sessionId).catch(() => null); // this should always be up to date
+      if (res) {
+        instances = res.instances;
+        setLoadedInstances(instances);
+      }
     }
 
     setHighlightShape(shape);
@@ -2323,7 +2332,7 @@ export default function Workspace() {
                   onClick={
                     refineMode
                       ? () => {
-                          refine.handleSave();
+                          refine.handleSave().catch(err => pushToast("err", "Save failed", (err as Error).message));
                         }
                       : () => {
                           enterRefineMode();
@@ -2452,7 +2461,7 @@ export default function Workspace() {
                         <button type="button"
                           className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                           disabled={refine.splitPoints.length < 2}
-                          onClick={refine.handleConfirmSplit}
+                          onClick={() => refine.handleConfirmSplit().catch(err => pushToast("err", "Split failed", (err as Error).message))}
                         >
                           Confirm Split
                         </button>

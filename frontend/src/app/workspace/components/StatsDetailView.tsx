@@ -178,7 +178,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("[StatsDetailView] histogram CSV export failed:", err);
+      console.warn("[StatsDetailView] histogram CSV export failed:", err);
     }
   };
 

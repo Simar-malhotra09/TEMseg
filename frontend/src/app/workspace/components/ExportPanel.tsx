@@ -130,7 +130,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats, 
         // Native save dialog via PyWebView bridge
         const result = await exportViaPyWebView(sessionId, items);
         if (!result.success && result.error !== "cancelled") {
-          console.error("Export failed:", result.error);
+          console.warn("Export failed:", result.error);
         }
       } else {
         // Browser: blob download
@@ -145,7 +145,7 @@ export default function ExportPanel({ sessionId, segDone, refineDone, hasStats, 
 
       setOpen(false);
     } catch (err) {
-      console.error("Export failed:", err);
+      console.warn("Export failed:", err);
     } finally {
       setDownloading(false);
     }

@@ -87,7 +87,7 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
       return `Segmentation completed in ${result.time_elapsed.toFixed(2)}s.`;
     } catch (err) {
       if (isRequestAborted(err)) throw err;
-      console.error("Segmentation failed:", err);
+      console.warn("Segmentation failed:", err);
       return null;
     } finally {
       setIsSegmenting(false);
@@ -108,7 +108,7 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
       setGroundTruthStatus("GT score computed.");
       setGtUrl(`${BASE_URL}/gt/${sessionId}/preview?t=${Date.now()}`);
     } catch (err) {
-      console.error("GT scoring failed:", err);
+      console.warn("GT scoring failed:", err);
     }
   }, [sessionId]);
 
@@ -121,7 +121,11 @@ export function useSegmentationState({ sessionId, selectedModel, encoderDepth }:
   ) => {
     if (!sessionId) return;
     setGroundTruthStatus("Uploading ground truth...");
-    const res = await uploadGroundTruth(sessionId, file);
+    const res = await uploadGroundTruth(sessionId, file).catch(() => null);
+    if (!res) {
+      setGroundTruthStatus("Ground truth upload failed.");
+      return;
+    }
     setGroundTruth(true);
     if (res.warnings?.length > 0) {
       setGroundTruthStatus(`Warning: ${res.warnings[0]}`);

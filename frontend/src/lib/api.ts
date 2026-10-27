@@ -756,7 +756,7 @@ export async function uploadImage(file: File): Promise<UploadResponse> {
   });
 
   if (!res.ok) {
-    console.error("[uploadImage] failed:", res.status);
+    console.warn("[uploadImage] failed:", res.status);
     throw new Error("Upload failed");
   }
 
@@ -822,7 +822,7 @@ export async function segmentImage(
   });
 
   if (!res.ok) {
-    console.error("[segmentImage] failed:", res.status);
+    console.warn("[segmentImage] failed:", res.status);
     throw new Error("Segmentation failed");
   }
   const data = await res.json();
