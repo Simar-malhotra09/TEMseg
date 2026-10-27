@@ -15,10 +15,11 @@ interface Props {
   // data is rendered as-is, no local copy
   imageFilter?: string;
   instances: Instance[];
-  selectedId: number | null;
+  selectedIds: number[];
   viewBox: ViewBox;
   splitMode: boolean;
   splitPoints: [number, number][];
+  boxDeleteMode?: boolean;
   pasteMode?: boolean;
   clipboard?: Instance | null;
   polygonOpacity?: number;
@@ -26,13 +27,14 @@ interface Props {
   visibleTooltipFields?: ParticleMetricField[];
 
   // local events ;all business logic handled by parent via useRefineState
-  onSelect: (id: number) => void;
+  onSelect: (id: number, additive: boolean) => void;
   onDeselect: () => void;
   onVertexDragEnd: (instId: number, vi: number, pos: [number, number]) => void;
   onVertexDelete: (instId: number, vi: number) => void;
   onEdgeClick: (instId: number, pos: [number, number]) => void;
   onSplitPointPlace: (pos: [number, number]) => void;
   onPastePlace?: (pos: [number, number]) => void;
+  onBoxDelete?: (box: { x: number; y: number; w: number; h: number }) => void;
   onRotateStart?: () => void;
   onRotateDrag?: (pos: [number, number]) => void;
   onRotateEnd?: () => void;
@@ -84,14 +86,15 @@ const EDGE_HIT_WIDTH = 8; // constant screen-space px
 
 export default function RefineCanvas({
   imageSrc, width, height, imgWidth, imgHeight, imageFilter,
-  instances, selectedId, viewBox, splitMode, splitPoints,
+  instances, selectedIds, viewBox, splitMode, splitPoints,
+  boxDeleteMode = false,
   pasteMode = false,
   clipboard = null,
   polygonOpacity = 0.2,
   stats = null,
   visibleTooltipFields = [],
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
-  onEdgeClick, onSplitPointPlace, onPastePlace,
+  onEdgeClick, onSplitPointPlace, onPastePlace, onBoxDelete,
   onRotateStart, onRotateDrag, onRotateEnd,
   onViewBoxChange,
 }: Props) {
@@ -108,6 +111,10 @@ export default function RefineCanvas({
   const [dragPos, setDragPos] = useLocalDragState();
   // mouse position in image space for paste-mode ghost preview
   const [pasteCursor, setPasteCursor] = useState<[number, number] | null>(null);
+  // box delete drag in image space, same pattern as BoxAnnotateCanvas
+  const [boxDrag, setBoxDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  // edit handles (vertices, edges, rotate) only for a single selected particle
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
 
   // hover-driven ID tooltip. position is in screen space (px, relative to the
   // svg's own top-left), decoupled from selection so it reflects whatever the
@@ -186,6 +193,11 @@ export default function RefineCanvas({
       if (onRotateStart) onRotateStart();
       return;
     }
+    if (boxDeleteMode) {
+      const [x, y] = toImageSpace(e.clientX, e.clientY);
+      setBoxDrag({ x0: x, y0: y, x1: x, y1: y });
+      return;
+    }
     if (pasteMode) {
       if (onPastePlace) onPastePlace(toImageSpace(e.clientX, e.clientY));
       return;
@@ -196,7 +208,7 @@ export default function RefineCanvas({
     }
     const tag = target.tagName;
     if (tag === "svg" || tag === "image") onDeselect();
-  }, [viewBox, pasteMode, splitMode, toImageSpace, onPastePlace, onSplitPointPlace, onDeselect, onRotateStart]);
+  }, [viewBox, pasteMode, splitMode, boxDeleteMode, toImageSpace, onPastePlace, onSplitPointPlace, onDeselect, onRotateStart]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (panStart.current) {
@@ -216,15 +228,32 @@ export default function RefineCanvas({
       setPasteCursor(toImageSpace(e.clientX, e.clientY));
       return;
     }
+    if (boxDrag) {
+      const [x, y] = toImageSpace(e.clientX, e.clientY);
+      setBoxDrag(prev => (prev ? { ...prev, x1: x, y1: y } : prev));
+      return;
+    }
     if (draggingVertex.current) {
       const pos = toImageSpace(e.clientX, e.clientY);
       draggingVertex.current.pos = pos;
       // update local render state for smooth drag — parent not notified until mouseup
       setDragPos({ instId: draggingVertex.current.instId, vi: draggingVertex.current.vi, pos });
     }
-  }, [viewBox, width, height, imgWidth, imgHeight, pasteMode, toImageSpace, onViewBoxChange, onRotateDrag, setDragPos]);
+  }, [viewBox, width, height, imgWidth, imgHeight, pasteMode, boxDrag, toImageSpace, onViewBoxChange, onRotateDrag, setDragPos]);
 
   const handleMouseUp = useCallback(() => {
+    if (boxDrag) {
+      const x0 = Math.min(boxDrag.x0, boxDrag.x1);
+      const y0 = Math.min(boxDrag.y0, boxDrag.y1);
+      const x1 = Math.max(boxDrag.x0, boxDrag.x1);
+      const y1 = Math.max(boxDrag.y0, boxDrag.y1);
+      setBoxDrag(null);
+      // threshold in image units so a plain click never deletes anything
+      if (onBoxDelete && x1 - x0 > 4 * s2i && y1 - y0 > 4 * s2i) {
+        onBoxDelete({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      }
+      return;
+    }
     if (draggingVertex.current) {
       // commit final position to parent only on release
       const { instId, vi, pos } = draggingVertex.current;
@@ -237,8 +266,8 @@ export default function RefineCanvas({
     }
     draggingVertex.current = null;
     panStart.current = null;
-    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : "default";
-  }, [onVertexDragEnd, setDragPos, onRotateEnd, pasteMode]);
+    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : splitMode || boxDeleteMode ? "crosshair" : "default";
+  }, [onVertexDragEnd, setDragPos, onRotateEnd, pasteMode, splitMode, boxDeleteMode, boxDrag, s2i, onBoxDelete]);
 
   const pointsStr = (contour: [number, number][]) =>
     contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -272,7 +301,7 @@ export default function RefineCanvas({
       width={width}
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      style={{ display: "block", userSelect: "none", cursor: pasteMode ? "copy" : splitMode ? "crosshair" : "default" }}
+      style={{ display: "block", userSelect: "none", cursor: pasteMode ? "copy" : splitMode || boxDeleteMode ? "crosshair" : "default" }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -289,7 +318,7 @@ export default function RefineCanvas({
 
       {instances.map((inst) => {
         const color = COLORS[inst.id % COLORS.length];
-        const isSelected = inst.id === selectedId;
+        const isSelected = selectedIds.includes(inst.id);
         const pts = getLivePointsStr(inst);
 
         return (
@@ -304,7 +333,7 @@ export default function RefineCanvas({
               style={{ cursor: splitMode ? "crosshair" : "pointer" }}
               onClick={e => {
                 e.stopPropagation();
-                if (!splitMode) onSelect(inst.id);
+                if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
               }}
               onMouseMove={e => {
                 const rect = svgRef.current!.getBoundingClientRect();
@@ -326,7 +355,7 @@ export default function RefineCanvas({
                 style={{ cursor: splitMode ? "crosshair" : "pointer" }}
                 onClick={e => {
                   e.stopPropagation();
-                  if (!splitMode) onSelect(inst.id);
+                  if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
                 }}
                 pointerEvents="all"
               />
@@ -357,7 +386,7 @@ export default function RefineCanvas({
               );
             })()}
 
-            {isSelected && !splitMode && (
+            {inst.id === selectedId && !splitMode && !boxDeleteMode && (
               <>
                 {/* wider invisible stroke over edges — click to insert vertex */}
                 <polygon
@@ -465,6 +494,21 @@ export default function RefineCanvas({
           <text x={x + 12 * s2i} y={y + 4 * s2i} fontSize={12 * s2i} fill="#fff">{i + 1}</text>
         </g>
       ))}
+
+      {/* box delete drag rect, same dashed look as BoxAnnotateCanvas */}
+      {boxDeleteMode && boxDrag && (
+        <rect
+          x={Math.min(boxDrag.x0, boxDrag.x1)}
+          y={Math.min(boxDrag.y0, boxDrag.y1)}
+          width={Math.abs(boxDrag.x1 - boxDrag.x0)}
+          height={Math.abs(boxDrag.y1 - boxDrag.y0)}
+          fill="rgba(255, 68, 68, 0.15)"
+          stroke="#ff4444"
+          strokeWidth={1.5 * s2i}
+          strokeDasharray={`${4 * s2i},${4 * s2i}`}
+          pointerEvents="none"
+        />
+      )}
 
       {/* Equivalent-diameter annotation for the hovered particle, gated on the
           diameter tooltip checkbox. stats carry no boundary point pair

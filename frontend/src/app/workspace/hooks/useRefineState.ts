@@ -29,7 +29,13 @@ export function useRefineState({
 }: Options) {
 
   const [instances, setInstances] = useState<Instance[]>(initialInstances);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  // box delete mode: drag a box on the canvas, all particles in it go away
+  const [boxDeleteMode, setBoxDeleteMode] = useState(false);
+
+  // the single instance that edit ops (split, copy, rotate) work on. null when
+  // the selection holds more than one particle
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const [viewBox, setViewBox] = useState<ViewBox>({ x: 0, y: 0, w: imgWidth, h: imgHeight });
   const [splitMode, setSplitMode] = useState(false);
   const [splitPoints, setSplitPoints] = useState<[number, number][]>([]);
@@ -62,13 +68,18 @@ export function useRefineState({
     setInstances(updated);
   }, []);
 
-  // select / deselect
-  const handleSelect = useCallback((id: number) => {
-    setSelectedId(id);
+  // select / deselect. additive (shift click) toggles the particle in the
+  // multi selection used for batch delete
+  const handleSelect = useCallback((id: number, additive = false) => {
+    setSelectedIds(prev =>
+      additive
+        ? prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+        : [id]
+    );
     setRotationDeg(0);
   }, []);
   const handleDeselect = useCallback(() => {
-    setSelectedId(null);
+    setSelectedIds([]);
     setRotationDeg(0);
   }, []);
 
@@ -123,12 +134,24 @@ export function useRefineState({
     }));
   }, [commit]);
 
-  // delete the currently selected instance
+  // delete every selected instance in one go
   const handleDeleteSelected = useCallback(() => {
-    if (selectedId === null) return;
-    commit(instancesRef.current.filter(i => i.id !== selectedId));
-    setSelectedId(null);
-  }, [selectedId, commit]);
+    if (selectedIds.length === 0) return;
+    const drop = new Set(selectedIds);
+    commit(instancesRef.current.filter(i => !drop.has(i.id)));
+    setSelectedIds([]);
+  }, [selectedIds, commit]);
+
+  // delete all instances that touch the drawn box. partial overlap counts
+  const handleBoxDelete = useCallback((box: { x: number; y: number; w: number; h: number }) => {
+    commit(instancesRef.current.filter(i =>
+      i.bbox.x + i.bbox.w < box.x ||
+      i.bbox.x > box.x + box.w ||
+      i.bbox.y + i.bbox.h < box.y ||
+      i.bbox.y > box.y + box.h
+    ));
+    setSelectedIds([]);
+  }, [commit]);
 
   // enter split mode for the selected instance
   const handleEnterSplit = useCallback(() => {
@@ -158,7 +181,7 @@ export function useRefineState({
           .filter(i => i.id !== splitInstanceId)
           .concat(data.instances)
       );
-      setSelectedId(null);
+      setSelectedIds([]);
     } finally {
       setSplitMode(false);
       setSplitInstanceId(null);
@@ -185,7 +208,7 @@ export function useRefineState({
   const handleEnterPaste = useCallback(() => {
     if (!clipboard) return;
     setPasteMode(true);
-    setSelectedId(null);
+    setSelectedIds([]);
   }, [clipboard]);
 
   const handleCancelPaste = useCallback(() => {
@@ -223,7 +246,7 @@ export function useRefineState({
     };
 
     commit([...instancesRef.current, newInstance]);
-    setSelectedId(newInstance.id);
+    setSelectedIds([newInstance.id]);
     setPasteMode(false);
   }, [clipboard, commit]);
 
@@ -280,7 +303,8 @@ export function useRefineState({
 
   const handleDiscard = useCallback(() => {
     commit(initialInstances);
-    setSelectedId(null);
+    setSelectedIds([]);
+    setBoxDeleteMode(false);
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
@@ -295,7 +319,8 @@ export function useRefineState({
   const reinit = useCallback((newInstances: Instance[]) => {
     instancesRef.current = newInstances;
     setInstances(newInstances);
-    setSelectedId(null);
+    setSelectedIds([]);
+    setBoxDeleteMode(false);
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
@@ -311,6 +336,7 @@ export function useRefineState({
     // state
     instances,
     selectedId,
+    selectedIds,
     viewBox,
     splitMode,
     splitPoints,
@@ -330,6 +356,7 @@ export function useRefineState({
     handleVertexDelete,
     handleEdgeClick,
     handleDeleteSelected,
+    handleBoxDelete,
     handleEnterSplit,
     handleCancelSplit,
     handleSplitPointPlace,
@@ -345,5 +372,7 @@ export function useRefineState({
     handleRotateEnd,
     setPolygonOpacity,
     handleDiscard,
+    boxDeleteMode,
+    setBoxDeleteMode,
   };
 }

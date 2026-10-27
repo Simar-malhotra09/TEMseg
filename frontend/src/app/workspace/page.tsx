@@ -785,6 +785,7 @@ export default function Workspace() {
       }
       if (e.key === "Escape") {
         if (refine.pasteMode) refine.handleCancelPaste();
+        if (refine.boxDeleteMode) refine.setBoxDeleteMode(false);
       }
       if (e.key === "[") {
         refine.setPolygonOpacity(Math.max(0.05, refine.polygonOpacity - 0.05));
@@ -795,7 +796,7 @@ export default function Workspace() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.polygonOpacity, refine.setPolygonOpacity]);
+  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.boxDeleteMode, refine.setBoxDeleteMode, refine.polygonOpacity, refine.setPolygonOpacity]);
 
   // image upload
   function resetForNewImage() {
@@ -2377,6 +2378,27 @@ export default function Workspace() {
                       ))}
                     </div>
 
+                    {/* batch delete: shift click multi select, or drag a box */}
+                    {refine.selectedIds.length > 1 && (
+                      <button type="button" className={styles.actionBtn} onClick={refine.handleDeleteSelected}>
+                        Delete {refine.selectedIds.length} selected
+                      </button>
+                    )}
+                    <button type="button"
+                      className={`${styles.actionBtn} ${refine.boxDeleteMode ? styles.actionBtnPrimary : ""}`}
+                      onClick={() => refine.setBoxDeleteMode(!refine.boxDeleteMode)}
+                    >
+                      {refine.boxDeleteMode ? "Box Delete: ON (Esc)" : "Box Delete"}
+                    </button>
+                    {refine.boxDeleteMode && (
+                      <p className={styles.sidebarHint}>
+                        Drag a box on the image. Every particle that touches it is deleted.
+                      </p>
+                    )}
+                    <p className={styles.sidebarHint}>
+                      Shift+click particles to multi select. Delete key removes the selection.
+                    </p>
+
                     {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
                       <>
                         {samBlockNote && (
@@ -3119,10 +3141,11 @@ export default function Workspace() {
                       imgHeight={imgSize.height}
                       imageFilter={imgFilter}
                       instances={refine.instances}
-                      selectedId={refine.selectedId}
+                      selectedIds={refine.selectedIds}
                       viewBox={refine.viewBox}
                       splitMode={refine.splitMode}
                       splitPoints={refine.splitPoints}
+                      boxDeleteMode={refine.boxDeleteMode}
                       pasteMode={refine.pasteMode}
                       clipboard={refine.clipboard}
                       polygonOpacity={refine.polygonOpacity}
@@ -3135,6 +3158,7 @@ export default function Workspace() {
                       onEdgeClick={refine.handleEdgeClick}
                       onSplitPointPlace={refine.handleSplitPointPlace}
                       onPastePlace={refine.handlePastePlace}
+                      onBoxDelete={refine.handleBoxDelete}
                       onRotateStart={refine.handleRotateStart}
                       onRotateDrag={refine.handleRotateDrag}
                       onRotateEnd={refine.handleRotateEnd}
@@ -3896,6 +3920,7 @@ export default function Workspace() {
                   <span><span className={styles.kbd}>space + drag</span></span><span>pan</span>
                   <span><span className={styles.kbd}>[</span> <span className={styles.kbd}>]</span></span><span>mask fill opacity down / up</span>
                   <span><span className={styles.kbd}>delete</span></span><span>remove selection (refine / measure vertices)</span>
+                  <span><span className={styles.kbd}>shift + click</span></span><span>multi select particles (refine)</span>
                 </div>
               </div>
             </div>
