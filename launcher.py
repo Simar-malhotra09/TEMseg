@@ -321,6 +321,10 @@ def check_and_download_weights(progress_callback=None) -> tuple[bool, str]:
         if re.fullmatch(r"[0-9a-fA-F]{64}", sha256) is None:
             return False, f"Missing or invalid SHA256 for weight: {filename}"
         if not url or "PLACEHOLDER" in url.upper():
+            # entries not published yet: fine when the file is already on disk
+            if (weights_dir / filename).exists():
+                log.info(f"Weight present locally, no URL configured: {filename}")
+                continue
             return False, f"No download URL is configured for weight: {filename}"
         if not url.startswith("https://"):
             return False, f"Weight URL must use HTTPS: {filename}"
