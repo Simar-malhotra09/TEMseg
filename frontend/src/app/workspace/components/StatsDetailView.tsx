@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import { ArrowLeft, ArrowUpDown, ChevronUp, ChevronDown, Crosshair } from "lucide-react";
 import styles from "./StatsDetailView.module.css";
-import type { StatsResult, Metadata } from "@/lib/api";
+import type { StatsResult, Metadata, ParticleStats } from "@/lib/api";
 import { PARTICLE_METRIC_FIELDS, exportHistogramCsv } from "@/lib/api";
 
 
@@ -70,6 +70,58 @@ function fmt(val: number, decimals = 2): string {
   if (Math.abs(val) >= 1000) return val.toFixed(0);
   if (Math.abs(val) >= 1) return val.toFixed(decimals);
   return val.toFixed(Math.min(decimals + 2, 6));
+}
+
+// scatter axes: every continuous per particle metric except n_vertices
+// (discrete). "shape" stays categorical and drives point colour only
+type ScatterMetric =
+  | "diameter" | "area" | "perimeter" | "major_axis" | "minor_axis"
+  | "aspect_ratio" | "circularity" | "solidity" | "convexity"
+  | "rectangularity" | "nearest_neighbor" | "border_distance";
+
+const SCATTER_METRICS: ScatterMetric[] = [
+  "diameter", "area", "perimeter", "major_axis", "minor_axis",
+  "aspect_ratio", "circularity", "solidity", "convexity",
+  "rectangularity", "nearest_neighbor", "border_distance",
+];
+
+// ratio type metrics are bounded to 0..1, everything else auto scales
+const RATIO_METRICS = new Set<ScatterMetric>(["circularity", "solidity", "convexity", "rectangularity"]);
+
+function scatterLabel(key: ScatterMetric, hasScale: boolean, unit: string): string {
+  switch (key) {
+    case "diameter": return `Eq. Diameter (${hasScale ? unit : "px"})`;
+    case "area": return `Area (${hasScale ? unit + "²" : "px²"})`;
+    case "perimeter": return `Perimeter (${hasScale ? unit : "px"})`;
+    case "major_axis": return `Major Axis (${hasScale ? unit : "px"})`;
+    case "minor_axis": return `Minor Axis (${hasScale ? unit : "px"})`;
+    case "aspect_ratio": return "Aspect Ratio";
+    case "circularity": return "Circularity";
+    case "solidity": return "Solidity";
+    case "convexity": return "Convexity";
+    case "rectangularity": return "Rectangularity";
+    case "nearest_neighbor": return `NNI (${hasScale ? unit : "px"})`;
+    case "border_distance": return `Border Dist. (${hasScale ? unit : "px"})`;
+  }
+}
+
+// real unit variant when a scale exists (same convention as the table).
+// nearest neighbour and border distance are null for degenerate cases
+function scatterValue(p: ParticleStats, key: ScatterMetric): number | null {
+  switch (key) {
+    case "diameter": return p.diameter_real ?? p.diameter_px;
+    case "area": return p.area_real ?? p.area_px;
+    case "perimeter": return p.perimeter_real ?? p.perimeter_px;
+    case "major_axis": return p.major_axis_real ?? p.major_axis_px;
+    case "minor_axis": return p.minor_axis_real ?? p.minor_axis_px;
+    case "aspect_ratio": return p.aspect_ratio;
+    case "circularity": return p.circularity;
+    case "solidity": return p.solidity ?? 1;
+    case "convexity": return p.convexity ?? 1;
+    case "rectangularity": return p.rectangularity ?? 0;
+    case "nearest_neighbor": return p.nearest_neighbor_real ?? p.nearest_neighbor_px ?? null;
+    case "border_distance": return p.border_distance_real ?? p.border_distance_px ?? null;
+  }
 }
 
 
@@ -157,6 +209,10 @@ function addFitCurve(
 
 export default function StatsDetailView({ stats, metadata, groundTruthScore, sessionId, onBack, onLocateParticle, onLocateShape}: Props) {
   const [sizeMode, setSizeMode] = useState<SizeMode>("diameter");
+  // scatter axes. defaults reproduce the original aspect ratio vs circularity view
+  const [xMetric, setXMetric] = useState<ScatterMetric>("aspect_ratio");
+  const [yMetric, setYMetric] = useState<ScatterMetric>("circularity");
+  const [zMetric, setZMetric] = useState<ScatterMetric | "none">("solidity");
   const [sortKey, setSortKey] = useState<SortKey>("index");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
@@ -374,19 +430,31 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
     return particles.filter(p => activeShapes.has(p.shape));
   }, [particles, activeShapes]);
 
-  function jitter(val: number, amount = 0.02): number {
-    return val + (Math.random() - 0.5) * amount;
-  }
-
   const scatterData = useMemo(() => {
-      return particles
+      const rows = particles
         .filter(p => activeShapes.has(p.shape))
         .map(p => ({
-          ...p,
-          aspect_ratio_j: p.aspect_ratio + ((((p.id ?? 0) * 7) % 100) / 100 - 0.5) * 0.05,
-          circularity_j: p.circularity + ((((p.id ?? 0) * 13) % 100) / 100 - 0.5) * 0.03,
-        }));
-  }, [particles, activeShapes]);
+          p,
+          x: scatterValue(p, xMetric),
+          y: scatterValue(p, yMetric),
+          z: zMetric === "none" ? 1 : scatterValue(p, zMetric),
+        }))
+        .filter(r => r.x != null && r.y != null && r.z != null);
+      if (rows.length === 0) return [];
+      // display only jitter so exactly coincident points stay countable.
+      // derived from the particle id, scaled to each axis range
+      const rangeOf = (vals: number[]) => Math.max(...vals) - Math.min(...vals) || 1;
+      const sx = rangeOf(rows.map(r => r.x as number)) * 0.02;
+      const sy = rangeOf(rows.map(r => r.y as number)) * 0.02;
+      return rows.map(({ p, x, y, z }) => ({
+        id: p.id,
+        shape: p.shape,
+        xr: x, yr: y, zr: z,
+        xv: (x as number) + ((((p.id ?? 0) * 7) % 100) / 100 - 0.5) * sx,
+        yv: (y as number) + ((((p.id ?? 0) * 13) % 100) / 100 - 0.5) * sy,
+        zv: z as number,
+      }));
+  }, [particles, activeShapes, xMetric, yMetric, zMetric]);
 
   return (
     <div className={styles.root}>
@@ -492,26 +560,53 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
         <div className={styles.chartCard}>
           <h2 className={styles.chartTitle}>Shape Analysis</h2>
  
-          {/* scatter: circularity vs aspect ratio */}
+          {/* axis pickers: x, y and point size over any computed metric */}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", margin: "4px 0 8px", fontSize: 10, color: "#888", fontFamily: "monospace" }}>
+            <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              X
+              <select value={xMetric} onChange={e => setXMetric(e.target.value as ScatterMetric)}
+                style={{ background: "#161616", color: "#ccc", border: "1px solid #2a2a2a", borderRadius: 4, fontSize: 10, padding: "2px 4px" }}>
+                {SCATTER_METRICS.map(m => <option key={m} value={m}>{scatterLabel(m, hasScale, unit)}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              Y
+              <select value={yMetric} onChange={e => setYMetric(e.target.value as ScatterMetric)}
+                style={{ background: "#161616", color: "#ccc", border: "1px solid #2a2a2a", borderRadius: 4, fontSize: 10, padding: "2px 4px" }}>
+                {SCATTER_METRICS.map(m => <option key={m} value={m}>{scatterLabel(m, hasScale, unit)}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              Size
+              <select value={zMetric} onChange={e => setZMetric(e.target.value as ScatterMetric | "none")}
+                style={{ background: "#161616", color: "#ccc", border: "1px solid #2a2a2a", borderRadius: 4, fontSize: 10, padding: "2px 4px" }}>
+                <option value="none">None</option>
+                {SCATTER_METRICS.map(m => <option key={m} value={m}>{scatterLabel(m, hasScale, unit)}</option>)}
+              </select>
+            </label>
+          </div>
+ 
+          {/* scatter: chosen metrics per axis, colour by shape class */}
           <div className={styles.chartWrap}>
             <ResponsiveContainer width="100%" height={280}>
               <ScatterChart margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" />
                 <XAxis
-                  dataKey="aspect_ratio_j"
+                  dataKey="xv"
                   type="number"
-                  domain={['auto', 'auto']}
+                  domain={RATIO_METRICS.has(xMetric) ? [0, 1] : ["auto", "auto"]}
                   tick={{ fill: "#666", fontSize: 10 }}
-                  label={{ value: "Aspect Ratio", position: "bottom", offset: 10, fill: "#555", fontSize: 11 }}
+                  label={{ value: scatterLabel(xMetric, hasScale, unit), position: "bottom", offset: 10, fill: "#555", fontSize: 11 }}
                 />
                 <YAxis
-                  dataKey="circularity_j"
+                  dataKey="yv"
                   type="number"
-                  domain={[0, 1]}
+                  domain={RATIO_METRICS.has(yMetric) ? [0, 1] : ["auto", "auto"]}
                   tick={{ fill: "#666", fontSize: 10 }}
-                  label={{ value: "Circularity", angle: -90, position: "insideLeft", offset: 0, fill: "#555", fontSize: 11 }}
+                  label={{ value: scatterLabel(yMetric, hasScale, unit), angle: -90, position: "insideLeft", offset: 0, fill: "#555", fontSize: 11 }}
                 />
-                <ZAxis dataKey="solidity" range={[30, 150]} />
+                {/* zv is constant 1 when size is None, so points render at one size */}
+                <ZAxis dataKey="zv" range={[30, 150]} />
                 <Tooltip
                   content={({ active, payload }: TooltipContentProps) => {
                     if (!active || !payload?.length) return null;
@@ -519,9 +614,12 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                     return (
                       <div className={styles.tooltip}>
                         <p>#{d.id} — {d.shape}</p>
-                        <p>Circularity: {(d.circularity ?? 0).toFixed(3)}</p>
-                        <p>Aspect Ratio: {(d.aspect_ratio ?? 0).toFixed(3)}</p>
-                        <p>Solidity: {(d.solidity ?? 0).toFixed(3)}</p>
+                        {/* exact values, the plotted xy carry display only jitter */}
+                        <p>{scatterLabel(xMetric, hasScale, unit)}: {fmt(d.xr, 3)}</p>
+                        <p>{scatterLabel(yMetric, hasScale, unit)}: {fmt(d.yr, 3)}</p>
+                        {zMetric !== "none" && (
+                          <p>{scatterLabel(zMetric, hasScale, unit)}: {fmt(d.zr, 3)}</p>
+                        )}
                       </div>
                     );
                   }}
