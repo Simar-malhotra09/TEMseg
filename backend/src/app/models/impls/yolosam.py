@@ -8,6 +8,7 @@ YoloBackend/SamBackend interfaces only.
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
+import warnings
 
 import numpy as np
 import torch
@@ -192,6 +193,13 @@ class YoloSam(Model):
                 components["sam"] = sam
 
             elif name == "mobile_sam":
+                # the mobile_sam package registers its TinyViT variants twice on
+                # import and the registry warns about the overwrite; benign
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Overwriting tiny_vit_.* in registry.*",
+                    category=UserWarning,
+                )
                 from mobile_sam import sam_model_registry
 
                 ram_before = (
