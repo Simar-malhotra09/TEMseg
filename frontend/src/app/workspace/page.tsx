@@ -58,6 +58,13 @@ const MODEL_DESCRIPTIONS: Record<string, string> = {
   YoloMaskRCNN: "YOLO boxes + Mask R-CNN masks",
   "MaskRCNN-Synthetic": "Mask R-CNN trained on synthetic particles",
 };
+// display only: yolo prefix for the YOLO+SAM pipelines whose backend key
+// lacks it. request payloads keep the backend model keys
+const MODEL_LABELS: Record<string, string> = {
+  MobileSAM: "YoloMobileSAM",
+  "micro-SAM EM (ViT-B)": "YoloMicroSAM EM (ViT-B)",
+};
+const modelLabel = (m: string) => MODEL_LABELS[m] ?? m;
 type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
@@ -992,7 +999,7 @@ export default function Workspace() {
     const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
     const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
-    setStatus(`Running ${selectedModel}...`);
+    setStatus(`Running ${modelLabel(selectedModel)}...`);
     let msg: string | null;
     try {
       msg = await seg.runSegmentation(activeRegions, blackout, inverse, {
@@ -2030,7 +2037,7 @@ export default function Workspace() {
                 setModelDropdownOpen(nextOpen);
                 if (nextOpen) refreshSystemInfo();
               }}>
-                {selectedModel} <ChevronDown size={14} />
+                {modelLabel(selectedModel ?? "")} <ChevronDown size={14} />
               </button>
               {modelDropdownOpen && (
                 <ul className={styles.dropdownList}>
@@ -2048,7 +2055,7 @@ export default function Workspace() {
                           setModelDropdownOpen(false);
                         }}
                       >
-                        {m}
+                        {modelLabel(m)}
                         <span className={styles.dropdownItemDesc}>
                           {!modelStatus
                             ? "Checking model weights…"
