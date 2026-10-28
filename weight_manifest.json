@@ -113,6 +113,78 @@
         "darwin-arm64"
       ],
       "variant": "coreml"
+    },
+    {
+      "filename": "mobile_sam.pt",
+      "url": "",
+      "sha256": "6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f",
+      "size_mb": 40.7
+    },
+    {
+      "filename": "micro_sam_vit_b_em_organelles.pt",
+      "url": "",
+      "sha256": "0e08dd7bf3761df3f2440dcf74b3bc7156dd3c61ced65e838c845dd06102a7ac",
+      "size_mb": 375.0
+    },
+    {
+      "filename": "sam_encoder_mobile_vit_t_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+      "url": "",
+      "sha256": "bf1c983daf85c7392817e921ec257473ba138526322e6388221345ea541faeef",
+      "size_mb": 0.2,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
+    },
+    {
+      "filename": "sam_encoder_mobile_vit_t_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+      "url": "",
+      "sha256": "ac7367ca2b8c4fdb17fc4f71c48af1b57e0f54ac676646e3b1dc21e7f66cc1a5",
+      "size_mb": 27.8,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
+    },
+    {
+      "filename": "sam_encoder_mobile_vit_t_fp32.mlpackage/Manifest.json",
+      "url": "",
+      "sha256": "89451feb8dbed2f4f417d079dee628da4a98c1874cfd6693427123c1e053c16a",
+      "size_mb": 0.0,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
+    },
+    {
+      "filename": "sam_decoder_mobile_head16_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+      "url": "",
+      "sha256": "c9c043c8b2d2b2d7e3172058dbfbdffa07ceed64ee28bed767f78f1cc256ba4f",
+      "size_mb": 0.1,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
+    },
+    {
+      "filename": "sam_decoder_mobile_head16_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+      "url": "",
+      "sha256": "2d76f79e18b0104c0674b2f9b1119fbcb5c0e35e8b93a68620ff75e84fda97ac",
+      "size_mb": 20.5,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
+    },
+    {
+      "filename": "sam_decoder_mobile_head16_fp32.mlpackage/Manifest.json",
+      "url": "",
+      "sha256": "9c8719a4d670080e27d2357cc1a484601bcdcfaf738d105674cce4e794e34e89",
+      "size_mb": 0.0,
+      "platforms": [
+        "darwin-arm64"
+      ],
+      "variant": "coreml"
     }
   ]
 }
