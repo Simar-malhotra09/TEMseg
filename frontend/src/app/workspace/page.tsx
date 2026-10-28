@@ -226,7 +226,7 @@ export default function Workspace() {
   const [depthDropdownOpen, setDepthDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const depthDropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (models.length > 0) setSelectedModel(models[0]); }, [models]); // by def load YoloSAM
+  useEffect(() => { if (models.length > 0) setSelectedModel(models.find(m => m === "MobileSAM") ?? models[0]); }, [models]); // default pipeline is MobileSAM
   useEffect(() => {
     const closeOnOutsidePress = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -687,7 +687,7 @@ export default function Workspace() {
   // segmentation hook
   const seg = useSegmentationState({ sessionId, selectedModel, encoderDepth });
 
-  // SAM prompts need the YoloSAM model and an embedding for this image.
+  // SAM prompts need the MobileSAM model and an embedding for this image.
   // Mask R-CNN segmentation does not create that embedding.
   const { data: samStatus, error: samStatusError, isLoading: samStatusLoading, refetch: refetchSamStatus } = useQuery({
     queryKey: ["sam-status", sessionId],
@@ -705,9 +705,9 @@ export default function Workspace() {
         : !samStatus.sam_loaded && !samStatus.weights_exist
           ? "SAM weights are not installed. Download the weights to enable the SAM tools."
           : !samStatus.sam_loaded
-            ? "Load YoloSAM and encode this image to use SAM prompts. This takes a few seconds."
+            ? "Load MobileSAM and encode this image to use SAM prompts. This takes a few seconds."
             : !samStatus.embedding_cached
-              ? "YoloSAM is loaded. Encode this image to use Split Instance and other SAM prompts."
+              ? "MobileSAM is loaded. Encode this image to use Split Instance and other SAM prompts."
               : null;
   const samCanPrepare = !!sessionId && !samStatusLoading && (!samStatus || samStatus.sam_loaded || samStatus.weights_exist);
   const samPrepareLabel = samStatus?.sam_loaded ? "Encode Image for SAM" : "Load and Encode SAM";

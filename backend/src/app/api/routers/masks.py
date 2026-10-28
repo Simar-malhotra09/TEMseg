@@ -2,12 +2,13 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import List, Literal, Tuple, TypedDict
+from typing import List, Literal, Tuple
 
 import cv2 as cv
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from typing_extensions import TypedDict
 
 from app.api.instances import (
     load_instances,
@@ -43,10 +44,10 @@ class SamPreparation(TypedDict):
 def _prompt_embedding(session_id: str, request: Request) -> SamEmbedding:
     embedding = request.app.state.embedding_cache.get(session_id)
     model = request.app.state.embedding_model_cache.get(session_id)
-    if embedding is None or model != AvailableModels.yolosam:
+    if embedding is None or model != AvailableModels.mobile_sam:
         raise HTTPException(
             status_code=409,
-            detail="YoloSAM image embedding is unavailable for this session. Prepare SAM first.",
+            detail="SAM image embedding is unavailable for this session. Prepare SAM first.",
         )
     return embedding
 
@@ -374,15 +375,15 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
     # ── 2. get SAM predictor from cache ──────────────────────────────────────
     embedding = _prompt_embedding(session_id, request)
 
-    # get yolosam model from app state
+    # prompt model is MobileSAM (default pipeline), see app state
     models = request.app.state.models
-    yolosam = models.get(AvailableModels.yolosam.value)
-    if yolosam is None:
-        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+    sam = models.get(AvailableModels.mobile_sam.value)
+    if sam is None:
+        raise HTTPException(status_code=500, detail="MobileSAM model not loaded")
 
     # restore predictor state from cached embedding
-    yolosam.sync_prompt_embedding(embedding)
-    predictor = yolosam._predictor
+    sam.sync_prompt_embedding(embedding)
+    predictor = sam._predictor
     logger.info("Restored SAM model state from cache")
 
     # ── 3. run SAM for each point ─────────────────────────────────────────────
@@ -577,12 +578,12 @@ async def from_boxes(session_id: str, body: FromBoxesRequest, request: Request):
 
     embedding = _prompt_embedding(session_id, request)
 
-    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-    if yolosam is None:
-        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+    sam = request.app.state.models.get(AvailableModels.mobile_sam.value)
+    if sam is None:
+        raise HTTPException(status_code=500, detail="MobileSAM model not loaded")
 
-    yolosam.sync_prompt_embedding(embedding)
-    predictor = yolosam._predictor
+    sam.sync_prompt_embedding(embedding)
+    predictor = sam._predictor
 
     h_img, w_img = embedding.original_size
     image_area = float(h_img * w_img)
@@ -822,12 +823,12 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     # restore SAM predictor state from cached embedding
     embedding = _prompt_embedding(session_id, request)
 
-    yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-    if yolosam is None:
-        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+    sam = request.app.state.models.get(AvailableModels.mobile_sam.value)
+    if sam is None:
+        raise HTTPException(status_code=500, detail="MobileSAM model not loaded")
 
-    yolosam.sync_prompt_embedding(embedding)
-    predictor = yolosam._predictor
+    sam.sync_prompt_embedding(embedding)
+    predictor = sam._predictor
 
     h_img, w_img = embedding.original_size
     image_area = float(h_img * w_img)
@@ -842,7 +843,7 @@ async def from_points(session_id: str, body: FromPointsRequest, request: Request
     orig_files = list(session_dir.glob("org_*"))
     if orig_files:
         try:
-            base_bgr = cv.cvtColor(yolosam.load_image(orig_files[0]), cv.COLOR_RGB2BGR)
+            base_bgr = cv.cvtColor(sam.load_image(orig_files[0]), cv.COLOR_RGB2BGR)
         except Exception as e:
             logger.warning(f"debug base image load failed: {e}")
 
@@ -1232,12 +1233,12 @@ async def propose_similar(
     embedding = _prompt_embedding(session_id, request)
 
     models = request.app.state.models
-    yolosam = models.get(AvailableModels.yolosam.value)
-    if yolosam is None:
-        raise HTTPException(status_code=500, detail="YoloSAM model not loaded")
+    sam = models.get(AvailableModels.mobile_sam.value)
+    if sam is None:
+        raise HTTPException(status_code=500, detail="MobileSAM model not loaded")
 
-    yolosam.sync_prompt_embedding(embedding)
-    predictor = yolosam._predictor
+    sam.sync_prompt_embedding(embedding)
+    predictor = sam._predictor
 
     h_img, w_img = embedding.original_size
     logger.info(f"Image size {h_img}x{w_img}, restored SAM embedding")
@@ -1504,10 +1505,10 @@ async def sam_status(session_id: str, request: Request) -> SamStatus:
     embedding_cache = request.app.state.embedding_cache
     embedding_model_cache = request.app.state.embedding_model_cache
     return {
-        "weights_exist": Path(settings.SAM_MODEL_PATH).exists(),
-        "sam_loaded": AvailableModels.yolosam in request.app.state.models,
+        "weights_exist": Path(settings.MOBILE_SAM_MODEL_PATH).exists(),
+        "sam_loaded": AvailableModels.mobile_sam in request.app.state.models,
         "embedding_cached": session_id in embedding_cache
-        and embedding_model_cache.get(session_id) == AvailableModels.yolosam,
+        and embedding_model_cache.get(session_id) == AvailableModels.mobile_sam,
     }
 
 
@@ -1523,7 +1524,7 @@ async def prepare_sam(session_id: str, request: Request) -> SamPreparation:
     embedding_model_cache = request.app.state.embedding_model_cache
     if (
         session_id in embedding_cache
-        and embedding_model_cache.get(session_id) == AvailableModels.yolosam
+        and embedding_model_cache.get(session_id) == AvailableModels.mobile_sam
     ):
         return {"status": "ready", "cached": True}
 
@@ -1532,18 +1533,18 @@ async def prepare_sam(session_id: str, request: Request) -> SamPreparation:
         raise HTTPException(status_code=400, detail="No image in session")
 
     if (
-        AvailableModels.yolosam not in request.app.state.models
-        and not Path(settings.SAM_MODEL_PATH).exists()
+        AvailableModels.mobile_sam not in request.app.state.models
+        and not Path(settings.MOBILE_SAM_MODEL_PATH).exists()
     ):
         raise HTTPException(status_code=400, detail="SAM weights not installed")
 
-    # Prompt endpoints use the YoloSAM predictor and its image embedding.
+    # Prompt endpoints use the MobileSAM predictor and its image embedding.
     model = await asyncio.to_thread(
-        get_or_load_model, request.app.state.models, AvailableModels.yolosam
+        get_or_load_model, request.app.state.models, AvailableModels.mobile_sam
     )
     img = await asyncio.to_thread(model.load_image, orig_files[0])
     emb = await asyncio.to_thread(model._sam.encode, img, 12)
     embedding_cache[session_id] = emb
-    embedding_model_cache[session_id] = AvailableModels.yolosam
+    embedding_model_cache[session_id] = AvailableModels.mobile_sam
     logger.info("Prepared SAM embedding", extra={"session_id": session_id})
     return {"status": "ready", "cached": False}

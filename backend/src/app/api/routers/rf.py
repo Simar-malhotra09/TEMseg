@@ -221,9 +221,9 @@ async def rf_propose(req: ProposeRequest, request: Request):
     if not mask_path.exists():
         return {"error": "No mask — run segmentation first"}
 
-    model_inst = request.app.state.models.get(AvailableModels.yolosam)
+    model_inst = request.app.state.models.get(AvailableModels.mobile_sam)
     if model_inst is None:
-        return {"error": "YoloSAM model not available"}
+        return {"error": "MobileSAM model not available"}
 
     image = model_inst.load_image(orig_files[0])
 
@@ -388,10 +388,12 @@ async def batch_propose(
             status_code=503, detail="SAM embedding cache is unavailable"
         )
     if body.session_id not in embedding_cache:
-        yolosam = request.app.state.models.get(AvailableModels.yolosam.value)
-        if yolosam is None:
-            raise HTTPException(status_code=503, detail="YoloSAM model is not loaded")
-        embedding_cache[body.session_id] = yolosam._sam.encode(image, 12)
+        sam = request.app.state.models.get(AvailableModels.mobile_sam.value)
+        if sam is None:
+            raise HTTPException(status_code=503, detail="MobileSAM model is not loaded")
+        embedding_cache[body.session_id] = await run_in_threadpool(
+            sam._sam.encode, image, 12
+        )
     cached = load_instances(session_dir)
     known_areas: list[int] = (
         [int(instance["area"]) for instance in cached[0]] if cached is not None else []

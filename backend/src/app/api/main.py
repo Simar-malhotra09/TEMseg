@@ -41,11 +41,11 @@ log = get_logger("api")
 async def lifespan(app: FastAPI):
     # cleanup_old_sessions(force=True)
 
-    # initalize on startup: only YoloSAM, the default/better model, is loaded
-    # eagerly. YoloMaskRCNN is lazily loaded on first use (see model_registry.py)
-    # to avoid holding both models in RAM at once.
+    # initalize on startup: only the default pipeline (YOLO + MobileSAM) is
+    # loaded eagerly. Other models are lazily loaded on first use (see
+    # model_registry.py) to avoid holding two models in RAM at once.
     app.state.models = {}
-    get_or_load_model(app.state.models, AvailableModels.yolosam)
+    get_or_load_model(app.state.models, AvailableModels.mobile_sam)
     app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.embedding_model_cache: Dict[str, AvailableModels] = {}
     ui_event(
@@ -62,9 +62,9 @@ async def lifespan(app: FastAPI):
 
     def _warm_yolo():
         try:
-            yolosam = app.state.models[AvailableModels.yolosam]
+            pipeline = app.state.models[AvailableModels.mobile_sam]
             dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-            yolosam._yolo.detect(dummy)
+            pipeline._yolo.detect(dummy)
             log.info("YOLO startup warmup complete")
         except Exception as e:
             log.warning(f"YOLO warmup failed (non-fatal): {e}")
@@ -196,8 +196,12 @@ def system_info(request: Request):
 
     device = get_device()
     loaded_models = request.app.state.models
-    yolosam = loaded_models.get(AvailableModels.yolosam)
-    yolo_backend = yolosam._yolo if yolosam is not None else None
+    # any YOLO+SAM pipeline exposes the shared _yolo backend; report from the
+    # default pipeline first
+    yolo_holder = loaded_models.get(AvailableModels.mobile_sam) or loaded_models.get(
+        AvailableModels.yolosam
+    )
+    yolo_backend = yolo_holder._yolo if yolo_holder is not None else None
 
     def role(key, name, backend, weight_paths, required_weight_paths):
         engine = _engine_of(backend)
@@ -304,15 +308,15 @@ def system_info(request: Request):
         )
     )
 
-    prompt_backend = getattr(yolosam, "_prompt_sam", None)
+    prompt_backend = getattr(yolo_holder, "_prompt_sam", None)
     if prompt_backend is not None:
         models.append(
             role(
                 "prompt_sam",
                 "SAM prompts",
                 prompt_backend,
-                [settings.SAM_MODEL_PATH],
-                [settings.SAM_MODEL_PATH],
+                [settings.MOBILE_SAM_MODEL_PATH],
+                [settings.MOBILE_SAM_MODEL_PATH],
             )
         )
 
