@@ -263,8 +263,13 @@ def system_info(request: Request):
     for model_id, weights_path, required_weight_paths in sam_models:
         model_instance = loaded_models.get(model_id)
         sam_backend = getattr(model_instance, "_sam", None)
+        # each variant reports its own coreml packages and torch checkpoint
         sam_weights = (
-            [ENC_PKG, DEC_PKG, settings.SAM_MODEL_PATH]
+            [
+                getattr(model_instance, "COREML_ENC_PKG", ENC_PKG),
+                getattr(model_instance, "COREML_DEC_PKG", DEC_PKG),
+                weights_path,
+            ]
             if _engine_of(sam_backend) == "coreml"
             else [weights_path]
         )
@@ -310,13 +315,18 @@ def system_info(request: Request):
 
     prompt_backend = getattr(yolo_holder, "_prompt_sam", None)
     if prompt_backend is not None:
+        prompt_weights = [
+            settings.MOBILE_SAM_MODEL_PATH
+            if getattr(yolo_holder, "MODEL_ENUM", None) is AvailableModels.mobile_sam
+            else settings.SAM_MODEL_PATH
+        ]
         models.append(
             role(
                 "prompt_sam",
                 "SAM prompts",
                 prompt_backend,
-                [settings.MOBILE_SAM_MODEL_PATH],
-                [settings.MOBILE_SAM_MODEL_PATH],
+                prompt_weights,
+                prompt_weights,
             )
         )
 
