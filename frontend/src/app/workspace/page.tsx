@@ -717,7 +717,7 @@ export default function Workspace() {
               ? "MobileSAM is loaded. Encode this image to use Split Instance and other SAM prompts."
               : null;
   const samCanPrepare = !!sessionId && !samStatusLoading && (!samStatus || samStatus.sam_loaded || samStatus.weights_exist);
-  const samPrepareLabel = samStatus?.sam_loaded ? "Encode Image for SAM" : "Load and Encode SAM";
+  const samPrepareLabel = samStatus?.sam_loaded ? "Encode Image" : "Load and Encode";
 
   async function handlePrepareSam() {
     if (!sessionId) return;
