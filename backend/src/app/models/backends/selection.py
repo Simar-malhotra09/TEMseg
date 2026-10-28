@@ -34,6 +34,9 @@ logger = get_logger("Backends")
 YOLO_PKG = settings.WEIGHTS_DIR / "best12x.mlpackage"
 ENC_PKG = settings.WEIGHTS_DIR / "sam_encoder_vit_b_d12_fp32.mlpackage"
 DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head16_fp32.mlpackage"
+# MobileSAM (TinyViT) variant packages, see model_scripts/sam_coreml_direct
+MOBILE_ENC_PKG = settings.WEIGHTS_DIR / "sam_encoder_mobile_vit_t_fp32.mlpackage"
+MOBILE_DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_mobile_head16_fp32.mlpackage"
 
 _backend_cache: dict[tuple, tuple[YoloBackend, SamBackend, SamBackend | None]] = {}
 
@@ -106,23 +109,28 @@ def choose_backends(
     device: str,
     faster: bool,
     use_coreml_sam: bool,
+    enc_pkg=None,
+    dec_pkg=None,
 ) -> tuple[YoloBackend, SamBackend, SamBackend | None]:
     """(yolo, sam, prompt_sam). prompt_sam is a torch SAM for point-prompt
     endpoints; it may be the same object as sam on the classic path.
+    enc_pkg/dec_pkg select the CoreML sam variant (vit_b by default).
     Cached: same key -> same instances, no recompile."""
     yolo = choose_yolo_backend(components, device)
-    if use_coreml_sam and coreml_available():
+    enc = enc_pkg if enc_pkg is not None else ENC_PKG
+    dec = dec_pkg if dec_pkg is not None else DEC_PKG
+    if use_coreml_sam and coreml_available() and enc.exists() and dec.exists():
         key = (
             "coreml",
             str(YOLO_PKG),
-            str(ENC_PKG),
-            str(DEC_PKG),
+            str(enc),
+            str(dec),
             id(components["sam"]),
             device,
         )
         if key in _backend_cache:
             return _backend_cache[key]
-        sam: SamBackend = CoreMLSamBackend(ENC_PKG, DEC_PKG, device)
+        sam: SamBackend = CoreMLSamBackend(enc, dec, device)
         # ram_bytes only makes sense for in-process backends: CoreML memory
         # lives in the ANE driver process, so its RSS delta would be a lie.
         # The torch sam's number is measured at the weight load site

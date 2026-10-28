@@ -18,6 +18,8 @@ from app.api.live_models import AvailableModels
 from app.logutils import Timer, get_logger
 from app.models.backends.base import SamEmbedding
 from app.models.backends.selection import (
+    DEC_PKG,
+    ENC_PKG,
     choose_backends,
     coreml_available,
     device_allocated_bytes,
@@ -45,6 +47,9 @@ class YoloSam(Model):
     # so the shared segment()/segment_batch() implementations stay reusable.
     MODEL_ENUM = AvailableModels.yolosam
     USE_COREML_SAM = True
+    # which CoreML sam packages this variant runs (vit_b by default)
+    COREML_ENC_PKG = ENC_PKG
+    COREML_DEC_PKG = DEC_PKG
 
     def __init__(
         self,
@@ -64,6 +69,8 @@ class YoloSam(Model):
             device,
             faster=_faster,
             use_coreml_sam=self.USE_COREML_SAM,
+            enc_pkg=self.COREML_ENC_PKG,
+            dec_pkg=self.COREML_DEC_PKG,
         )
 
     @property
