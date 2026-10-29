@@ -19,6 +19,7 @@ from app.api.routers import (
     rf,
     config,
     sessions,
+    comparison_outputs,
 )
 from app.api.live_models import AvailableModels
 from app.api.model_registry import get_device, get_or_load_model
@@ -139,6 +140,7 @@ app.include_router(export.router)
 app.include_router(rf.router)
 app.include_router(config.router)
 app.include_router(sessions.router)
+app.include_router(comparison_outputs.router)
 
 
 @app.get("/")

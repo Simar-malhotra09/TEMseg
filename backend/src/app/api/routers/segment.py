@@ -20,6 +20,10 @@ from app.api.utils import (
 )
 from app.api.instances import extract_instances, colorize_labeled_mask
 from app.api.utils import validate_session_id
+from app.api.routers.comparison_outputs import (
+    prepare_append_snapshot,
+    save_segment_output,
+)
 from app.logutils import Timer, get_logger, ui_event
 
 
@@ -41,6 +45,7 @@ class SegmentRequest(BaseModel):
     blackout: bool = False
     inverse_blackout: bool = False
     colorize: bool = True  # colorize masks for overlay
+    append_output: bool = False
 
 
 class SegmentResponse(BaseModel):
@@ -108,7 +113,9 @@ async def segment(req: SegmentRequest, request: Request):
             detail="Choose either exclude regions or keep regions, not both",
         )
     if req.inverse_blackout and not req.regions:
-        raise HTTPException(status_code=422, detail="Select at least one region to keep")
+        raise HTTPException(
+            status_code=422, detail="Select at least one region to keep"
+        )
 
     action = (
         "blackout"
@@ -126,6 +133,9 @@ async def segment(req: SegmentRequest, request: Request):
     session_dir = SESSIONS_DIR / validate_session_id(req.session_id)
     if not session_dir.exists():
         return {"error": "Invalid session"}
+
+    if req.append_output:
+        prepare_append_snapshot(session_dir)
 
     orig_files = list(session_dir.glob("org_*"))
     if not orig_files:
@@ -385,6 +395,8 @@ async def segment(req: SegmentRequest, request: Request):
         "edit_count": 0,
     }
     meta_path.write_text(json.dumps(meta, indent=2))
+
+    save_segment_output(session_dir, req.model.value, elapsed, req.append_output)
 
     ui_event(
         "SEGMENT_DONE",
