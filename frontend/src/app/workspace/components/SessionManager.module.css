@@ -21,17 +21,6 @@
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
-.header h2 { margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
-.header p { margin: 5px 0 0; color: var(--text-faint); font-size: 10px; }
 .closeButton { display: grid; place-items: center; padding: 4px; border: 0; color: var(--text-dim); background: transparent; cursor: pointer; }
 .closeButton:hover { color: var(--text); }
 
@@ -51,6 +40,9 @@
 .listHeader > div { display: flex; gap: 4px; }
 .listHeader button { padding: 4px 7px; border: 1px solid transparent; color: var(--text-faint); background: transparent; font: inherit; font-size: 9px; text-transform: none; cursor: pointer; }
 .listHeader button:hover,.listHeader .sortActive { border-color: var(--border); color: var(--text); background: var(--bg-sidebar); }
+.listHeader .deleteAllButton { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; color: #e87e7e; }
+.listHeader .deleteAllButton:hover { border-color: rgba(232, 126, 126, 0.45); color: #f39a9a; }
+.listHeader .deleteAllButton:disabled { opacity: 0.35; cursor: default; }
 
 .sessionList { min-height: 120px; overflow: auto; }
 .sessionRow { min-height: 38px; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(130px, auto) 70px 28px 28px; align-items: center; gap: 12px; padding: 4px 18px; border-bottom: 1px solid var(--border-soft); }

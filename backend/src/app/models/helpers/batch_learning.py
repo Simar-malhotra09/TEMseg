@@ -34,7 +34,7 @@ class BatchExample(BaseModel):
     image_shape: tuple[int, int]
     pixel_count: int
     feature_count: int
-    source_kind: Literal["strokes", "instances"]
+    source_kind: Literal["strokes", "instances", "group_masks"]
     strokes: list[Stroke]
     instance_ids: list[int]
 

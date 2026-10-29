@@ -122,9 +122,10 @@ def session_storage() -> SessionStorageInfo:
     sessions: list[ManagedSession] = []
     if storage_dir.is_dir():
         for session_dir in storage_dir.iterdir():
-            if not session_dir.is_dir() or not (
-                session_dir / "metadata.json"
-            ).is_file():
+            if (
+                not session_dir.is_dir()
+                or not (session_dir / "metadata.json").is_file()
+            ):
                 continue
             sessions.append(
                 ManagedSession(
@@ -250,6 +251,21 @@ def rename_session(session_id: str, req: RenameRequest):
     meta["file_name"] = name
     meta_path.write_text(json.dumps(meta, indent=2))
     return {"session_id": session_id, "file_name": name}
+
+
+@router.delete("/sessions")
+def delete_all_sessions() -> dict[str, int]:
+    storage_dir = SESSIONS_DIR.resolve()
+    if not storage_dir.is_dir():
+        return {"deleted_count": 0}
+    session_ids = [
+        session_dir.name
+        for session_dir in storage_dir.iterdir()
+        if session_dir.is_dir() and (session_dir / "metadata.json").is_file()
+    ]
+    for session_id in session_ids:
+        delete_session(session_id)
+    return {"deleted_count": len(session_ids)}
 
 
 @router.delete("/sessions/{session_id}")

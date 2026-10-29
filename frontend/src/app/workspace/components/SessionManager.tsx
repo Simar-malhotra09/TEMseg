@@ -9,6 +9,7 @@ interface Props {
   storage: SessionStorageInfo;
   onClose: () => void;
   onDelete: (sessionId: string) => void;
+  onDeleteAll: () => void;
   onCopySessionPath: (storagePath: string) => void;
 }
 
@@ -35,7 +36,7 @@ function formatLastUsed(timestamp: number | null): string {
   }).format(new Date(timestamp * 1000));
 }
 
-export default function SessionManager({ storage, onClose, onDelete, onCopySessionPath }: Props) {
+export default function SessionManager({ storage, onClose, onDelete, onDeleteAll, onCopySessionPath }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>("size");
   const sessions = useMemo(() => [...storage.sessions].sort((left, right) => {
     if (sortMode === "size") return right.size_bytes - left.size_bytes;
@@ -48,19 +49,9 @@ export default function SessionManager({ storage, onClose, onDelete, onCopySessi
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="session-manager-title"
+        aria-label="Manage sessions"
         onClick={event => event.stopPropagation()}
       >
-        <header className={styles.header}>
-          <div>
-            <h2 id="session-manager-title">Manage sessions</h2>
-            <p>Delete saved session data to free space on this device.</p>
-          </div>
-          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close session manager">
-            <X size={16} />
-          </button>
-        </header>
-
         <div className={styles.summary}>
           <div><span>Sessions</span><strong>{storage.session_count}</strong></div>
           <div><span>Session data</span><strong>{formatStorageBytes(storage.total_size_bytes)}</strong></div>
@@ -71,12 +62,23 @@ export default function SessionManager({ storage, onClose, onDelete, onCopySessi
             <span className={styles.locationLabel}>Storage location</span>
             <code>{storage.storage_dir}</code>
           </div>
+          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="Close session manager">
+            <X size={16} />
+          </button>
         </div>
         <p className={styles.note}>Model weights are stored separately and are not included in this total. Deleting a session also removes it from its group.</p>
 
         <div className={styles.listHeader}>
           <span>Saved sessions</span>
           <div role="group" aria-label="Sort sessions">
+            <button
+              type="button"
+              className={styles.deleteAllButton}
+              onClick={onDeleteAll}
+              disabled={storage.session_count === 0}
+            >
+              <Trash2 size={12} /> Delete all
+            </button>
             <button type="button" className={sortMode === "size" ? styles.sortActive : ""} onClick={() => setSortMode("size")}>Largest</button>
             <button type="button" className={sortMode === "last-used" ? styles.sortActive : ""} onClick={() => setSortMode("last-used")}>Last used</button>
           </div>

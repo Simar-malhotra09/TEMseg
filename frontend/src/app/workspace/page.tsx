@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getSessionStorage, SessionStorageInfo, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getSessionStorage, SessionStorageInfo, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, deleteAllSessions, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -632,6 +632,20 @@ export default function Workspace() {
       } catch (err) {
         pushToast("err", "Batch learning status refresh failed", (err as Error).message);
       }
+    }
+  }
+
+  async function handleDeleteAllSessions() {
+    const count = sessionStorage?.session_count ?? 0;
+    if (count === 0) return;
+    if (!window.confirm(`Delete all ${count} sessions and their saved data permanently?`)) return;
+    try {
+      const result = await deleteAllSessions();
+      await refreshLists();
+      pushToast("ok", `${result.deleted_count} sessions deleted`);
+    } catch (err) {
+      await refreshLists();
+      pushToast("err", "Delete all failed", (err as Error).message);
     }
   }
 
@@ -4302,6 +4316,7 @@ export default function Workspace() {
             storage={sessionStorage}
             onClose={() => setSessionManagerOpen(false)}
             onDelete={sessionId => { void handleDeleteSession(sessionId, sessionId); }}
+            onDeleteAll={() => { void handleDeleteAllSessions(); }}
             onCopySessionPath={storagePath => {
               void navigator.clipboard.writeText(storagePath)
                 .then(() => pushToast("ok", "Session folder path copied"))

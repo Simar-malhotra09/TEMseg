@@ -576,6 +576,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await mutate(`/sessions/${sessionId}`, "DELETE");
 }
 
+export async function deleteAllSessions(): Promise<{ deleted_count: number }> {
+  const res = await trackedFetch(`${BASE_URL}/sessions`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`deleteAllSessions: ${res.status}`);
+  return res.json();
+}
+
 export async function renameGroup(groupId: string, name: string): Promise<void> {
   await mutate(`/groups/${groupId}`, "PATCH", { name });
 }
