@@ -67,12 +67,14 @@
 .comparisonStat { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 34px; padding-right: 14px; border-right: 1px solid var(--border); white-space: nowrap; }
 .comparisonStat strong { color: var(--text); font-size: 9px; font-weight: 600; }
 .comparisonStat span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: 9px; }
-.findingExplorer { min-height: 112px; max-height: 160px; padding-top: 6px; padding-bottom: 6px; align-items: stretch; overflow: hidden; }
+.findingExplorer { min-height: 112px; max-height: 160px; display: grid; grid-template-columns: minmax(240px, 27%) minmax(0, 1fr); align-items: stretch; gap: 12px; padding: 6px 16px; overflow: hidden; }
+.regionControls { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding-right: 12px; border-right: 1px solid var(--border); }
 .regionNavigation { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .regionNavigation span { min-width: 68px; color: var(--text-faint); font-size: 9px; text-align: center; }
-.regionGapControl { display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: var(--text-faint); font-size: 9px; white-space: nowrap; }
-.regionGapControl input { width: 82px; accent-color: var(--accent); }
+.regionGapControl { display: grid; grid-template-columns: auto minmax(46px, 1fr) auto; align-items: center; gap: 6px; color: var(--text-faint); font-size: 9px; white-space: nowrap; }
+.regionGapControl input { width: 100%; min-width: 0; accent-color: var(--accent); }
 .findingDetails { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; overflow: hidden; }
+.emptyRegionState { align-self: center; color: var(--text-faint); }
 .regionTitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .regionTitle strong { color: var(--accent); font-size: 9px; letter-spacing: 0.06em; }
 .regionTitle span { color: var(--text-faint); font-size: 9px; }
@@ -198,6 +200,8 @@
   .toolbarTitle { min-width: unset; }
   .referenceControl { order: 4; }
   .opacityControl { margin-left: 0; }
+  .findingExplorer { grid-template-columns: minmax(190px, 32%) minmax(0, 1fr); gap: 8px; padding-right: 8px; padding-left: 8px; }
+  .regionControls { padding-right: 8px; }
   .layoutTwo { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
   .layoutThree .pane:first-child { grid-row: auto; }
   .layoutThree,

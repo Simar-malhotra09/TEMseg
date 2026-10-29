@@ -385,16 +385,18 @@ export default function SplitWorkspaceView({
         </div>
       )}
       <div className={styles.findingExplorer}>
-        <div className={styles.regionNavigation}>
-          <button type="button" onClick={() => focusRegion(regionIndex - 1)} disabled={regions.length === 0} aria-label="Previous region"><ChevronLeft size={14} /></button>
-          <button type="button" onClick={() => focusRegion(regionIndex + 1)} disabled={regions.length === 0} aria-label="Next region"><ChevronRight size={14} /></button>
-          <span>{activeRegion ? `Region ${regionIndex + 1} / ${regions.length}` : "Regions"}</span>
+        <div className={styles.regionControls}>
+          <div className={styles.regionNavigation}>
+            <button type="button" onClick={() => focusRegion(regionIndex - 1)} disabled={regions.length === 0} aria-label="Previous region"><ChevronLeft size={14} /></button>
+            <button type="button" onClick={() => focusRegion(regionIndex + 1)} disabled={regions.length === 0} aria-label="Next region"><ChevronRight size={14} /></button>
+            <span>{activeRegion ? `Region ${regionIndex + 1} / ${regions.length}` : "Regions"}</span>
+          </div>
+          <label className={styles.regionGapControl}>
+            <span>Group within</span>
+            <input type="range" min={0.5} max={3} step={0.25} value={regionGap} onChange={event => { setRegionGap(Number(event.target.value)); setRegionIndex(0); }} />
+            <span>{regionGap.toFixed(2)} diameters</span>
+          </label>
         </div>
-        <label className={styles.regionGapControl}>
-          <span>Group within</span>
-          <input type="range" min={0.5} max={3} step={0.25} value={regionGap} onChange={event => { setRegionGap(Number(event.target.value)); setRegionIndex(0); }} />
-          <span>{regionGap.toFixed(2)} diameters</span>
-        </label>
         {activeRegion ? (
           <div className={styles.findingDetails}>
             <div className={styles.regionTitle}>
@@ -424,7 +426,7 @@ export default function SplitWorkspaceView({
             </div>
           </div>
         ) : (
-          <span>{outputs.length < 2 ? "Select at least two outputs to navigate regions." : canCompareOutputs ? "No particle differences found for this reference." : "Region navigation needs labeled masks for every output."}</span>
+          <div className={styles.emptyRegionState}>{outputs.length < 2 ? "Select at least two outputs to navigate regions." : canCompareOutputs ? "No particle differences found for this reference." : "Region navigation needs labeled masks for every output."}</div>
         )}
       </div>
       <div className={`${styles.grid} ${layoutClassName(outputs.length)}`}>
