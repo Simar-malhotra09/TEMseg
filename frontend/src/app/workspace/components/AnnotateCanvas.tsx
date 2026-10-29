@@ -18,16 +18,17 @@ interface Props {
   // in image-space coordinates. Caller is responsible for turning it into a
   // pending proposal.
   onPolygonComplete: (contour: [number, number][]) => void;
+  onRejectProposal: (id: number) => void;
 }
 
 type ViewBox = { x: number; y: number; w: number; h: number };
 
 /**
- * Click to place a vertex, double-click or Enter to close, Backspace to undo
- * the last vertex, Esc to cancel the in-progress polygon. Hold Space to pan,
- * wheel to zoom (cursor stays under the same image pixel). Closed polygons
- * leave the canvas via onPolygonComplete; in-progress vertices live in
- * component state.
+ * Click to place a vertex, or click a pending proposal to reject it.
+ * Double-click or Enter closes a polygon, Backspace undoes the last vertex,
+ * and Esc cancels the in-progress polygon. Hold Space to pan, wheel to zoom
+ * (cursor stays under the same image pixel). Closed polygons leave the canvas
+ * via onPolygonComplete; in-progress vertices live in component state.
  *
  * The SVG viewBox is in image-space and shrinks/translates on zoom/pan, so
  * downstream logic always sees real image coordinates regardless of how the
@@ -42,6 +43,7 @@ export default function AnnotateCanvas({
   existingInstances,
   pendingProposals,
   onPolygonComplete,
+  onRejectProposal,
 }: Props) {
   const [vertices, setVertices] = useState<[number, number][]>([]);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
@@ -293,8 +295,14 @@ export default function AnnotateCanvas({
             fill="rgba(255, 209, 102, 0.15)"
             stroke="#ffd166"
             strokeWidth={strokeW}
-            pointerEvents="none"
-          />
+            style={{ pointerEvents: "auto", cursor: "pointer" }}
+            onClick={event => {
+              event.stopPropagation();
+              onRejectProposal(p.id);
+            }}
+          >
+            <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
+          </polygon>
         );
       })}
       {vertices.length >= 2 && (

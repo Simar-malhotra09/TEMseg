@@ -14,9 +14,10 @@ interface Props {
   // Already-committed instances on disk — rendered as semi-transparent green
   // context so the user can see what's been annotated already.
   existingInstances: Instance[];
-  // Not-yet-committed proposals — yellow outlines for context. Reject UI
-  // lives in the sidebar; clicks here are reserved for drag-to-box.
+  // Not-yet-committed proposals — click one to reject it. Other clicks draw
+  // a new box prompt.
   pendingProposals: Instance[];
+  onRejectProposal: (id: number) => void;
   // Called on mouseup with the finalized box in image coords. The caller is
   // responsible for sending it to /from-boxes and adding the result to
   // pendingProposals.
@@ -40,6 +41,7 @@ export default function BoxAnnotateCanvas({
   busy,
   existingInstances,
   pendingProposals,
+  onRejectProposal,
   onBoxDrawn,
 }: Props) {
   const [viewBox, setViewBox] = useState<ViewBox>({
@@ -271,8 +273,16 @@ export default function BoxAnnotateCanvas({
             fill="rgba(255, 209, 102, 0.15)"
             stroke="#ffd166"
             strokeWidth={strokeW}
-            pointerEvents="none"
-          />
+            style={{ pointerEvents: "auto", cursor: "pointer" }}
+            onMouseDown={event => event.stopPropagation()}
+            onMouseUp={event => event.stopPropagation()}
+            onClick={event => {
+              event.stopPropagation();
+              onRejectProposal(p.id);
+            }}
+          >
+            <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
+          </polygon>
         );
       })}
       {drag && (

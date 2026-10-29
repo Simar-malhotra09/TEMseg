@@ -1266,6 +1266,7 @@ export default function Workspace() {
 
   function handleRejectProposal(id: number) {
     setPendingProposals(prev => prev.filter(p => p.id !== id));
+    setStatus(`Removed proposal #${id} from the pending set.`);
   }
 
   // Turn a manually-drawn polygon into a pending proposal. IDs are placeholder
@@ -3393,6 +3394,7 @@ export default function Workspace() {
                     imageFilter={imgFilter}
                     existingInstances={loadedInstances}
                     pendingProposals={pendingProposals}
+                    onRejectProposal={handleRejectProposal}
                     onPolygonComplete={handlePolygonComplete}
                   />
                 )}
@@ -3409,6 +3411,7 @@ export default function Workspace() {
                     busy={bootstrapBusy}
                     existingInstances={loadedInstances}
                     pendingProposals={pendingProposals}
+                    onRejectProposal={handleRejectProposal}
                     onBoxDrawn={handleBoxDrawn}
                   />
                 )}
