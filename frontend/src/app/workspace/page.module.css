@@ -437,6 +437,8 @@ margin-bottom: 2px;
   cursor: pointer;
 }
 .settingsCfg:hover { background: var(--bg-hover); color: var(--text); }
+.settingsCfg:disabled { opacity: 0.4; cursor: not-allowed; }
+.settingsCfg:disabled:hover { background: none; color: var(--text-faint); }
 .settingsWeight { padding-left: 14px; }
 .settingsWeightName {
   font-size: 10px;

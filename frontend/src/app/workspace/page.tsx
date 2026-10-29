@@ -4110,14 +4110,18 @@ export default function Workspace() {
                           </span>
                           <span className={styles.settingsNum}>
                             {group.loaded
-                              ? group.ram_bytes ? `${formatBytes(group.ram_bytes)} · loaded` : "loaded"
+                              ? group.ram_bytes ? `~${formatBytes(group.ram_bytes)} · loaded` : "loaded"
                               : "not loaded"}
                           </span>
                           <button
                             type="button"
                             className={styles.settingsCfg}
-                            disabled={!group.can_eject || ejectingSegmentorGroup !== null || isBlocked}
-                            title={group.loaded && !group.can_eject ? "At least one segmentor must stay loaded." : undefined}
+                            disabled={!group.loaded || !group.can_eject || ejectingSegmentorGroup !== null || isBlocked}
+                            title={!group.loaded
+                              ? "This segmentor is not loaded."
+                              : !group.can_eject
+                                ? "At least one segmentor must stay loaded."
+                                : undefined}
                             onClick={() => void handleEjectSegmentorGroup(group.id)}
                           >
                             {ejectingSegmentorGroup === group.id ? "ejecting…" : "eject"}
@@ -4137,26 +4141,26 @@ export default function Workspace() {
                       <div className={styles.settingsRow}>
                         <span
                           className={styles.settingsKey}
-                          title="Live resident memory for the backend process. Device and driver memory may not be included."
+                          title="Estimated live resident memory for the backend process only. Child processes and device or driver memory may not be included."
                         >
                           ram (live)
                         </span>
                         <span className={styles.settingsVal}>
-                          {systemMemory ? formatBytes(systemMemory.current_rss_bytes) : "reading…"}
+                          {systemMemory ? `~${formatBytes(systemMemory.current_rss_bytes)}` : "reading…"}
                         </span>
                       </div>
                       <div className={styles.settingsRow}>
                         <span
                           className={styles.settingsKey}
-                          title="Highest resident memory used by the backend process since it started. Device and driver memory may not be included."
+                          title="Estimated highest resident memory used by the backend process only since it started. Child processes and device or driver memory may not be included."
                         >
                           ram (peak)
                         </span>
                         <span className={styles.settingsVal}>
                           {systemMemory?.peak_rss_bytes != null
-                            ? formatBytes(systemMemory.peak_rss_bytes)
+                            ? `~${formatBytes(systemMemory.peak_rss_bytes)}`
                             : systemInfo.peak_rss_bytes != null
-                              ? formatBytes(systemInfo.peak_rss_bytes)
+                              ? `~${formatBytes(systemInfo.peak_rss_bytes)}`
                               : "unavailable"}
                         </span>
                       </div>
