@@ -702,6 +702,25 @@ export async function saveYoloSettings(
   if (!res.ok) throw new Error(`saveYoloSettings: ${res.status}`);
 }
 
+export interface UIPreferences {
+  hide_comparison_reset_warning: boolean;
+}
+
+export async function getUiPreferences(): Promise<UIPreferences> {
+  const res = await trackedFetch(`${BASE_URL}/config/ui-preferences`);
+  if (!res.ok) throw new Error(`getUiPreferences: ${res.status}`);
+  return res.json();
+}
+
+export async function saveUiPreferences(preferences: UIPreferences): Promise<void> {
+  const res = await trackedFetch(`${BASE_URL}/config/ui-preferences`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(preferences),
+  });
+  if (!res.ok) throw new Error(`saveUiPreferences: ${res.status}`);
+}
+
 export interface FromPointsResponse {
   proposals: Instance[];
   rejected: { index: number; reason: string }[];

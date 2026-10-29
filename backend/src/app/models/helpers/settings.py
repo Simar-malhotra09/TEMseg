@@ -52,6 +52,11 @@ def app_support_yolo_config_path() -> Path:
     return app_data_dir() / "yolo_config.json"
 
 
+def app_support_ui_preferences_path() -> Path:
+    """Platform-appropriate path for user interface preferences."""
+    return app_data_dir() / "ui_preferences.json"
+
+
 def bundled_shape_config_path() -> Path:
     """Default shape_config.toml shipped next to compute_stats.py."""
     return Path(__file__).resolve().parent / "shape_config.toml"

@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -81,7 +81,6 @@ type ToastKind = "ok" | "info" | "warn" | "err";
 interface ToastMsg { id: number; kind: ToastKind; title: string; desc?: string }
 
 const TOAST_DURATION = 2500;
-const RESET_COMPARISON_WARNING_KEY = "temseg-hide-comparison-reset-warning";
 const TOAST_CLASS: Record<ToastKind, string> = {
   ok: styles.toastOk, info: styles.toastInfo, warn: styles.toastWarn, err: styles.toastErr,
 };
@@ -315,6 +314,11 @@ export default function Workspace() {
     setToasts(prev => [...prev.slice(-3), { id, kind, title, desc }]);
   };
   const removeToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
+  useEffect(() => {
+    getUiPreferences()
+      .then(preferences => setDontShowResetComparisonWarning(preferences.hide_comparison_reset_warning))
+      .catch(error => console.warn("Could not load UI preferences:", error));
+  }, []);
 
   // metadata
   const [metadata, setMetadata] = useState<Metadata | null>(null);
@@ -1062,7 +1066,7 @@ export default function Workspace() {
     if (!selectedModel) return;
     if (
       seg.comparisonOutputs.length > 1 &&
-      localStorage.getItem(RESET_COMPARISON_WARNING_KEY) !== "true"
+      !dontShowResetComparisonWarning
     ) {
       setResetComparisonWarningOpen(true);
       return;
@@ -1070,20 +1074,27 @@ export default function Workspace() {
     await runModelSegmentation(selectedModel, false);
   }
 
-  function rememberResetComparisonWarningChoice() {
-    if (dontShowResetComparisonWarning) {
-      localStorage.setItem(RESET_COMPARISON_WARNING_KEY, "true");
+  async function saveResetWarningChoice(): Promise<boolean> {
+    if (!dontShowResetComparisonWarning) return true;
+    try {
+      await saveUiPreferences({ hide_comparison_reset_warning: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save UI preference.";
+      setStatus(message);
+      pushToast("err", "Could not save preference", message);
+      return false;
     }
   }
 
   async function handleConfirmResetComparison() {
-    rememberResetComparisonWarningChoice();
+    if (!(await saveResetWarningChoice())) return;
     setResetComparisonWarningOpen(false);
     if (selectedModel) await runModelSegmentation(selectedModel, false);
   }
 
   async function handleAppendFromResetWarning() {
-    rememberResetComparisonWarningChoice();
+    if (!(await saveResetWarningChoice())) return;
     setResetComparisonWarningOpen(false);
     if (selectedModel) await runModelSegmentation(selectedModel, true);
   }

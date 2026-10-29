@@ -13,6 +13,7 @@ from app.models.helpers.settings import (
     app_support_shape_config_path,
     app_support_shape_configs_dir,
     app_support_yolo_config_path,
+    app_support_ui_preferences_path,
     bundled_shape_config_path,
     settings,
 )
@@ -170,6 +171,27 @@ class YoloOverridesIn(BaseModel):
     conf: float | None = Field(None, ge=0.0, le=1.0)
     iou: float | None = Field(None, ge=0.0, le=1.0)
     max_det: int | None = Field(None, ge=1)
+
+
+class UIPreferences(BaseModel):
+    hide_comparison_reset_warning: bool = False
+
+
+@router.get("/ui-preferences", response_model=UIPreferences)
+async def get_ui_preferences() -> UIPreferences:
+    path = app_support_ui_preferences_path()
+    if not path.exists():
+        return UIPreferences()
+    return UIPreferences.model_validate_json(path.read_text())
+
+
+@router.put("/ui-preferences", response_model=UIPreferences)
+async def update_ui_preferences(req: UIPreferences) -> UIPreferences:
+    path = app_support_ui_preferences_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(req.model_dump_json(indent=2))
+    logger.info("Saved UI preferences")
+    return req
 
 
 def _load_yolo_config() -> dict:
