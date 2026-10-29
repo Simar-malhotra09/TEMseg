@@ -292,9 +292,9 @@ export default function SplitWorkspaceView({
         (stage.clientHeight * 0.88) / (paddedRegionHeight * imageScale),
       );
       const preferredZoom = outputs.length === 4
-        ? 3
+        ? 3.5
         : outputs.length === 3 && output.id !== referenceOutput?.id
-          ? 2.5
+          ? 3
           : 2;
       const zoom = Math.max(1, Math.min(4, preferredZoom, zoomToFitRegion));
       const desiredX = -((region.centerX / imageWidth) - 0.5) * displayedWidth * zoom;
