@@ -1,23 +1,26 @@
+import asyncio
 import math
 from pathlib import Path
 
 import cv2 as cv
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from skimage.feature import blob_log
 
 from app.api.instances import extract_instances, load_instances
 from app.api.live_models import AvailableModels
+from app.api.model_registry import get_or_load_model, model_operation
 from app.api.routers.masks import FromPointsRequest, box_sweep_widths, from_points
 from app.api.routers.sessions import get_group
 from app.api.utils import Stroke, mask_iou, strokes_to_mask, validate_session_id
 from app.logutils import Timer, get_logger
 from app.models.helpers import batch_learning, rf_cache
+from app.models.helpers.image_io import load_rgb_uint8
 from app.models.impls.rf_recovery import RFRecovery
 from app.models.impls.yolosam import YoloSam
 
-router = APIRouter(prefix="/rf")
+router = APIRouter(prefix="/rf", dependencies=[Depends(model_operation)])
 logger = get_logger("rf")
 SESSIONS_DIR = Path("sessions")
 
@@ -221,11 +224,7 @@ async def rf_propose(req: ProposeRequest, request: Request):
     if not mask_path.exists():
         return {"error": "No mask — run segmentation first"}
 
-    model_inst = request.app.state.models.get(AvailableModels.mobile_sam)
-    if model_inst is None:
-        return {"error": "MobileSAM model not available"}
-
-    image = model_inst.load_image(orig_files[0])
+    image = load_rgb_uint8(orig_files[0])
 
     mask_gray = cv.imread(str(mask_path), cv.IMREAD_GRAYSCALE)
     if mask_gray is None:
@@ -388,11 +387,16 @@ async def batch_propose(
             status_code=503, detail="SAM embedding cache is unavailable"
         )
     if body.session_id not in embedding_cache:
-        sam = request.app.state.models.get(AvailableModels.mobile_sam.value)
-        if sam is None:
-            raise HTTPException(status_code=503, detail="MobileSAM model is not loaded")
-        embedding_cache[body.session_id] = await run_in_threadpool(
-            sam._sam.encode, image, 12
+        sam = await asyncio.to_thread(
+            get_or_load_model,
+            request.app.state.models,
+            request.app.state.model_components,
+            AvailableModels.mobile_sam,
+        )
+        embedding_cache[body.session_id] = await asyncio.to_thread(
+            sam._sam.encode,
+            image,
+            12,
         )
     cached = load_instances(session_dir)
     known_areas: list[int] = (

@@ -38,7 +38,8 @@ DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_head16_fp32.mlpackage"
 MOBILE_ENC_PKG = settings.WEIGHTS_DIR / "sam_encoder_mobile_vit_t_fp32.mlpackage"
 MOBILE_DEC_PKG = settings.WEIGHTS_DIR / "sam_decoder_mobile_head16_fp32.mlpackage"
 
-_backend_cache: dict[tuple, tuple[YoloBackend, SamBackend, SamBackend | None]] = {}
+_yolo_backend_cache: dict[tuple, YoloBackend] = {}
+_sam_backend_cache: dict[tuple, tuple[SamBackend, SamBackend | None]] = {}
 
 
 def process_peak_rss_bytes() -> int | None:
@@ -94,14 +95,13 @@ def choose_yolo_backend(components: Dict[str, Any], device: str) -> YoloBackend:
         key = ("coreml-yolo", str(YOLO_PKG))
     else:
         key = ("classic-yolo", id(components["yolo"]), device)
-    if key not in _backend_cache:
-        backend = (
+    if key not in _yolo_backend_cache:
+        _yolo_backend_cache[key] = (
             CoreMLYoloBackend(YOLO_PKG)
             if coreml_available()
             else OrtYoloBackend(components["yolo"], device)
         )
-        _backend_cache[key] = backend
-    return _backend_cache[key]
+    return _yolo_backend_cache[key]
 
 
 def choose_backends(
@@ -128,8 +128,9 @@ def choose_backends(
             id(components["sam"]),
             device,
         )
-        if key in _backend_cache:
-            return _backend_cache[key]
+        if key in _sam_backend_cache:
+            sam, prompt_sam = _sam_backend_cache[key]
+            return yolo, sam, prompt_sam
         sam: SamBackend = CoreMLSamBackend(enc, dec, device)
         # ram_bytes only makes sense for in-process backends: CoreML memory
         # lives in the ANE driver process, so its RSS delta would be a lie.
@@ -137,15 +138,23 @@ def choose_backends(
         # (yolosam components build) and stashed on the module itself.
         prompt_sam = TorchSamBackend(components["sam"], device)
         prompt_sam.ram_bytes = getattr(components["sam"], "ram_bytes", None)
-        cached = (yolo, sam, prompt_sam)
-        _backend_cache[key] = cached
-        return cached
+        _sam_backend_cache[key] = (sam, prompt_sam)
+        return yolo, sam, prompt_sam
     key = ("classic", faster, id(yolo), id(components["sam"]), device)
-    if key in _backend_cache:
-        return _backend_cache[key]
+    if key in _sam_backend_cache:
+        sam, prompt_sam = _sam_backend_cache[key]
+        return yolo, sam, prompt_sam
     sam_cls = FasterTorchSamBackend if faster else TorchSamBackend
     sam = sam_cls(components["sam"], device)
     sam.ram_bytes = getattr(components["sam"], "ram_bytes", None)
-    cached = (yolo, sam, None)
-    _backend_cache[key] = cached
-    return cached
+    _sam_backend_cache[key] = (sam, None)
+    return yolo, sam, None
+
+
+def evict_sam_backends(sam_component: Any) -> None:
+    """Drop cached SAM backends for one underlying segmentor component."""
+    component_id = id(sam_component)
+    for key in list(_sam_backend_cache):
+        cached_component_id = key[4] if key[0] == "coreml" else key[3]
+        if cached_component_id == component_id:
+            del _sam_backend_cache[key]

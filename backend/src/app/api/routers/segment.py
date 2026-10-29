@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Dict, Any, Literal
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 import json
 import time
 import cv2 as cv
@@ -9,7 +9,7 @@ import numpy as np
 
 # from app.models.base_model import  StatType, StatsConfig
 from app.api.live_models import AvailableModels
-from app.api.model_registry import get_or_load_model
+from app.api.model_registry import get_or_load_model, model_operation
 from app.api.utils import (
     Box,
     normalize_mask,
@@ -58,7 +58,7 @@ class SegmentResponse(BaseModel):
     warning: str | None = None
 
 
-router = APIRouter(prefix="/segment")
+router = APIRouter(prefix="/segment", dependencies=[Depends(model_operation)])
 logger = get_logger("segment")
 SESSIONS_DIR = Path("sessions")
 
@@ -89,7 +89,10 @@ async def segment(req: SegmentRequest, request: Request):
             await warm_event.wait()
 
     model_inst = await asyncio.to_thread(
-        get_or_load_model, request.app.state.models, req.model
+        get_or_load_model,
+        request.app.state.models,
+        request.app.state.model_components,
+        req.model,
     )
     cache = request.app.state.embedding_cache
     embedding = cache.get(req.session_id)

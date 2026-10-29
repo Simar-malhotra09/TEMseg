@@ -6,7 +6,7 @@ from typing import List, Literal, Tuple
 
 import cv2 as cv
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing_extensions import TypedDict
@@ -20,14 +20,14 @@ from app.api.instances import (
     next_free_id,
 )
 from app.api.live_models import AvailableModels
-from app.api.model_registry import get_or_load_model
+from app.api.model_registry import get_or_load_model, model_operation
 from app.api.utils import mask_iou, _session_dir
 from app.logutils import Timer, get_logger, ui_event
 from app.models.backends.base import SamEmbedding
 from app.models.helpers.compute_stats import compute_stats_from_instances
 from app.models.helpers.settings import settings
 
-router = APIRouter(prefix="/masks")
+router = APIRouter(prefix="/masks", dependencies=[Depends(model_operation)])
 logger = get_logger("masks")
 
 
@@ -1553,7 +1553,10 @@ async def prepare_sam(session_id: str, request: Request) -> SamPreparation:
 
     # Prompt endpoints use the MobileSAM predictor and its image embedding.
     model = await asyncio.to_thread(
-        get_or_load_model, request.app.state.models, AvailableModels.mobile_sam
+        get_or_load_model,
+        request.app.state.models,
+        request.app.state.model_components,
+        AvailableModels.mobile_sam,
     )
     img = await asyncio.to_thread(model.load_image, orig_files[0])
     emb = await asyncio.to_thread(model._sam.encode, img, 12)

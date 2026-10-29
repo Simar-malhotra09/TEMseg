@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 import asyncio
 import time
 import shutil
+from threading import Condition
 from pathlib import Path
 from typing import Dict
 from uuid import uuid4
@@ -20,9 +21,15 @@ from app.api.routers import (
     config,
     sessions,
     comparison_outputs,
+    model_memory,
 )
 from app.api.live_models import AvailableModels
-from app.api.model_registry import get_device, get_or_load_model
+from app.api.model_registry import (
+    get_device,
+    get_or_load_model,
+    get_segmentor_group_status,
+    model_operation,
+)
 
 from typing import List
 
@@ -46,7 +53,15 @@ async def lifespan(app: FastAPI):
     # loaded eagerly. Other models are lazily loaded on first use (see
     # model_registry.py) to avoid holding two models in RAM at once.
     app.state.models = {}
-    get_or_load_model(app.state.models, AvailableModels.mobile_sam)
+    app.state.model_components = {}
+    app.state.model_lifecycle_condition = Condition()
+    app.state.active_model_operations = 0
+    app.state.model_unloading = False
+    get_or_load_model(
+        app.state.models,
+        app.state.model_components,
+        AvailableModels.mobile_sam,
+    )
     app.state.embedding_cache: Dict[str, Dict] = {}
     app.state.embedding_model_cache: Dict[str, AvailableModels] = {}
     ui_event(
@@ -63,9 +78,9 @@ async def lifespan(app: FastAPI):
 
     def _warm_yolo():
         try:
-            pipeline = app.state.models[AvailableModels.mobile_sam]
+            yolo_backend = app.state.model_components["detector:yolo_backend"]
             dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-            pipeline._yolo.detect(dummy)
+            yolo_backend.detect(dummy)
             log.info("YOLO startup warmup complete")
         except Exception as e:
             log.warning(f"YOLO warmup failed (non-fatal): {e}")
@@ -141,6 +156,7 @@ app.include_router(rf.router)
 app.include_router(config.router)
 app.include_router(sessions.router)
 app.include_router(comparison_outputs.router)
+app.include_router(model_memory.router)
 
 
 @app.get("/")
@@ -184,7 +200,7 @@ def _weight_entry(path: Path) -> dict:
     }
 
 
-@app.get("/system/info")
+@app.get("/system/info", dependencies=[Depends(model_operation)])
 def system_info(request: Request):
     """For settings panel in client"""
     from app.logutils import default_log_dir
@@ -198,12 +214,11 @@ def system_info(request: Request):
 
     device = get_device()
     loaded_models = request.app.state.models
-    # any YOLO+SAM pipeline exposes the shared _yolo backend; report from the
-    # default pipeline first
+    shared_components = request.app.state.model_components
     yolo_holder = loaded_models.get(AvailableModels.mobile_sam) or loaded_models.get(
         AvailableModels.yolosam
     )
-    yolo_backend = yolo_holder._yolo if yolo_holder is not None else None
+    yolo_backend = shared_components.get("detector:yolo_backend")
 
     def role(key, name, backend, weight_paths, required_weight_paths):
         engine = _engine_of(backend)
@@ -338,6 +353,7 @@ def system_info(request: Request):
         "weights_dir": str(settings.WEIGHTS_DIR),
         "peak_rss_bytes": process_peak_rss_bytes(),
         "models": models,
+        "segmentor_groups": get_segmentor_group_status(shared_components),
     }
 
 
