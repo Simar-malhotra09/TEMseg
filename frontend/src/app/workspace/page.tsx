@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, ejectSegmentorGroup, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -332,6 +332,7 @@ export default function Workspace() {
   // system info feeds the footer device chip and the Settings modal; the
   // mount fetch covers the chip, the settings-open fetch refreshes the modal.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [systemMemory, setSystemMemory] = useState<SystemMemory | null>(null);
   const [ejectingSegmentorGroup, setEjectingSegmentorGroup] = useState<string | null>(null);
   const refreshSystemInfo = useCallback(() => {
     getSystemInfo()
@@ -373,10 +374,22 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!settingsOpen) return;
-    getSystemInfo()
-      .then(setSystemInfo)
-      .catch(err => console.warn("getSystemInfo failed:", err));
-  }, [settingsOpen]);
+    refreshSystemInfo();
+    let disposed = false;
+    const refreshMemory = () => {
+      getSystemMemory()
+        .then(memory => {
+          if (!disposed) setSystemMemory(memory);
+        })
+        .catch(err => console.warn("getSystemMemory failed:", err));
+    };
+    refreshMemory();
+    const intervalId = window.setInterval(refreshMemory, 2000);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [refreshSystemInfo, settingsOpen]);
 
   async function handleEjectSegmentorGroup(groupId: string) {
     setEjectingSegmentorGroup(groupId);
@@ -4054,12 +4067,32 @@ export default function Workspace() {
                           {systemInfo.log_dir}
                         </span>
                       </div>
-                      {systemInfo.peak_rss_bytes != null && (
-                        <div className={styles.settingsRow}>
-                          <span className={styles.settingsKey}>ram (peak)</span>
-                          <span className={styles.settingsVal}>{formatBytes(systemInfo.peak_rss_bytes)}</span>
-                        </div>
-                      )}
+                      <div className={styles.settingsRow}>
+                        <span
+                          className={styles.settingsKey}
+                          title="Live resident memory for the backend process. Device and driver memory may not be included."
+                        >
+                          ram (now, est.)
+                        </span>
+                        <span className={styles.settingsVal}>
+                          {systemMemory ? formatBytes(systemMemory.current_rss_bytes) : "reading…"}
+                        </span>
+                      </div>
+                      <div className={styles.settingsRow}>
+                        <span
+                          className={styles.settingsKey}
+                          title="Highest resident memory used by the backend process since it started. Device and driver memory may not be included."
+                        >
+                          ram (peak)
+                        </span>
+                        <span className={styles.settingsVal}>
+                          {systemMemory?.peak_rss_bytes != null
+                            ? formatBytes(systemMemory.peak_rss_bytes)
+                            : systemInfo.peak_rss_bytes != null
+                              ? formatBytes(systemInfo.peak_rss_bytes)
+                              : "unavailable"}
+                        </span>
+                      </div>
                       <div className={styles.settingsRow}>
                         <span className={styles.settingsKey}>version</span>
                         <span className={styles.settingsVal}>0.1.0</span>

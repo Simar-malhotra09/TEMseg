@@ -1,8 +1,7 @@
 export const BASE_URL = "http://localhost:8080";
 
-// Tracks in-flight requests to the backend so the UI can show a blocking
-// indicator. Every fetch below goes through trackedFetch instead of the
-// global fetch, so this stays accurate without callers opting in per call.
+// Tracks user-facing requests to the backend so the UI can show a blocking
+// indicator. Background polling should use fetch directly.
 type RequestActivityListener = () => void;
 
 let activeRequestCount = 0;
@@ -689,9 +688,20 @@ export interface SystemInfo {
   segmentor_groups: SegmentorMemoryGroup[];
 }
 
+export interface SystemMemory {
+  current_rss_bytes: number;
+  peak_rss_bytes: number | null;
+}
+
 export async function getSystemInfo(): Promise<SystemInfo> {
   const res = await trackedFetch(`${BASE_URL}/system/info`);
   if (!res.ok) throw new Error(`getSystemInfo: ${res.status}`);
+  return res.json();
+}
+
+export async function getSystemMemory(): Promise<SystemMemory> {
+  const res = await fetch(`${BASE_URL}/system/memory`);
+  if (!res.ok) throw new Error(`getSystemMemory: ${res.status}`);
   return res.json();
 }
 
