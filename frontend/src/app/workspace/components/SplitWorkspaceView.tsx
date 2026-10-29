@@ -282,9 +282,21 @@ export default function SplitWorkspaceView({
     for (const output of outputs) {
       const stage = stageByOutput.current.get(output.id);
       if (!stage) continue;
-      const zoom = Math.max(viewByOutput[output.id]?.zoom ?? 1, 2);
       const displayedWidth = Math.min(stage.clientWidth, stage.clientHeight * imageWidth / imageHeight);
       const displayedHeight = displayedWidth * imageHeight / imageWidth;
+      const imageScale = displayedWidth / imageWidth;
+      const paddedRegionWidth = region.bounds.width * 1.2 + 20;
+      const paddedRegionHeight = region.bounds.height * 1.2 + 20;
+      const zoomToFitRegion = Math.min(
+        (stage.clientWidth * 0.88) / (paddedRegionWidth * imageScale),
+        (stage.clientHeight * 0.88) / (paddedRegionHeight * imageScale),
+      );
+      const preferredZoom = outputs.length === 4
+        ? 3
+        : outputs.length === 3 && output.id !== referenceOutput?.id
+          ? 2.5
+          : 2;
+      const zoom = Math.max(1, Math.min(4, preferredZoom, zoomToFitRegion));
       const desiredX = -((region.centerX / imageWidth) - 0.5) * displayedWidth * zoom;
       const desiredY = -((region.centerY / imageHeight) - 0.5) * displayedHeight * zoom;
       const maxPanX = (stage.clientWidth * (zoom - 1)) / 2;

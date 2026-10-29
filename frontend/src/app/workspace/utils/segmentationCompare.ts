@@ -8,6 +8,7 @@ export interface ParticleArea {
   area: number;
   centerX: number;
   centerY: number;
+  bounds: { x: number; y: number; width: number; height: number };
 }
 
 export interface ParticleDifference {
@@ -36,6 +37,10 @@ interface InstanceData {
   area: number;
   xSum: number;
   ySum: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
 }
 
 interface OverlapEdge {
@@ -54,6 +59,7 @@ export interface ParticleDifferenceRegion {
   comparisons: RegionParticleComparison[];
   centerX: number;
   centerY: number;
+  bounds: { x: number; y: number; width: number; height: number };
 }
 
 export interface RegionParticleComparison {
@@ -109,13 +115,35 @@ function makeFinding(
     const instance = referenceInstances.get(id);
     if (!instance) throw new Error(`Reference instance ${id} is missing from the comparison.`);
     const [instanceCenterX, instanceCenterY] = instanceCenter(instance);
-    return { id, area: instance.area, centerX: instanceCenterX, centerY: instanceCenterY };
+    return {
+      id,
+      area: instance.area,
+      centerX: instanceCenterX,
+      centerY: instanceCenterY,
+      bounds: {
+        x: instance.minX,
+        y: instance.minY,
+        width: instance.maxX - instance.minX + 1,
+        height: instance.maxY - instance.minY + 1,
+      },
+    };
   });
   const candidateAreas = orderedCandidateIds.map(id => {
     const instance = candidateInstances.get(id);
     if (!instance) throw new Error(`Compared instance ${id} is missing from the comparison.`);
     const [instanceCenterX, instanceCenterY] = instanceCenter(instance);
-    return { id, area: instance.area, centerX: instanceCenterX, centerY: instanceCenterY };
+    return {
+      id,
+      area: instance.area,
+      centerX: instanceCenterX,
+      centerY: instanceCenterY,
+      bounds: {
+        x: instance.minX,
+        y: instance.minY,
+        width: instance.maxX - instance.minX + 1,
+        height: instance.maxY - instance.minY + 1,
+      },
+    };
   });
   return {
     id: `${kind}:${orderedReferenceIds.join(",")}:${orderedCandidateIds.join(",")}`,
@@ -154,18 +182,42 @@ export function compareSegmentations(reference: LabeledMask, candidate: LabeledM
 
     if (referenceId !== 0) {
       referenceForeground += 1;
-      const data = referenceInstances.get(referenceId) ?? { area: 0, xSum: 0, ySum: 0 };
+      const data = referenceInstances.get(referenceId) ?? {
+        area: 0,
+        xSum: 0,
+        ySum: 0,
+        minX: x,
+        minY: y,
+        maxX: x,
+        maxY: y,
+      };
       data.area += 1;
       data.xSum += x;
       data.ySum += y;
+      data.minX = Math.min(data.minX, x);
+      data.minY = Math.min(data.minY, y);
+      data.maxX = Math.max(data.maxX, x);
+      data.maxY = Math.max(data.maxY, y);
       referenceInstances.set(referenceId, data);
     }
     if (candidateId !== 0) {
       candidateForeground += 1;
-      const data = candidateInstances.get(candidateId) ?? { area: 0, xSum: 0, ySum: 0 };
+      const data = candidateInstances.get(candidateId) ?? {
+        area: 0,
+        xSum: 0,
+        ySum: 0,
+        minX: x,
+        minY: y,
+        maxX: x,
+        maxY: y,
+      };
       data.area += 1;
       data.xSum += x;
       data.ySum += y;
+      data.minX = Math.min(data.minX, x);
+      data.minY = Math.min(data.minY, y);
+      data.maxX = Math.max(data.maxX, x);
+      data.maxY = Math.max(data.maxY, y);
       candidateInstances.set(candidateId, data);
     }
     if (referenceId !== 0 && candidateId !== 0) {
@@ -369,15 +421,25 @@ export function groupFindingsByNearestNeighbor(
 
   return [...entriesByRoot.values()]
     .map(comparisons => {
-      const center = comparisons.reduce(([sumX, sumY], comparison) => [
-        sumX + comparison.finding.centerX,
-        sumY + comparison.finding.centerY,
-      ], [0, 0]);
+      const areas = comparisons.flatMap(comparison => [
+        ...comparison.finding.referenceAreas,
+        ...comparison.finding.candidateAreas,
+      ]);
+      const firstArea = areas[0];
+      if (!firstArea) throw new Error("Cannot calculate bounds for an empty particle region.");
+      const bounds = areas.slice(1).reduce((current, area) => {
+        const x = Math.min(current.x, area.bounds.x);
+        const y = Math.min(current.y, area.bounds.y);
+        const right = Math.max(current.x + current.width, area.bounds.x + area.bounds.width);
+        const bottom = Math.max(current.y + current.height, area.bounds.y + area.bounds.height);
+        return { x, y, width: right - x, height: bottom - y };
+      }, { ...firstArea.bounds });
       return {
         id: comparisons.map(comparison => `${comparison.candidateOutputId}:${comparison.finding.id}`).sort().join("|"),
         comparisons,
-        centerX: center[0] / comparisons.length,
-        centerY: center[1] / comparisons.length,
+        centerX: bounds.x + bounds.width / 2,
+        centerY: bounds.y + bounds.height / 2,
+        bounds,
       };
     })
     .sort((left, right) => left.centerY - right.centerY || left.centerX - right.centerX);
