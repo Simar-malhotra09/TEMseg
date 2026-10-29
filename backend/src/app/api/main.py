@@ -357,6 +357,17 @@ def system_info(request: Request):
     }
 
 
+@app.get("/system/memory")
+def system_memory() -> dict[str, int | None]:
+    """Return live and peak resident memory for the backend process."""
+    from app.models.backends.selection import process_peak_rss_bytes, process_rss_bytes
+
+    return {
+        "current_rss_bytes": process_rss_bytes(),
+        "peak_rss_bytes": process_peak_rss_bytes(),
+    }
+
+
 def cleanup_old_sessions(max_age_hours: int = 24, force=False):
     sessions_dir = Path("sessions")
 

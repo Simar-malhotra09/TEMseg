@@ -20,6 +20,8 @@ import platform
 import sys
 from typing import Any, Dict
 
+import psutil
+
 from app.logutils import get_logger
 from app.models.helpers.settings import settings
 
@@ -43,14 +45,21 @@ _sam_backend_cache: dict[tuple, tuple[SamBackend, SamBackend | None]] = {}
 
 
 def process_peak_rss_bytes() -> int | None:
+    if sys.platform == "win32":
+        peak = getattr(psutil.Process().memory_info(), "peak_wset", None)
+        return int(peak) if peak is not None else None
+
     # ru_maxrss is bytes on macOS, kilobytes on Linux.
     try:
         import resource
-
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return int(peak) if sys.platform == "darwin" else int(peak) * 1024
-    except Exception:
+    except ImportError:
         return None
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return int(peak) if sys.platform == "darwin" else int(peak) * 1024
+
+
+def process_rss_bytes() -> int:
+    return int(psutil.Process().memory_info().rss)
 
 
 def device_allocated_bytes(device: str) -> int | None:

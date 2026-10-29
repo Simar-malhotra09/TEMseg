@@ -8,6 +8,7 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn>=0.34.0",
   "pydantic>=2.10.0",
+  "psutil>=7.2.2",
   "ultralytics>=8.3.0",
   "segment-anything>=1.0",
   "mobile-sam @ git+https://github.com/ChaoningZhang/MobileSAM.git@01ea8d0f5590082f0c1ceb0a3e2272593f20154b",
