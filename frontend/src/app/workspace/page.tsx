@@ -2158,6 +2158,7 @@ export default function Workspace() {
               const next = idx >= 0 && idx < groupCtx.sessions.length - 1 ? groupCtx.sessions[idx + 1] : null;
               return (
                 <span className={styles.groupNav} title={groupCtx.name}>
+                  <span className={styles.groupLabel}>Image</span>
                   <button
                     type="button"
                     className={styles.navBtn}
@@ -2180,33 +2181,6 @@ export default function Workspace() {
                 </span>
               );
             })()}
-            {seg.comparisonOutputs.length > 1 && (
-              <span className={styles.groupNav} title={activeModel ? modelLabel(activeModel) : "Segmentation outputs"}>
-                <button
-                  type="button"
-                  className={styles.navBtn}
-                  aria-label="Previous segmentation output"
-                  title="Previous segmentation output"
-                  disabled={seg.currentOutputIndex <= 0}
-                  onClick={() => seg.setCurrentOutputIndex(index => Math.max(0, index - 1))}
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className={styles.groupPos}>
-                  {seg.currentOutputIndex + 1}/{seg.comparisonOutputs.length}
-                </span>
-                <button
-                  type="button"
-                  className={styles.navBtn}
-                  aria-label="Next segmentation output"
-                  title="Next segmentation output"
-                  disabled={seg.currentOutputIndex >= seg.comparisonOutputs.length - 1}
-                  onClick={() => seg.setCurrentOutputIndex(index => Math.min(seg.comparisonOutputs.length - 1, index + 1))}
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </span>
-            )}
           </div>
 
           {/* model + SAM depth selectors live in the top bar (moved from the
@@ -3876,6 +3850,37 @@ export default function Workspace() {
             )}
             {image && !refineMode && (
               <div className={styles.canvasTools}>
+                {seg.comparisonOutputs.length > 1 && (
+                  <>
+                    <span className={styles.toolOutputNav} title={activeModel ? modelLabel(activeModel) : "Segmentation outputs"}>
+                      <span className={styles.toolOutputLabel}>Mask</span>
+                      <button
+                        type="button"
+                        className={styles.toolBtn}
+                        aria-label="Previous mask output"
+                        title="Previous mask output"
+                        disabled={seg.currentOutputIndex <= 0}
+                        onClick={() => seg.setCurrentOutputIndex(index => Math.max(0, index - 1))}
+                      >
+                        <ChevronLeft size={14} />
+                      </button>
+                      <span className={styles.toolOutputPosition}>
+                        {seg.currentOutputIndex + 1}/{seg.comparisonOutputs.length}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.toolBtn}
+                        aria-label="Next mask output"
+                        title="Next mask output"
+                        disabled={seg.currentOutputIndex >= seg.comparisonOutputs.length - 1}
+                        onClick={() => seg.setCurrentOutputIndex(index => Math.min(seg.comparisonOutputs.length - 1, index + 1))}
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                    </span>
+                    <span className={styles.toolSep} />
+                  </>
+                )}
                 <button type="button" className={styles.toolBtn} title="Fit to view"
                   disabled={analysisMode || scaleBarMode}
                   onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>

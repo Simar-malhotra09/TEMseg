@@ -929,6 +929,7 @@ font-size: 9.5px;
 color: var(--text-dim);
 font-variant-numeric: tabular-nums;
 }
+.groupLabel { font-size: 9.5px; color: var(--text-faint); }
 
 .imageViewport {
 position: relative;
@@ -992,6 +993,9 @@ text-align: center;
 font-size: 10.5px;
 color: var(--text-dim);
 }
+.toolOutputNav { display: inline-flex; align-items: center; gap: 1px; }
+.toolOutputLabel { padding: 0 4px; color: var(--text-faint); font-size: 9px; }
+.toolOutputPosition { min-width: 27px; color: var(--text-dim); font-size: 9px; text-align: center; font-variant-numeric: tabular-nums; }
 .splitIcon {
   width: 15px;
   height: 15px;
