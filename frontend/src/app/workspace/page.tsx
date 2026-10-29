@@ -740,9 +740,15 @@ export default function Workspace() {
   // segmentation hook
   const seg = useSegmentationState({ sessionId, encoderDepth });
   const activeSegmentationOutput = seg.comparisonOutputs[seg.currentOutputIndex] ?? null;
-  const activeMaskUrl = activeSegmentationOutput?.maskUrl ?? seg.maskUrl;
+  const latestSegmentationOutput = seg.comparisonOutputs[seg.comparisonOutputs.length - 1] ?? null;
+  const activeOutputIsSessionCurrent = activeSegmentationOutput?.id === latestSegmentationOutput?.id;
+  const activeMaskUrl = activeOutputIsSessionCurrent
+    ? seg.maskUrl ?? activeSegmentationOutput?.maskUrl ?? null
+    : activeSegmentationOutput?.maskUrl ?? seg.maskUrl;
   const activeModel = activeSegmentationOutput?.model ?? metadata?.analysis?.model ?? null;
-  const activeStats = activeSegmentationOutput ? activeSegmentationOutput.stats : seg.stats;
+  const activeStats = activeOutputIsSessionCurrent
+    ? seg.stats ?? activeSegmentationOutput?.stats ?? null
+    : activeSegmentationOutput?.stats ?? seg.stats;
   const activeGroundTruthScore = activeSegmentationOutput
     ? activeSegmentationOutput.groundTruthScore
     : seg.groundTruthScore;
@@ -810,6 +816,9 @@ export default function Workspace() {
     onSave: async (updated: Instance[]) => {
         if (!sessionId) return;
         const result = await saveInstances(sessionId, updated);
+        if (seg.comparisonOutputs.length > 0) {
+          seg.setCurrentOutputIndex(seg.comparisonOutputs.length - 1);
+        }
         const ts = Date.now();
         seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
         if (result.stats) seg.setStats(result.stats);
@@ -1239,6 +1248,9 @@ export default function Workspace() {
       });
       const combined = [...existing, ...renumbered];
       const result = await saveInstances(sessionId, combined);
+      if (seg.comparisonOutputs.length > 0) {
+        seg.setCurrentOutputIndex(seg.comparisonOutputs.length - 1);
+      }
       seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       if (result.stats) seg.setStats(result.stats);
       seg.setSegDone(true);
