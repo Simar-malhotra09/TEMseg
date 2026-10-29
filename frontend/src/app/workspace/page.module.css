@@ -387,6 +387,12 @@ margin-bottom: 2px;
   color: var(--text-ghost);
   margin-bottom: 5px;
 }
+.settingsMemoryHint {
+  margin: 0 0 5px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1.5;
+}
 /* 3 column row: name | value | action slot. The fixed action column keeps
    the value column aligned top to bottom, also on rows without a button. */
 .settingsRow {

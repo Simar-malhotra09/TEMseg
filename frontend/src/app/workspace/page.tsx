@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, ejectSegmentorGroup, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -332,6 +332,7 @@ export default function Workspace() {
   // system info feeds the footer device chip and the Settings modal; the
   // mount fetch covers the chip, the settings-open fetch refreshes the modal.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [ejectingSegmentorGroup, setEjectingSegmentorGroup] = useState<string | null>(null);
   const refreshSystemInfo = useCallback(() => {
     getSystemInfo()
       .then(setSystemInfo)
@@ -376,6 +377,20 @@ export default function Workspace() {
       .then(setSystemInfo)
       .catch(err => console.warn("getSystemInfo failed:", err));
   }, [settingsOpen]);
+
+  async function handleEjectSegmentorGroup(groupId: string) {
+    setEjectingSegmentorGroup(groupId);
+    try {
+      await ejectSegmentorGroup(groupId);
+      setSystemInfo(await getSystemInfo());
+      pushToast("ok", "Segmentor unloaded", "YOLO detector remains loaded.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not unload segmentor.";
+      pushToast("err", "Could not unload segmentor", message);
+    } finally {
+      setEjectingSegmentorGroup(null);
+    }
+  }
 
   // which method is showing in the Point/Box/Similar sub-window
   const [augmentMethod, setAugmentMethod] = useState<AugmentMethod>("click");
@@ -3998,6 +4013,35 @@ export default function Workspace() {
                               </span>
                             </div>
                           ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={styles.settingsGroup}>
+                      <p className={styles.settingsGroupLabel}>segmentors in memory</p>
+                      <p className={styles.settingsMemoryHint}>
+                        YOLO stays loaded. Keep at least one segmentor loaded. SAM ViT-B is shared by YoloSAM and FasterYoloSAM.
+                      </p>
+                      {systemInfo.segmentor_groups.map(group => (
+                        <div className={styles.settingsRow} key={group.id}>
+                          <span className={styles.settingsName} title={group.models.join(", ")}>
+                            {group.loaded && <span className={styles.deviceLed} role="img" aria-label="Loaded in memory" />}
+                            <span className={styles.settingsModelLabel}>{group.name}</span>
+                          </span>
+                          <span className={styles.settingsNum}>
+                            {group.loaded
+                              ? group.ram_bytes ? `${formatBytes(group.ram_bytes)} · loaded` : "loaded"
+                              : "not loaded"}
+                          </span>
+                          <button
+                            type="button"
+                            className={styles.settingsCfg}
+                            disabled={!group.can_eject || ejectingSegmentorGroup !== null || isBlocked}
+                            title={group.loaded && !group.can_eject ? "At least one segmentor must stay loaded." : undefined}
+                            onClick={() => void handleEjectSegmentorGroup(group.id)}
+                          >
+                            {ejectingSegmentorGroup === group.id ? "ejecting…" : "eject"}
+                          </button>
                         </div>
                       ))}
                     </div>

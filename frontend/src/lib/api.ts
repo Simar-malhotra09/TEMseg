@@ -671,18 +671,38 @@ export interface SystemModel {
   weights: { name: string; present: boolean; size_mb: number }[];
 }
 
+export interface SegmentorMemoryGroup {
+  id: string;
+  name: string;
+  models: string[];
+  loaded: boolean;
+  can_eject: boolean;
+  ram_bytes: number | null;
+}
+
 export interface SystemInfo {
   device: string;
   log_dir: string;
   weights_dir: string;
   peak_rss_bytes: number | null;
   models: SystemModel[];
+  segmentor_groups: SegmentorMemoryGroup[];
 }
 
 export async function getSystemInfo(): Promise<SystemInfo> {
   const res = await trackedFetch(`${BASE_URL}/system/info`);
   if (!res.ok) throw new Error(`getSystemInfo: ${res.status}`);
   return res.json();
+}
+
+export async function ejectSegmentorGroup(groupId: string): Promise<void> {
+  const res = await trackedFetch(`${BASE_URL}/models/memory/${encodeURIComponent(groupId)}/eject`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json() as { detail?: string };
+    throw new Error(error.detail ?? `ejectSegmentorGroup ${groupId}: ${res.status}`);
+  }
 }
 
 export async function getYoloSettings(): Promise<YoloConfig> {
