@@ -4,6 +4,7 @@ import math
 import uuid
 import re
 import shutil
+import time
 from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, Request, Form, HTTPException
 from fastapi.responses import FileResponse
@@ -204,6 +205,7 @@ async def get_preview(session_id: str):
 @router.get("/{session_id}/metadata")
 async def get_metadata(session_id: str):
     """Return session metadata (pixel scale, format, etc.)."""
+    update_mru(session_id)
     path = SESSIONS_DIR / validate_session_id(session_id) / "metadata.json"
     if not path.exists():
         return {"pixel_size": None, "pixel_unit": None}
@@ -321,6 +323,7 @@ def _save_uploaded_image(file: UploadFile, session_id: str) -> dict:
 
     metadata = _extract_metadata(dest, filename)
     metadata["image_shape"] = [int(display.shape[0]), int(display.shape[1])]
+    metadata["last_used_at"] = time.time()
     with dest.open("rb") as source:
         metadata["source_sha256"] = hashlib.file_digest(source, "sha256").hexdigest()
     meta_path = session_dir / "metadata.json"

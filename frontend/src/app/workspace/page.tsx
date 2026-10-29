@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getSessionStorage, SessionStorageInfo, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -30,6 +30,7 @@ import CalibrateSection from "./components/CalibrateSection";
 import SplitOutputSelector from "./components/SplitOutputSelector";
 import SplitWorkspaceView from "./components/SplitWorkspaceView";
 import ResetComparisonWarning from "./components/ResetComparisonWarning";
+import SessionManager from "./components/SessionManager";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -98,6 +99,13 @@ function formatRecentMeta(s: RecentSession): string {
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
   return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+function formatSessionStorageBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
 }
 
 // Self-dismissing toast. Auto-dismisses after TOAST_DURATION; hovering pins
@@ -542,6 +550,8 @@ export default function Workspace() {
 
   // MRU sessions for the empty-state recents rows (backend returns newest-first).
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  const [sessionStorage, setSessionStorage] = useState<SessionStorageInfo | null>(null);
+  const [sessionManagerOpen, setSessionManagerOpen] = useState(false);
   // multi-image groups for the empty-state groups panel
   const [groups, setGroups] = useState<Group[]>([]);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
@@ -567,6 +577,9 @@ export default function Workspace() {
     getGroups()
       .then(setGroups)
       .catch(() => setGroups([]));
+    getSessionStorage()
+      .then(setSessionStorage)
+      .catch(() => setSessionStorage(null));
   }, []);
 
   // Empty-state list budget: 10 rows total, at most 5 of them groups.
@@ -575,9 +588,14 @@ export default function Workspace() {
 
   async function refreshLists() {
     // on failure keep the current lists, same as the mount fetch
-    const [r, g] = await Promise.all([getRecentSessions(), getGroups()]).catch(() => [null, null]);
+    const [r, g, storage] = await Promise.all([
+      getRecentSessions().catch(() => null),
+      getGroups().catch(() => null),
+      getSessionStorage().catch(() => null),
+    ]);
     if (r) setRecentSessions(r);
     if (g) setGroups(g);
+    if (storage) setSessionStorage(storage);
   }
 
   async function handleRenameSession(sessionId: string, current: string) {
@@ -3165,6 +3183,20 @@ export default function Workspace() {
                   >
                     <FolderOpen size={14} /> Open Folder
                   </button>
+                  {sessionStorage && (
+                    <section className={styles.sessionStorageSummary} onClick={e => e.stopPropagation()}>
+                      <div className={styles.sessionStorageSummaryTop}>
+                        <div className={styles.sessionStorageMetrics}>
+                          <span><strong>{sessionStorage.session_count}</strong> sessions</span>
+                          <span><strong>{formatSessionStorageBytes(sessionStorage.total_size_bytes)}</strong> session data</span>
+                        </div>
+                        <button type="button" onClick={() => setSessionManagerOpen(true)}>Manage sessions</button>
+                      </div>
+                      <div className={styles.sessionStorageLocation} title={sessionStorage.storage_dir}>
+                        Stored in <code>{sessionStorage.storage_dir}</code>
+                      </div>
+                    </section>
+                  )}
                   {groupsShown.length > 0 && (
                     <div className={styles.recents} onClick={e => e.stopPropagation()}>
                       <div className={styles.recentsHead}><span>Groups</span><span>images</span></div>
@@ -4263,6 +4295,18 @@ export default function Workspace() {
             initialBaseModel={comparisonView.base_model}
             onBaseModelChange={handleSplitBaseChange}
             onClose={() => setSplitViewOpen(false)}
+          />
+        )}
+        {sessionManagerOpen && sessionStorage && (
+          <SessionManager
+            storage={sessionStorage}
+            onClose={() => setSessionManagerOpen(false)}
+            onDelete={sessionId => { void handleDeleteSession(sessionId, sessionId); }}
+            onCopySessionPath={storagePath => {
+              void navigator.clipboard.writeText(storagePath)
+                .then(() => pushToast("ok", "Session folder path copied"))
+                .catch(error => pushToast("err", "Could not copy session folder path", (error as Error).message));
+            }}
           />
         )}
       </div>

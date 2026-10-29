@@ -1,0 +1,70 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.dialog {
+  width: min(760px, 100%);
+  max-height: min(760px, 90vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--bg-sidebar);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header h2 { margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
+.header p { margin: 5px 0 0; color: var(--text-faint); font-size: 10px; }
+.closeButton { display: grid; place-items: center; padding: 4px; border: 0; color: var(--text-dim); background: transparent; cursor: pointer; }
+.closeButton:hover { color: var(--text); }
+
+.summary { display: flex; gap: 30px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.summary > div { display: flex; flex-direction: column; gap: 4px; }
+.summary span,.locationLabel { color: var(--text-faint); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.summary strong { color: var(--text); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.location { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 5px; }
+.location > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.location code { overflow-wrap: anywhere; color: var(--text-dim); font-size: 10px; }
+.location button { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 5px 7px; border: 1px solid var(--border); color: var(--text-dim); background: var(--bg-elev); font: inherit; font-size: 9px; cursor: pointer; }
+.location button:hover { color: var(--text); border-color: var(--accent); }
+.note { margin: 5px 18px 12px; color: var(--text-faint); font-size: 9px; }
+
+.listHeader { display: flex; align-items: center; justify-content: space-between; padding: 7px 18px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text-dim); background: var(--bg-elev); font-size: 9px; font-weight: 600; text-transform: uppercase; }
+.listHeader > div { display: flex; gap: 4px; }
+.listHeader button { padding: 4px 7px; border: 1px solid transparent; color: var(--text-faint); background: transparent; font: inherit; font-size: 9px; text-transform: none; cursor: pointer; }
+.listHeader button:hover,.listHeader .sortActive { border-color: var(--border); color: var(--text); background: var(--bg-sidebar); }
+
+.sessionList { min-height: 120px; overflow: auto; }
+.sessionRow { min-height: 38px; display: grid; grid-template-columns: minmax(140px, 1fr) minmax(130px, auto) 70px 28px 28px; align-items: center; gap: 12px; padding: 4px 18px; border-bottom: 1px solid var(--border-soft); }
+.sessionName { overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.lastUsed,.size { color: var(--text-faint); font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.size { text-align: right; }
+.copyButton,.deleteButton { display: grid; place-items: center; padding: 5px; border: 0; color: var(--text-faint); background: transparent; cursor: pointer; }
+.copyButton:hover { color: var(--accent); }
+.deleteButton:hover { color: #e87e7e; }
+.empty { margin: 0; padding: 24px; color: var(--text-faint); font-size: 10px; text-align: center; }
+
+@media (max-width: 560px) {
+  .backdrop { padding: 8px; }
+  .location { align-items: flex-start; }
+  .sessionRow { grid-template-columns: minmax(0, 1fr) 70px 28px 28px; gap: 7px; }
+  .lastUsed { display: none; }
+}

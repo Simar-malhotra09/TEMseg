@@ -23,6 +23,21 @@ class RenameRequest(BaseModel):
     name: str
 
 
+class ManagedSession(BaseModel):
+    session_id: str
+    file_name: str
+    storage_path: str
+    last_used_at: float | None
+    size_bytes: int
+
+
+class SessionStorageInfo(BaseModel):
+    storage_dir: str
+    session_count: int
+    total_size_bytes: int
+    sessions: list[ManagedSession]
+
+
 def _read_mru() -> list[dict]:
     try:
         return json.loads(MRU_K_SESSIONS_FILE.read_text())
@@ -37,10 +52,13 @@ def update_mru(session_id: str) -> None:
         logger.warning(f"MRU skip — no metadata.json | session={session_id}")
         return
     meta = json.loads(meta_path.read_text())
+    last_used_at = time.time()
+    meta["last_used_at"] = last_used_at
+    meta_path.write_text(json.dumps(meta, indent=2))
     entry = {
         "session_id": session_id,
         "file_name": f"{meta.get('file_name', '')}.{meta.get('original_format', '')}",
-        "last_updated_at": time.time(),
+        "last_updated_at": last_used_at,
     }
     entries = [e for e in _read_mru() if e["session_id"] != session_id]
     entries.insert(0, entry)
@@ -66,6 +84,65 @@ def recent_sessions() -> list[dict]:
             }
         )
     return entries
+
+
+def _directory_size_bytes(directory: Path) -> int:
+    return sum(
+        path.stat().st_size
+        for path in directory.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    )
+
+
+def _session_last_used_at(session_dir: Path) -> float | None:
+    metadata_path = session_dir / "metadata.json"
+    if metadata_path.is_file():
+        try:
+            last_used_at = json.loads(metadata_path.read_text()).get("last_used_at")
+        except json.JSONDecodeError:
+            last_used_at = None
+        if isinstance(last_used_at, (int, float)) and not isinstance(
+            last_used_at, bool
+        ):
+            return float(last_used_at)
+    for entry in _read_mru():
+        last_used_at = entry.get("last_updated_at")
+        if (
+            entry.get("session_id") == session_dir.name
+            and isinstance(last_used_at, (int, float))
+            and not isinstance(last_used_at, bool)
+        ):
+            return float(last_used_at)
+    return None
+
+
+@router.get("/sessions/storage", response_model=SessionStorageInfo)
+def session_storage() -> SessionStorageInfo:
+    storage_dir = SESSIONS_DIR.resolve()
+    sessions: list[ManagedSession] = []
+    if storage_dir.is_dir():
+        for session_dir in storage_dir.iterdir():
+            if not session_dir.is_dir() or not (
+                session_dir / "metadata.json"
+            ).is_file():
+                continue
+            sessions.append(
+                ManagedSession(
+                    session_id=session_dir.name,
+                    file_name=_session_display_name(session_dir.name)
+                    or session_dir.name,
+                    storage_path=str(session_dir.resolve()),
+                    last_used_at=_session_last_used_at(session_dir),
+                    size_bytes=_directory_size_bytes(session_dir),
+                )
+            )
+    sessions.sort(key=lambda session: session.size_bytes, reverse=True)
+    return SessionStorageInfo(
+        storage_dir=str(storage_dir),
+        session_count=len(sessions),
+        total_size_bytes=sum(session.size_bytes for session in sessions),
+        sessions=sessions,
+    )
 
 
 def _read_groups() -> list[dict]:

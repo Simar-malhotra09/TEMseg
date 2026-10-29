@@ -502,9 +502,30 @@ export interface RecentSession {
   file_size_bytes: number | null;
 }
 
+export interface ManagedSession {
+  session_id: string;
+  file_name: string;
+  storage_path?: string;
+  last_used_at: number | null;
+  size_bytes: number;
+}
+
+export interface SessionStorageInfo {
+  storage_dir: string;
+  session_count: number;
+  total_size_bytes: number;
+  sessions: ManagedSession[];
+}
+
 export async function getRecentSessions(): Promise<RecentSession[]> {
   const res = await trackedFetch(`${BASE_URL}/sessions/recent`);
   if (!res.ok) throw new Error(`getRecentSessions: ${res.status}`);
+  return res.json();
+}
+
+export async function getSessionStorage(): Promise<SessionStorageInfo> {
+  const res = await trackedFetch(`${BASE_URL}/sessions/storage`);
+  if (!res.ok) throw new Error(`getSessionStorage: ${res.status}`);
   return res.json();
 }
 

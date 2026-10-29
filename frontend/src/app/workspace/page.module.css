@@ -888,6 +888,33 @@ transition: border-color 0.15s;
 }
 .folderBtn:hover { border-color: var(--accent); }
 
+.sessionStorageSummary {
+width: 100%;
+margin: 14px 0 2px;
+padding: 9px 10px;
+border: 1px solid var(--border);
+background: var(--bg-elev);
+text-align: left;
+cursor: default;
+}
+.sessionStorageSummaryTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sessionStorageMetrics { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-ghost); font-size: 9px; }
+.sessionStorageMetrics strong { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.sessionStorageSummaryTop > button {
+flex: 0 0 auto;
+padding: 5px 8px;
+border: 1px solid var(--border);
+border-radius: 3px;
+color: var(--accent);
+background: var(--bg-hover);
+font: inherit;
+font-size: 9px;
+cursor: pointer;
+}
+.sessionStorageSummaryTop > button:hover { border-color: var(--accent); }
+.sessionStorageLocation { margin-top: 7px; overflow: hidden; color: var(--text-ghost); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.sessionStorageLocation code { color: var(--text-dim); font-size: inherit; }
+
 .groupSessionRow { padding-left: 24px; }
 
 .groupThumb {
