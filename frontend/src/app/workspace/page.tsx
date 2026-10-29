@@ -27,6 +27,8 @@ import StatsDetailView from "./components/StatsDetailView";
 import ParticleHighlight from "./components/ParticleHighlight";
 import ExpandableHint from "./components/ExpandableHint";
 import CalibrateSection from "./components/CalibrateSection";
+import SplitOutputSelector from "./components/SplitOutputSelector";
+import SplitWorkspaceView from "./components/SplitWorkspaceView";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -227,6 +229,10 @@ export default function Workspace() {
   // models
   const { data: models = [] } = useQuery({ queryKey: ["models"], queryFn: getModels });
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [modelRunBusy, setModelRunBusy] = useState(false);
+  const [splitSelectorOpen, setSplitSelectorOpen] = useState(false);
+  const [splitViewOpen, setSplitViewOpen] = useState(false);
+  const [splitOutputIds, setSplitOutputIds] = useState<string[]>([]);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
   const [encoderDepth, setEncoderDepth] = useState<number>(12);
@@ -692,7 +698,18 @@ export default function Workspace() {
 
 
   // segmentation hook
-  const seg = useSegmentationState({ sessionId, selectedModel, encoderDepth });
+  const seg = useSegmentationState({ sessionId, encoderDepth });
+  const activeSegmentationOutput = seg.comparisonOutputs[seg.currentOutputIndex] ?? null;
+  const activeMaskUrl = activeSegmentationOutput?.maskUrl ?? seg.maskUrl;
+  const activeModel = activeSegmentationOutput?.model ?? metadata?.analysis?.model ?? null;
+  const activeStats = activeSegmentationOutput ? activeSegmentationOutput.stats : seg.stats;
+  const activeGroundTruthScore = activeSegmentationOutput
+    ? activeSegmentationOutput.groundTruthScore
+    : seg.groundTruthScore;
+  const splitOutputs = splitOutputIds.flatMap(outputId => {
+    const output = seg.comparisonOutputs.find(item => item.id === outputId);
+    return output ? [output] : [];
+  });
 
   // SAM prompts need the MobileSAM model and an embedding for this image.
   // Mask R-CNN segmentation does not create that embedding.
@@ -985,48 +1002,83 @@ export default function Workspace() {
   }
 
 
-  // run segmentation reads live region refs, passes values into hook
-  async function handleRunSegmentation() {
-    if (!sessionId || !selectedModel) return;
-
-    // pass the correct regions 
-    const activeRegions = seg.isInvBlackoutMode
-      ? liveInverseRegionsRef.current
-      : liveRegionsRef.current;
-
-    // only one of these should be true 
-    // can add guard 
-    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
-    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
-
-    setStatus(`Running ${modelLabel(selectedModel)}...`);
-    let msg: string | null;
+  // Run one model at a time. Appended runs keep their overlays in browser memory.
+  async function runModelSegmentation(model: string, append: boolean) {
+    if (!sessionId || modelRunBusy) return;
+    setModelRunBusy(true);
     try {
-      msg = await seg.runSegmentation(activeRegions, blackout, inverse, {
-        conf: yoloValue("conf"),
-        iou: yoloValue("iou"),
-        max_det: yoloValue("max_det"),
-      });
-    } catch (err) {
-      if (isRequestAborted(err)) return;
-      throw err;
-    }
-    await refetchSamStatus();
-    getSystemInfo()
-      .then(setSystemInfo)
-      .catch(err => console.warn("getSystemInfo failed:", err));
+      // pass the correct regions
+      const activeRegions = seg.isInvBlackoutMode
+        ? liveInverseRegionsRef.current
+        : liveRegionsRef.current;
 
-    // if gt available, compute scores 
-    if (msg) {
-      setStatus(msg);
-      pushToast("ok", "Segmentation done", msg);
-      if (seg.groundTruth) {
-        await seg.scoreGroundTruth(activeRegions, blackout, inverse);
+      const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+      const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
+
+      setSelectedModel(model);
+      setStatus(`${append ? "Appending" : "Running"} ${modelLabel(model)}...`);
+      let msg: string | null;
+      try {
+        msg = await seg.runSegmentation(model, activeRegions, blackout, inverse, {
+          conf: yoloValue("conf"),
+          iou: yoloValue("iou"),
+          max_det: yoloValue("max_det"),
+        }, append, metadata?.analysis?.model ?? selectedModel);
+      } catch (err) {
+        if (isRequestAborted(err)) return;
+        throw err;
       }
-    } else {
-      setStatus("Segmentation failed.");
-      pushToast("err", "Segmentation failed");
+      await refetchSamStatus();
+      getSystemInfo()
+        .then(setSystemInfo)
+        .catch(err => console.warn("getSystemInfo failed:", err));
+
+      if (msg) {
+        setStatus(msg);
+        pushToast("ok", "Segmentation done", msg);
+        if (seg.groundTruth) {
+          await seg.scoreGroundTruth(activeRegions, blackout, inverse);
+        }
+      } else {
+        setStatus("Segmentation failed.");
+        pushToast("err", "Segmentation failed");
+      }
+    } finally {
+      setModelRunBusy(false);
     }
+  }
+
+  async function handleRunSegmentation() {
+    if (!selectedModel) return;
+    await runModelSegmentation(selectedModel, false);
+  }
+
+  async function handleAppendSegmentation() {
+    if (!selectedModel) return;
+    await runModelSegmentation(selectedModel, true);
+  }
+
+  function toggleSplitOutput(outputId: string, selected: boolean) {
+    setSplitOutputIds(current => {
+      if (selected) {
+        return current.length < 4 && !current.includes(outputId)
+          ? [...current, outputId]
+          : current;
+      }
+      return current.filter(id => id !== outputId);
+    });
+  }
+
+  function openSplitView() {
+    if (splitOutputs.length === 0 || splitOutputs.length > 4) return;
+    setSplitSelectorOpen(false);
+    setSplitViewOpen(true);
+  }
+
+  function openSplitSelector() {
+    const currentOutput = seg.comparisonOutputs[seg.currentOutputIndex];
+    setSplitOutputIds(currentOutput ? [currentOutput.id] : []);
+    setSplitSelectorOpen(true);
   }
 
 
@@ -1965,12 +2017,12 @@ export default function Workspace() {
   return (
     <>
       {/*If in stats dashboard hide the workspace*/}
-      {showStatsDetail && seg.stats && sessionId && (
+      {showStatsDetail && activeStats && sessionId && (
         <div className={styles.themeScope} data-theme={theme} style={{ display: "contents" }}>
           <StatsDetailView
-            stats={seg.stats}
+            stats={activeStats}
             metadata={metadata}
-            groundTruthScore={seg.groundTruthScore}
+            groundTruthScore={activeGroundTruthScore}
             sessionId={sessionId}
             onBack={() => setShowStatsDetail(false)}
             onLocateParticle={handleLocateParticle}
@@ -2025,6 +2077,33 @@ export default function Workspace() {
                 </span>
               );
             })()}
+            {seg.comparisonOutputs.length > 1 && (
+              <span className={styles.groupNav} title={activeModel ? modelLabel(activeModel) : "Segmentation outputs"}>
+                <button
+                  type="button"
+                  className={styles.navBtn}
+                  aria-label="Previous segmentation output"
+                  title="Previous segmentation output"
+                  disabled={seg.currentOutputIndex <= 0}
+                  onClick={() => seg.setCurrentOutputIndex(index => Math.max(0, index - 1))}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className={styles.groupPos}>
+                  {seg.currentOutputIndex + 1}/{seg.comparisonOutputs.length}
+                </span>
+                <button
+                  type="button"
+                  className={styles.navBtn}
+                  aria-label="Next segmentation output"
+                  title="Next segmentation output"
+                  disabled={seg.currentOutputIndex >= seg.comparisonOutputs.length - 1}
+                  onClick={() => seg.setCurrentOutputIndex(index => Math.min(seg.comparisonOutputs.length - 1, index + 1))}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </span>
+            )}
           </div>
 
           {/* model + SAM depth selectors live in the top bar (moved from the
@@ -2204,10 +2283,31 @@ export default function Workspace() {
                     type="button"
                     className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                     onClick={handleRunSegmentation}
-                    disabled={!image || seg.isSegmenting}
+                    disabled={!image || modelRunBusy || seg.isSegmenting}
                   >
-                    <Play size={14} /> {seg.isSegmenting ? "Running..." : "Run Segmentation"}
+                    <Play size={14} /> {modelRunBusy || seg.isSegmenting ? "Running..." : "Run Segmentation"}
                   </button>
+                </section>
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Compare outputs</p>
+                  <p className={styles.sidebarHint}>
+                    Select a model in the top bar, then append its result to the comparison.
+                  </p>
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                    onClick={handleAppendSegmentation}
+                    disabled={!seg.segDone || !sessionId || !selectedModel || modelRunBusy || seg.isSegmenting}
+                    title={!seg.segDone ? "Run segmentation once before appending another model" : undefined}
+                  >
+                    <Play size={14} />
+                    {modelRunBusy || seg.isSegmenting
+                      ? "Running model…"
+                      : `Append ${modelLabel(selectedModel ?? "model")}`}
+                  </button>
+                  {!seg.segDone && (
+                    <p className={styles.sidebarHint}>Run one segmentation first to enable comparison.</p>
+                  )}
                 </section>
                 {seg.segDone && seg.masksVisible && (
                   <div style={{ marginBottom: 8 }}>
@@ -3193,8 +3293,8 @@ export default function Workspace() {
                 )}
 
                 {/* seg mask overlay */}
-                {!refineMode && seg.segDone && seg.masksVisible && seg.maskUrl && (
-                  <img src={seg.maskUrl} alt="" style={{
+                {!refineMode && seg.segDone && seg.masksVisible && activeMaskUrl && (
+                  <img src={activeMaskUrl} alt="" style={{
                     position: "absolute", top: 0, left: 0,
                     width: "100%", height: "100%",
                     opacity: polygonOpacity, mixBlendMode: "screen",
@@ -3689,6 +3789,16 @@ export default function Workspace() {
                   onClick={() => zoomBy(1.1)}>
                   <Plus size={13} />
                 </button>
+                <button
+                  type="button"
+                  className={styles.toolBtn}
+                  title="Open split view"
+                  aria-label="Open split view"
+                  disabled={seg.comparisonOutputs.length === 0}
+                  onClick={openSplitSelector}
+                >
+                  <span className={styles.splitIcon} aria-hidden="true" />
+                </button>
                 <span className={styles.toolSep} />
                 <button type="button"
                   className={`${styles.toolBtn}${seg.masksVisible ? ` ${styles.toolBtnOn}` : ""}`}
@@ -3726,9 +3836,10 @@ export default function Workspace() {
             sessionId={sessionId}
             groupName={groupCtx?.name}
             metadata={metadata}
-            stats={seg.stats}
+            modelName={activeModel ? modelLabel(activeModel) : null}
+            stats={activeStats}
             segDone={seg.segDone}
-            groundTruthScore={seg.groundTruthScore}
+            groundTruthScore={activeGroundTruthScore}
             scaleBarMode={scaleBarMode}
             scaleBarPixels={scaleBarPixels}
             onViewDetails={() => setShowStatsDetail(true)}
@@ -3946,6 +4057,29 @@ export default function Workspace() {
           <div className={styles.toasts}>
             {toasts.map(t => <ToastCard key={t.id} msg={t} onDone={removeToast} />)}
           </div>
+        )}
+        {splitSelectorOpen && (
+          <SplitOutputSelector
+            outputs={seg.comparisonOutputs}
+            selectedOutputIds={splitOutputIds}
+            formatModel={modelLabel}
+            onToggle={toggleSplitOutput}
+            onCancel={() => setSplitSelectorOpen(false)}
+            onOpen={openSplitView}
+          />
+        )}
+        {splitViewOpen && image && splitOutputs.length > 0 && (
+          <SplitWorkspaceView
+            imageSrc={image}
+            imageFilter={imgFilter}
+            outputs={splitOutputs}
+            imageWidth={splitOutputs.find(output => output.labelMask)?.labelMask?.width ?? metadata?.image_shape?.[1] ?? 1}
+            imageHeight={splitOutputs.find(output => output.labelMask)?.labelMask?.height ?? metadata?.image_shape?.[0] ?? 1}
+            maskOpacity={polygonOpacity}
+            onMaskOpacityChange={setPolygonOpacity}
+            formatModel={modelLabel}
+            onClose={() => setSplitViewOpen(false)}
+          />
         )}
       </div>
     </>

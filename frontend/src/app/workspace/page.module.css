@@ -986,6 +986,14 @@ text-align: center;
 font-size: 10.5px;
 color: var(--text-dim);
 }
+.splitIcon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  background: currentColor;
+  mask: url("/split-view.svg") center / contain no-repeat;
+  -webkit-mask: url("/split-view.svg") center / contain no-repeat;
+}
 .toolSep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; }
 
 /* Stats */

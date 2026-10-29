@@ -1,0 +1,68 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(5px);
+}
+
+.dialog {
+  width: min(540px, 100%);
+  max-height: min(720px, 90vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
+}
+
+.header,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.header { border-bottom: 1px solid var(--border); }
+.header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.header p { margin: 6px 0 0; color: var(--text-dim); font-size: 11px; }
+.selectionCount { color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.outputList { overflow: auto; padding: 8px 12px; }
+
+.outputRow {
+  display: grid;
+  grid-template-columns: 16px 68px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+}
+
+.outputRow:last-child { border-bottom: 0; }
+.outputRow input { accent-color: var(--accent); margin: 0; }
+.outputIndex,
+.outputMeta { color: var(--text-faint); font-size: 10px; }
+.modelName { overflow: hidden; color: var(--text); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+.actions { justify-content: flex-end; border-top: 1px solid var(--border); }
+.actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.secondaryButton { color: var(--text-dim); background: var(--bg-elev); }
+.primaryButton { color: var(--on-accent); background: var(--accent); border-color: var(--accent) !important; font-weight: 600 !important; }
+.actions button:disabled { opacity: 0.35; cursor: not-allowed; }

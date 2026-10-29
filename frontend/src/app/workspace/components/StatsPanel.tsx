@@ -23,6 +23,7 @@ interface Props {
   sessionId: string | null;
   groupName?: string | null;
   metadata: Metadata | null;
+  modelName: string | null;
   stats: StatsResult | null;
   segDone: boolean;
   groundTruthScore: GTScores | null;
@@ -125,6 +126,7 @@ export default function StatsPanel({
   sessionId,
   groupName,
   metadata,
+  modelName,
   stats,
   segDone,
   groundTruthScore,
@@ -215,6 +217,18 @@ export default function StatsPanel({
           </div>
         )}
       </section>
+
+      {modelName && (
+        <section className={styles.section}>
+          <p className={styles.sectionLabel}>Current Segmentation</p>
+          <div className={styles.grid}>
+            <div className={styles.row}>
+              <span className={styles.label}>Model</span>
+              <span className={styles.val}>{modelName}</span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Shape Rules */}
       <section className={styles.section}>
