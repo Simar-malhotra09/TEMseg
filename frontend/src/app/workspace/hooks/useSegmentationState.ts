@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { segmentImage, uploadGroundTruth, computeGTScore, getInstanceLabels, isRequestAborted, YoloParams } from "@/lib/api";
+import { segmentImage, uploadGroundTruth, computeGTScore, getInstanceLabels, getComparisonOutputs, getComparisonOutputLabels, isRequestAborted, YoloParams, ComparisonView } from "@/lib/api";
 import { BASE_URL, StatsResult } from "@/lib/api";
 import { BlackoutRect } from "../components/BlackOutCanvas" 
 import { LabeledMask, parseNumpyLabels } from "../utils/numpyLabels";
@@ -94,7 +94,7 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
         outputUrls.current.add(previousUrl);
         const previousLabels = parseNumpyLabels(await getInstanceLabels(sessionId));
         outputs = [{
-          id: crypto.randomUUID(),
+          id: previousModel ?? "Previous result",
           model: previousModel ?? "Previous result",
           maskUrl: previousUrl,
           labelMask: previousLabels,
@@ -105,7 +105,7 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
         setComparisonOutputs(outputs);
       }
       const result = await segmentImage(
-        sessionId, model, activeRegions, blackout, inverse, true, encoderDepth, yolo
+        sessionId, model, activeRegions, blackout, inverse, true, encoderDepth, yolo, append
       );
       if ('error' in result) {
         return "Segmentation returned no results.";
@@ -118,7 +118,7 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
       outputUrls.current.add(outputUrl);
       const labelMask = parseNumpyLabels(await getInstanceLabels(sessionId));
       const output: SegmentationOutput = {
-        id: crypto.randomUUID(),
+        id: result.model,
         model: result.model,
         maskUrl: outputUrl,
         labelMask,
@@ -127,18 +127,23 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
         groundTruthScore: null,
       };
       const nextOutputs = append
-        ? [...outputs, output]
+        ? [...outputs.filter(item => item.model !== output.model), output]
         : [output];
-      if (!append) {
-        for (const item of outputs) {
-          if (item.maskUrl !== outputUrl) {
-            URL.revokeObjectURL(item.maskUrl);
-            outputUrls.current.delete(item.maskUrl);
-          }
+      const removedOutputs = append
+        ? outputs.filter(item => item.model === output.model)
+        : outputs;
+      for (const item of removedOutputs) {
+        if (item.maskUrl !== outputUrl) {
+          URL.revokeObjectURL(item.maskUrl);
+          outputUrls.current.delete(item.maskUrl);
         }
       }
+      if (!append) {
+        setCurrentOutputIndex(0);
+      } else {
+        setCurrentOutputIndex(nextOutputs.findIndex(item => item.model === output.model));
+      }
       setComparisonOutputs(nextOutputs);
-      setCurrentOutputIndex(nextOutputs.length - 1);
       setMaskUrl(`${BASE_URL}${result.mask_url}?t=${Date.now()}`);
       setStats(result.stats);
       setSegDone(true);
@@ -169,6 +174,41 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
       setIsSegmenting(false);
     }
   }, [sessionId, encoderDepth, comparisonOutputs, segDone, maskUrl, stats]);
+
+  const restoreComparisonOutputs = useCallback(async (targetSessionId: string): Promise<ComparisonView> => {
+    const saved = await getComparisonOutputs(targetSessionId);
+    const restoredUrls: string[] = [];
+    try {
+      const restoredOutputs = await Promise.all(saved.outputs.map(async record => {
+        const maskResponse = await fetch(`${BASE_URL}${record.mask_url}`);
+        if (!maskResponse.ok) {
+          throw new Error(`Could not restore ${record.model} mask: HTTP ${maskResponse.status}`);
+        }
+        const maskUrl = URL.createObjectURL(await maskResponse.blob());
+        restoredUrls.push(maskUrl);
+        const labelMask = record.labels_url
+          ? parseNumpyLabels(await getComparisonOutputLabels(targetSessionId, record.run_id))
+          : null;
+        return {
+          id: record.model,
+          model: record.model,
+          maskUrl,
+          labelMask,
+          stats: record.stats,
+          timeElapsed: record.time_elapsed,
+          groundTruthScore: null,
+        } satisfies SegmentationOutput;
+      }));
+      for (const url of outputUrls.current) URL.revokeObjectURL(url);
+      outputUrls.current = new Set(restoredUrls);
+      setComparisonOutputs(restoredOutputs);
+      setCurrentOutputIndex(Math.max(0, restoredOutputs.length - 1));
+      return saved.view;
+    } catch (error) {
+      for (const url of restoredUrls) URL.revokeObjectURL(url);
+      throw error;
+    }
+  }, []);
 
   // compute GT score 
   // called after seg or after GT upload
@@ -308,6 +348,7 @@ export function useSegmentationState({ sessionId, encoderDepth }: Options) {
 
     // actions
     runSegmentation,
+    restoreComparisonOutputs,
     scoreGroundTruth,
     uploadGT,
     applyBlackout,

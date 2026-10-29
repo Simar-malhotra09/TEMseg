@@ -154,6 +154,25 @@ export interface StatsResult {
   particles: ParticleStats[];
 }
 
+export interface ComparisonView {
+  base_model: string | null;
+  pane_models: string[];
+}
+
+export interface ComparisonOutputRecord {
+  run_id: string;
+  model: string;
+  time_elapsed: number;
+  stats: StatsResult | null;
+  mask_url: string;
+  labels_url: string | null;
+}
+
+export interface ComparisonOutputsResult {
+  outputs: ComparisonOutputRecord[];
+  view: ComparisonView;
+}
+
 export interface ParticleStats {
   id: number;
   area_px: number;
@@ -613,6 +632,33 @@ export async function getStats(sessionId: string): Promise<StatsResult | null> {
   return res.json();
 }
 
+export async function getComparisonOutputs(sessionId: string): Promise<ComparisonOutputsResult> {
+  const res = await trackedFetch(`${BASE_URL}/sessions/${sessionId}/comparison-outputs`);
+  if (!res.ok) throw new Error(`getComparisonOutputs: ${res.status}`);
+  return res.json();
+}
+
+export async function getComparisonOutputLabels(
+  sessionId: string,
+  runId: string,
+): Promise<ArrayBuffer> {
+  const res = await trackedFetch(`${BASE_URL}/sessions/${sessionId}/comparison-outputs/${runId}/labels`);
+  if (!res.ok) throw new Error(`getComparisonOutputLabels: ${res.status}`);
+  return res.arrayBuffer();
+}
+
+export async function saveComparisonView(
+  sessionId: string,
+  view: ComparisonView,
+): Promise<void> {
+  const res = await trackedFetch(`${BASE_URL}/sessions/${sessionId}/comparison-outputs/view`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(view),
+  });
+  if (!res.ok) throw new Error(`saveComparisonView: ${res.status}`);
+}
+
 export interface SystemModel {
   key: string;
   name: string;
@@ -794,6 +840,7 @@ export async function segmentImage(
   colorize: boolean = true,
   encoderDepth: number = 12,
   yolo: YoloParams = { conf: 0.01, iou: 0.5, max_det: 4000 },
+  appendOutput: boolean = false,
 ): Promise<SegmentResponse> {
   console.log(
     "Calling [segmentImage]",
@@ -819,6 +866,7 @@ export async function segmentImage(
       yolo_conf: yolo.conf,
       yolo_iou: yolo.iou,
       yolo_max_det: yolo.max_det,
+      append_output: appendOutput,
     }),
   });
 
