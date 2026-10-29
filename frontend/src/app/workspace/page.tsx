@@ -1144,7 +1144,7 @@ export default function Workspace() {
   }
 
   async function openSplitView() {
-    if (splitOutputs.length === 0 || splitOutputs.length > 4) return;
+    if (seg.comparisonOutputs.length < 2 || splitOutputs.length === 0 || splitOutputs.length > 4) return;
     const paneModels = splitOutputs.map(output => output.model);
     const baseModel = paneModels.includes(comparisonView.base_model ?? "")
       ? comparisonView.base_model
@@ -1164,6 +1164,7 @@ export default function Workspace() {
   }
 
   function openSplitSelector() {
+    if (seg.comparisonOutputs.length < 2) return;
     const currentOutput = seg.comparisonOutputs[seg.currentOutputIndex];
     const savedOutputs = comparisonView.pane_models
       .filter(model => seg.comparisonOutputs.some(output => output.model === model));
@@ -3894,9 +3895,9 @@ export default function Workspace() {
                 <button
                   type="button"
                   className={styles.toolBtn}
-                  title="Open split view"
+                  title={seg.comparisonOutputs.length < 2 ? "Append another segmentation to enable split view" : "Open split view"}
                   aria-label="Open split view"
-                  disabled={seg.comparisonOutputs.length === 0}
+                  disabled={seg.comparisonOutputs.length < 2}
                   onClick={openSplitSelector}
                 >
                   <span className={styles.splitIcon} aria-hidden="true" />
