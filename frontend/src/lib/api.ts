@@ -325,6 +325,7 @@ export interface Metadata {
   };
   calibration_warning?: string;
   axes?: { scale: number; size: number; units: string }[];
+  analysis?: { model?: string };
 }
 
 export interface SegmentResponse {
@@ -867,6 +868,12 @@ export async function getInstances(sessionId: string): Promise<{ instances: Inst
   });
   if (!res.ok) throw new Error("Failed to get instances");
   return res.json();
+}
+
+export async function getInstanceLabels(sessionId: string): Promise<ArrayBuffer> {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/instance-labels`);
+  if (!res.ok) throw new Error(`Failed to get labeled instances: HTTP ${res.status}`);
+  return res.arrayBuffer();
 }
 
 export async function saveInstances(sessionId: string, instances: Instance[]) {

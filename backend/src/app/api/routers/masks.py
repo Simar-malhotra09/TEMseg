@@ -7,6 +7,7 @@ from typing import List, Literal, Tuple
 import cv2 as cv
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
@@ -133,6 +134,18 @@ async def get_stats(session_id: str):
         raise HTTPException(status_code=404, detail="No stats — run /segment first")
     with open(stats_path) as f:
         return json.load(f)
+
+
+@router.get("/{session_id}/instance-labels")
+async def get_instance_labels(session_id: str):
+    """Return the current labeled instance mask for in-memory comparisons."""
+    labels_path = _session_dir(session_id) / "instances.npy"
+    if not labels_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="No labeled instance mask found — run segmentation first",
+        )
+    return FileResponse(labels_path, media_type="application/octet-stream")
 
 
 @router.post("/{session_id}/instances")
