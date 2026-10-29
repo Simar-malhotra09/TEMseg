@@ -10,7 +10,7 @@ import {
   Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup } from "@/lib/api";
+import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getStats, getSystemInfo, SystemInfo, getYoloSettings, saveYoloSettings, YoloConfig, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
 import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
 
@@ -233,6 +233,7 @@ export default function Workspace() {
   const [splitSelectorOpen, setSplitSelectorOpen] = useState(false);
   const [splitViewOpen, setSplitViewOpen] = useState(false);
   const [splitOutputIds, setSplitOutputIds] = useState<string[]>([]);
+  const [comparisonView, setComparisonView] = useState<ComparisonView>({ base_model: null, pane_models: [] });
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
   const [encoderDepth, setEncoderDepth] = useState<number>(12);
@@ -443,10 +444,13 @@ export default function Workspace() {
 
     // Rehydrate seg state from disk in parallel. both calls return null on 404
     // (i.e. no segmentation run yet for this session).
-    const [stats, instRes] = await Promise.all([
+    const [stats, instRes, savedComparisonView] = await Promise.all([
       getStats(sessionId).catch(() => null),
       getInstances(sessionId).catch(() => ({ instances: [] as Instance[] })),
+      seg.restoreComparisonOutputs(sessionId),
     ]);
+    setComparisonView(savedComparisonView);
+    setSplitOutputIds(savedComparisonView.pane_models);
     if (stats) {
       seg.setStats(stats);
       seg.setSegDone(true);
@@ -835,6 +839,8 @@ export default function Workspace() {
     setAnnotateMode(false);
     setBoxMode(false);
     setMetadata(null);
+    setComparisonView({ base_model: null, pane_models: [] });
+    setSplitOutputIds([]);
     setZoom(1); // def zoom is the same size as img
     setPan({ x: 0, y: 0 });
     setRfBgMode(false);
@@ -1069,16 +1075,44 @@ export default function Workspace() {
     });
   }
 
-  function openSplitView() {
+  async function openSplitView() {
     if (splitOutputs.length === 0 || splitOutputs.length > 4) return;
+    const paneModels = splitOutputs.map(output => output.model);
+    const baseModel = paneModels.includes(comparisonView.base_model ?? "")
+      ? comparisonView.base_model
+      : paneModels[0];
+    const nextView = { base_model: baseModel, pane_models: paneModels };
+    try {
+      if (sessionId) await saveComparisonView(sessionId, nextView);
+      setComparisonView(nextView);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save comparison selection.";
+      setStatus(message);
+      pushToast("err", "Could not save comparison", message);
+      return;
+    }
     setSplitSelectorOpen(false);
     setSplitViewOpen(true);
   }
 
   function openSplitSelector() {
     const currentOutput = seg.comparisonOutputs[seg.currentOutputIndex];
-    setSplitOutputIds(currentOutput ? [currentOutput.id] : []);
+    const savedOutputs = comparisonView.pane_models
+      .filter(model => seg.comparisonOutputs.some(output => output.model === model));
+    setSplitOutputIds(savedOutputs.length > 0 ? savedOutputs : currentOutput ? [currentOutput.id] : []);
     setSplitSelectorOpen(true);
+  }
+
+  async function handleSplitBaseChange(model: string) {
+    const nextView = { base_model: model, pane_models: splitOutputs.map(output => output.model) };
+    try {
+      if (sessionId) await saveComparisonView(sessionId, nextView);
+      setComparisonView(nextView);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save comparison base.";
+      setStatus(message);
+      pushToast("err", "Could not save comparison base", message);
+    }
   }
 
 
@@ -4078,6 +4112,8 @@ export default function Workspace() {
             maskOpacity={polygonOpacity}
             onMaskOpacityChange={setPolygonOpacity}
             formatModel={modelLabel}
+            initialBaseModel={comparisonView.base_model}
+            onBaseModelChange={handleSplitBaseChange}
             onClose={() => setSplitViewOpen(false)}
           />
         )}

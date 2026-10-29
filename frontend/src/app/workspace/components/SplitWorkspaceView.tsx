@@ -14,6 +14,8 @@ interface Props {
   maskOpacity: number;
   onMaskOpacityChange: (opacity: number) => void;
   formatModel: (model: string) => string;
+  initialBaseModel: string | null;
+  onBaseModelChange: (model: string) => void;
   onClose: () => void;
 }
 
@@ -196,11 +198,15 @@ export default function SplitWorkspaceView({
   maskOpacity,
   onMaskOpacityChange,
   formatModel,
+  initialBaseModel,
+  onBaseModelChange,
   onClose,
 }: Props) {
   const [viewByOutput, setViewByOutput] = useState<Record<string, PaneViewState>>({});
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("masks");
-  const [referenceOutputId, setReferenceOutputId] = useState(outputs[0]?.id ?? "");
+  const [referenceOutputId, setReferenceOutputId] = useState(
+    outputs.find(output => output.model === initialBaseModel)?.id ?? outputs[0]?.id ?? "",
+  );
   const [regionIndex, setRegionIndex] = useState(0);
   const [regionGap, setRegionGap] = useState(1.5);
   const panGesture = useRef<PanGesture | null>(null);
@@ -367,7 +373,12 @@ export default function SplitWorkspaceView({
         {outputs.length > 1 && (
           <label className={styles.referenceControl}>
             <span>Compare to</span>
-            <select value={referenceOutput?.id ?? ""} onChange={event => { setReferenceOutputId(event.target.value); setRegionIndex(0); }}>
+            <select value={referenceOutput?.id ?? ""} onChange={event => {
+              setReferenceOutputId(event.target.value);
+              setRegionIndex(0);
+              const selectedOutput = outputs.find(output => output.id === event.target.value);
+              if (selectedOutput) onBaseModelChange(selectedOutput.model);
+            }}>
               {outputs.map(output => {
                 const sameModelOutputs = outputs.filter(item => item.model === output.model);
                 const runSuffix = sameModelOutputs.length > 1 ? ` · run ${sameModelOutputs.indexOf(output) + 1}` : "";
