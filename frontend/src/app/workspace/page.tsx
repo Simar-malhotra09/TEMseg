@@ -4072,7 +4072,7 @@ export default function Workspace() {
                           className={styles.settingsKey}
                           title="Live resident memory for the backend process. Device and driver memory may not be included."
                         >
-                          ram (now, est.)
+                          ram (live)
                         </span>
                         <span className={styles.settingsVal}>
                           {systemMemory ? formatBytes(systemMemory.current_rss_bytes) : "reading…"}
