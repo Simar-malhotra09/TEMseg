@@ -1,21 +1,112 @@
 "use client";
 import styles from "./page.module.css";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useSyncExternalStore, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+  useCallback,
+} from "react";
 // import {Image} from "next/Image"
 import {
-  Upload, Play, Sliders,
-  Eye, EyeOff, Trash2, ChevronDown, ChevronLeft, ChevronRight, AlertTriangle,
-  Slice, Pencil, CirclePlus, BarChart2, Settings, Sun, Moon,
-  Maximize, Minus, Plus, Square, File, Folder, FolderOpen,
+  Upload,
+  Play,
+  Sliders,
+  Eye,
+  EyeOff,
+  Trash2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  Slice,
+  Pencil,
+  CirclePlus,
+  BarChart2,
+  Settings,
+  Sun,
+  Moon,
+  Maximize,
+  Minus,
+  Plus,
+  Square,
+  File,
+  Folder,
+  FolderOpen,
 } from "lucide-react";
 
-import { BASE_URL, Instance, getModels, uploadImage, getInstances, saveInstances, getSessionMetadata, getRecentSessions, RecentSession, getSessionStorage, SessionStorageInfo, getStats, getSystemInfo, getSystemMemory, ejectSegmentorGroup, SystemInfo, SystemMemory, getYoloSettings, saveYoloSettings, YoloConfig, getUiPreferences, saveUiPreferences, getSamStatus, prepareSam, fromPoints, fromBoxes, proposeSimilar, rfPropose, getBatchRFStatus, enableBatchRF, teachBatchRF, teachBatchRFInstances, retractBatchRFExample, batchRFPropose, BatchRFStatus, Metadata, StatsResult, subscribeToRequestActivity, getActiveRequestCount, abortInFlightRequests, isRequestAborted, PARTICLE_METRIC_FIELDS, ParticleMetricField, getGroups, getGroup, Group, uploadManyImages, UploadManyResult, importFolderViaPyWebView, isFolderImportAvailable, renameSession, deleteSession, deleteAllSessions, renameGroup, deleteGroup, ComparisonView, saveComparisonView } from "@/lib/api";
+import {
+  BASE_URL,
+  Instance,
+  getModels,
+  uploadImage,
+  getInstances,
+  saveInstances,
+  getSessionMetadata,
+  getRecentSessions,
+  RecentSession,
+  getSessionStorage,
+  SessionStorageInfo,
+  getStats,
+  getSystemInfo,
+  getSystemMemory,
+  ejectSegmentorGroup,
+  SystemInfo,
+  SystemMemory,
+  getYoloSettings,
+  saveYoloSettings,
+  YoloConfig,
+  getUiPreferences,
+  saveUiPreferences,
+  getSamStatus,
+  prepareSam,
+  fromPoints,
+  fromBoxes,
+  proposeSimilar,
+  rfPropose,
+  getBatchRFStatus,
+  enableBatchRF,
+  teachBatchRF,
+  teachBatchRFInstances,
+  retractBatchRFExample,
+  batchRFPropose,
+  BatchRFStatus,
+  Metadata,
+  StatsResult,
+  subscribeToRequestActivity,
+  getActiveRequestCount,
+  abortInFlightRequests,
+  isRequestAborted,
+  PARTICLE_METRIC_FIELDS,
+  ParticleMetricField,
+  getGroups,
+  getGroup,
+  Group,
+  uploadManyImages,
+  UploadManyResult,
+  importFolderViaPyWebView,
+  isFolderImportAvailable,
+  renameSession,
+  deleteSession,
+  deleteAllSessions,
+  renameGroup,
+  deleteGroup,
+  ComparisonView,
+  saveComparisonView,
+} from "@/lib/api";
 import { nextFreeId, describeRejection } from "@/lib/utils";
-import { MousePointerClick, Sparkles, PenTool, BoxSelect, Ruler, Compass } from "lucide-react";
+import {
+  MousePointerClick,
+  Sparkles,
+  PenTool,
+  BoxSelect,
+  Ruler,
+  Compass,
+} from "lucide-react";
 
-import { BlackoutRect }  from "./components/BlackOutCanvas";
-import  BlackoutCanvas  from "./components/BlackOutCanvas";
+import { BlackoutRect } from "./components/BlackOutCanvas";
+import BlackoutCanvas from "./components/BlackOutCanvas";
 import ScribbleCanvas, { Scribble } from "./components/ScribbleCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import AnnotateCanvas from "./components/AnnotateCanvas";
@@ -40,7 +131,7 @@ import { useRefineState } from "./hooks/useRefineState";
 // refine canvas' pan/zoom viewBox pattern so points can be placed precisely
 // while zoomed in.
 
-interface ImgSize{
+interface ImgSize {
   width: number;
   height: number;
 }
@@ -73,25 +164,41 @@ type AugmentMethod = "click" | "box" | "similar";
 
 // labels for the refine-mode hover tooltip field picker
 const TOOLTIP_FIELD_LABELS: Record<ParticleMetricField, string> = {
-  diameter: "Diameter", area: "Area", circularity: "Circularity",
-  solidity: "Solidity", aspect_ratio: "Aspect Ratio", shape: "Shape",
-  nearest_neighbor: "Nearest Neighbor (NNI)", border_distance: "Border Distance",
+  diameter: "Diameter",
+  area: "Area",
+  circularity: "Circularity",
+  solidity: "Solidity",
+  aspect_ratio: "Aspect Ratio",
+  shape: "Shape",
+  nearest_neighbor: "Nearest Neighbor (NNI)",
+  border_distance: "Border Distance",
 };
 
 type ToastKind = "ok" | "info" | "warn" | "err";
-interface ToastMsg { id: number; kind: ToastKind; title: string; desc?: string }
+interface ToastMsg {
+  id: number;
+  kind: ToastKind;
+  title: string;
+  desc?: string;
+}
 
 const TOAST_DURATION = 2500;
 const TOAST_CLASS: Record<ToastKind, string> = {
-  ok: styles.toastOk, info: styles.toastInfo, warn: styles.toastWarn, err: styles.toastErr,
+  ok: styles.toastOk,
+  info: styles.toastInfo,
+  warn: styles.toastWarn,
+  err: styles.toastErr,
 };
 
 // "3.2 MB · 09-02 · 0003" — recents-row meta; size is null if the org file went missing.
 function formatRecentMeta(s: RecentSession): string {
   const parts: string[] = [];
-  if (s.file_size_bytes != null) parts.push(`${(s.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`);
+  if (s.file_size_bytes != null)
+    parts.push(`${(s.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`);
   const d = new Date(s.last_updated_at * 1000);
-  parts.push(`${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  parts.push(
+    `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+  );
   parts.push(s.session_id);
   return parts.join(" · ");
 }
@@ -111,7 +218,13 @@ function formatSessionStorageBytes(bytes: number): string {
 // Self-dismissing toast. Auto-dismisses after TOAST_DURATION; hovering pins
 // it (timer re-arms from the remaining time on mouse leave); clicking
 // dismisses immediately.
-function ToastCard({ msg, onDone }: { msg: ToastMsg; onDone: (id: number) => void }) {
+function ToastCard({
+  msg,
+  onDone,
+}: {
+  msg: ToastMsg;
+  onDone: (id: number) => void;
+}) {
   const [leaving, setLeaving] = useState(false);
   const timerRef = useRef<number | null>(null);
   const deadlineRef = useRef(0);
@@ -146,8 +259,12 @@ function ToastCard({ msg, onDone }: { msg: ToastMsg; onDone: (id: number) => voi
   return (
     <div
       className={`${styles.toast} ${TOAST_CLASS[msg.kind]}${leaving ? ` ${styles.toastLeaving}` : ""}`}
-      onMouseEnter={() => { if (!leaving) clear(); }}
-      onMouseLeave={() => { if (!leaving) arm(Math.max(300, deadlineRef.current - Date.now())); }}
+      onMouseEnter={() => {
+        if (!leaving) clear();
+      }}
+      onMouseLeave={() => {
+        if (!leaving) arm(Math.max(300, deadlineRef.current - Date.now()));
+      }}
       onClick={dismiss}
     >
       <div className={styles.toastBody}>
@@ -166,14 +283,18 @@ const WATERFALL_INTERVAL_MS = 90;
 
 function useAsciiWaterfall(active: boolean): string {
   const offsetRef = useRef(0);
-  const [frame, setFrame] = useState(() => WATERFALL_LOOP.slice(0, WATERFALL_LENGTH));
+  const [frame, setFrame] = useState(() =>
+    WATERFALL_LOOP.slice(0, WATERFALL_LENGTH),
+  );
 
   useEffect(() => {
     if (!active) return;
     const doubled = WATERFALL_LOOP + WATERFALL_LOOP;
     const id = setInterval(() => {
       offsetRef.current = (offsetRef.current + 1) % WATERFALL_LOOP.length;
-      setFrame(doubled.slice(offsetRef.current, offsetRef.current + WATERFALL_LENGTH));
+      setFrame(
+        doubled.slice(offsetRef.current, offsetRef.current + WATERFALL_LENGTH),
+      );
     }, WATERFALL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [active]);
@@ -184,7 +305,9 @@ function useAsciiWaterfall(active: boolean): string {
 function AsciiWaterfall({ active }: { active: boolean }) {
   const frame = useAsciiWaterfall(active);
   return (
-    <span className={styles.waterfall} aria-hidden="true">{frame}</span>
+    <span className={styles.waterfall} aria-hidden="true">
+      {frame}
+    </span>
   );
 }
 
@@ -225,7 +348,12 @@ function SamGateNote({
     <div style={{ marginBottom: 8 }}>
       <p className={styles.sidebarHint}>{note}</p>
       {canPrepare && (
-        <button type="button" className={styles.actionBtn} disabled={preparing} onClick={onPrepare}>
+        <button
+          type="button"
+          className={styles.actionBtn}
+          disabled={preparing}
+          onClick={onPrepare}
+        >
           {preparing ? "Preparing..." : actionLabel}
         </button>
       )}
@@ -234,24 +362,34 @@ function SamGateNote({
 }
 
 export default function Workspace() {
-
   // models
-  const { data: models = [] } = useQuery({ queryKey: ["models"], queryFn: getModels });
+  const { data: models = [] } = useQuery({
+    queryKey: ["models"],
+    queryFn: getModels,
+  });
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [modelRunBusy, setModelRunBusy] = useState(false);
   const [splitSelectorOpen, setSplitSelectorOpen] = useState(false);
   const [splitViewOpen, setSplitViewOpen] = useState(false);
   const [splitOutputIds, setSplitOutputIds] = useState<string[]>([]);
-  const [comparisonView, setComparisonView] = useState<ComparisonView>({ base_model: null, pane_models: [] });
-  const [resetComparisonWarningOpen, setResetComparisonWarningOpen] = useState(false);
-  const [dontShowResetComparisonWarning, setDontShowResetComparisonWarning] = useState(false);
+  const [comparisonView, setComparisonView] = useState<ComparisonView>({
+    base_model: null,
+    pane_models: [],
+  });
+  const [resetComparisonWarningOpen, setResetComparisonWarningOpen] =
+    useState(false);
+  const [dontShowResetComparisonWarning, setDontShowResetComparisonWarning] =
+    useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
   const [encoderDepth, setEncoderDepth] = useState<number>(12);
   const [depthDropdownOpen, setDepthDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const depthDropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (models.length > 0) setSelectedModel(models.find(m => m === "MobileSAM") ?? models[0]); }, [models]); // default pipeline is MobileSAM
+  useEffect(() => {
+    if (models.length > 0)
+      setSelectedModel(models.find((m) => m === "MobileSAM") ?? models[0]);
+  }, [models]); // default pipeline is MobileSAM
   useEffect(() => {
     const closeOnOutsidePress = (e: MouseEvent) => {
       const t = e.target as Node;
@@ -260,9 +398,9 @@ export default function Workspace() {
     };
     document.addEventListener("mousedown", closeOnOutsidePress);
     return () => document.removeEventListener("mousedown", closeOnOutsidePress);
-  }, []); 
+  }, []);
 
-  // session 
+  // session
   const [sessionId, setSessionId] = useState<string | null>(null); // server return sessionId from uploadImage
 
   // image
@@ -270,7 +408,11 @@ export default function Workspace() {
   const [imgSize, setImgSize] = useState<ImgSize>({ width: 0, height: 0 }); // set when we load image in client
   const [isDragging, setIsDragging] = useState(false); // to drag and drop files
   const [status, setStatus] = useState("Upload an image to begin."); // def status in our status bar
-  const activeRequestCount = useSyncExternalStore(subscribeToRequestActivity, getActiveRequestCount, () => 0);
+  const activeRequestCount = useSyncExternalStore(
+    subscribeToRequestActivity,
+    getActiveRequestCount,
+    () => 0,
+  );
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
   const [activityOpen, setActivityOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -297,10 +439,15 @@ export default function Workspace() {
       };
       saveChain.current = saveChain.current
         .then(() => saveYoloSettings(overrides))
-        .catch(() => { /* keep the new value in the UI */ });
+        .catch(() => {
+          /* keep the new value in the UI */
+        });
     }, 300);
   };
-  const setYoloOverride = (field: keyof YoloConfig, override: number | null) => {
+  const setYoloOverride = (
+    field: keyof YoloConfig,
+    override: number | null,
+  ) => {
     const next: YoloConfig = {
       ...yolo,
       [field]: { default: yolo[field].default, override },
@@ -310,7 +457,11 @@ export default function Workspace() {
   };
   // restore the user overrides saved by the previous app run
   useEffect(() => {
-    getYoloSettings().then(setYolo).catch(() => { /* keep defaults */ });
+    getYoloSettings()
+      .then(setYolo)
+      .catch(() => {
+        /* keep defaults */
+      });
   }, []);
 
   // transient toasts — push for things worth surfacing beyond the status pill
@@ -319,13 +470,18 @@ export default function Workspace() {
   const pushToast = (kind: ToastKind, title: string, desc?: string) => {
     toastIdRef.current += 1;
     const id = toastIdRef.current;
-    setToasts(prev => [...prev.slice(-3), { id, kind, title, desc }]);
+    setToasts((prev) => [...prev.slice(-3), { id, kind, title, desc }]);
   };
-  const removeToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
+  const removeToast = (id: number) =>
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   useEffect(() => {
     getUiPreferences()
-      .then(preferences => setDontShowResetComparisonWarning(preferences.hide_comparison_reset_warning))
-      .catch(error => console.warn("Could not load UI preferences:", error));
+      .then((preferences) =>
+        setDontShowResetComparisonWarning(
+          preferences.hide_comparison_reset_warning,
+        ),
+      )
+      .catch((error) => console.warn("Could not load UI preferences:", error));
   }, []);
 
   // metadata
@@ -341,21 +497,26 @@ export default function Workspace() {
   // mount fetch covers the chip, the settings-open fetch refreshes the modal.
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemMemory, setSystemMemory] = useState<SystemMemory | null>(null);
-  const [ejectingSegmentorGroup, setEjectingSegmentorGroup] = useState<string | null>(null);
+  const [ejectingSegmentorGroup, setEjectingSegmentorGroup] = useState<
+    string | null
+  >(null);
   const refreshSystemInfo = useCallback(() => {
     getSystemInfo()
       .then(setSystemInfo)
-      .catch(err => console.warn("getSystemInfo failed:", err));
+      .catch((err) => console.warn("getSystemInfo failed:", err));
   }, []);
-  useEffect(() => { refreshSystemInfo(); }, [refreshSystemInfo]);
+  useEffect(() => {
+    refreshSystemInfo();
+  }, [refreshSystemInfo]);
   useEffect(() => {
     if (!systemInfo || models.length === 0) return;
     const selectedStatus = systemInfo.models.find(
-      model => model.key === selectedModel,
+      (model) => model.key === selectedModel,
     );
     if (selectedStatus?.available) return;
     const firstAvailable = models.find(
-      model => systemInfo.models.find(status => status.key === model)?.available,
+      (model) =>
+        systemInfo.models.find((status) => status.key === model)?.available,
     );
     setSelectedModel(firstAvailable ?? null);
   }, [models, selectedModel, systemInfo]);
@@ -370,13 +531,15 @@ export default function Workspace() {
   useEffect(() => {
     const saved = localStorage.getItem("temseg-theme");
     if (saved === "light" || saved === "dark") setTheme(saved);
-    else if (window.matchMedia("(prefers-color-scheme: light)").matches) setTheme("light");
+    else if (window.matchMedia("(prefers-color-scheme: light)").matches)
+      setTheme("light");
   }, []);
-  const toggleTheme = () => setTheme(t => {
-    const next = t === "dark" ? "light" : "dark";
-    localStorage.setItem("temseg-theme", next);
-    return next;
-  });
+  const toggleTheme = () =>
+    setTheme((t) => {
+      const next = t === "dark" ? "light" : "dark";
+      localStorage.setItem("temseg-theme", next);
+      return next;
+    });
   const konvaBrightness = Math.max(-1, Math.min(1, (brightness - 1) * 0.6));
   const konvaContrast = Math.max(-100, Math.min(100, (contrast - 1) * 80));
 
@@ -386,10 +549,10 @@ export default function Workspace() {
     let disposed = false;
     const refreshMemory = () => {
       getSystemMemory()
-        .then(memory => {
+        .then((memory) => {
           if (!disposed) setSystemMemory(memory);
         })
-        .catch(err => console.warn("getSystemMemory failed:", err));
+        .catch((err) => console.warn("getSystemMemory failed:", err));
     };
     refreshMemory();
     const intervalId = window.setInterval(refreshMemory, 2000);
@@ -406,7 +569,8 @@ export default function Workspace() {
       setSystemInfo(await getSystemInfo());
       pushToast("ok", "Segmentor unloaded", "YOLO detector remains loaded.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not unload segmentor.";
+      const message =
+        error instanceof Error ? error.message : "Could not unload segmentor.";
       pushToast("err", "Could not unload segmentor", message);
     } finally {
       setEjectingSegmentorGroup(null);
@@ -416,16 +580,20 @@ export default function Workspace() {
   // which method is showing in the Point/Box/Similar sub-window
   const [augmentMethod, setAugmentMethod] = useState<AugmentMethod>("click");
 
-  // highlights particle when it's id gets clicked on the detailed view 
-  const [highlightParticleIdx, setHighlightParticleIdx] = useState<number | null>(null);
+  // highlights particle when it's id gets clicked on the detailed view
+  const [highlightParticleIdx, setHighlightParticleIdx] = useState<
+    number | null
+  >(null);
   const [highlightShape, setHighlightShape] = useState<string | null>(null);
 
   const [loadedInstances, setLoadedInstances] = useState<Instance[]>([]);
 
-
   // viewport
   const viewportRef = useRef<HTMLDivElement>(null); // we want to keep track of the size of the current view: the div where the image is displayed
-  const [viewportSize, setViewportSize] = useState<ImgSize>({ width: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState<ImgSize>({
+    width: 0,
+    height: 0,
+  });
   const fileRef = useRef<HTMLInputElement>(null); // org file uploaded
   const folderRef = useRef<HTMLInputElement>(null); // browser-side folder pick
   const gtFileRef = useRef<HTMLInputElement>(null); // gt file uploaded
@@ -433,7 +601,7 @@ export default function Workspace() {
   useEffect(() => {
     if (!viewportRef.current) return;
     // if the image has been uploded:
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       setViewportSize({ width, height });
     });
@@ -444,11 +612,14 @@ export default function Workspace() {
   // canvas area: the space available to display the image in, independent of the
   // image's own size. Used to scale small images up so they're easier to annotate.
   const canvasAreaRef = useRef<HTMLDivElement>(null);
-  const [canvasSize, setCanvasSize] = useState<ImgSize>({ width: 0, height: 0 });
+  const [canvasSize, setCanvasSize] = useState<ImgSize>({
+    width: 0,
+    height: 0,
+  });
 
   useEffect(() => {
     if (!canvasAreaRef.current) return;
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
       setCanvasSize({ width, height });
     });
@@ -458,9 +629,16 @@ export default function Workspace() {
 
   // fit the image to the available canvas area, scaling up small images as well as
   // down large ones, so tiny images aren't rendered at their native (hard to annotate) size
-  const displayScale = imgSize.width > 0 && imgSize.height > 0 && canvasSize.width > 0 && canvasSize.height > 0
-    ? Math.min(canvasSize.width / imgSize.width, canvasSize.height / imgSize.height)
-    : 1;
+  const displayScale =
+    imgSize.width > 0 &&
+    imgSize.height > 0 &&
+    canvasSize.width > 0 &&
+    canvasSize.height > 0
+      ? Math.min(
+          canvasSize.width / imgSize.width,
+          canvasSize.height / imgSize.height,
+        )
+      : 1;
   const displayWidth = imgSize.width * displayScale;
   const displayHeight = imgSize.height * displayScale;
 
@@ -477,7 +655,10 @@ export default function Workspace() {
   // Load a session into the workspace: image, metadata, and seg/instances
   // rehydrated from disk. Shared by URL restore, group nav, and list rows.
   // Returns false (touching nothing) when the session no longer exists.
-  async function openSession(sessionId: string, group: Group | null): Promise<boolean> {
+  async function openSession(
+    sessionId: string,
+    group: Group | null,
+  ): Promise<boolean> {
     const meta = await getSessionMetadata(sessionId).catch(() => null);
     if (!meta) return false;
     resetForNewImage();
@@ -506,7 +687,9 @@ export default function Workspace() {
       setLoadedInstances(instRes.instances);
       if (instRes.instances.length > 0) {
         // detection boxes overlay exists whenever segmentation found particles
-        seg.setBoxesUrl(`${BASE_URL}/images/${sessionId}/yolo-boxes-debug?t=${Date.now()}`);
+        seg.setBoxesUrl(
+          `${BASE_URL}/images/${sessionId}/yolo-boxes-debug?t=${Date.now()}`,
+        );
       }
     }
     setStatus(
@@ -525,7 +708,11 @@ export default function Workspace() {
   async function goToSession(sessionId: string, group: Group | null) {
     const ok = await openSession(sessionId, group);
     if (!ok) {
-      pushToast("err", "Session unavailable", `Session ${sessionId} no longer exists.`);
+      pushToast(
+        "err",
+        "Session unavailable",
+        `Session ${sessionId} no longer exists.`,
+      );
       refreshLists();
     }
   }
@@ -539,10 +726,14 @@ export default function Workspace() {
     const restoredGroup = params.get("group");
     if (!restored) return;
     (async () => {
-      const group = restoredGroup ? await getGroup(restoredGroup).catch(() => null) : null;
+      const group = restoredGroup
+        ? await getGroup(restoredGroup).catch(() => null)
+        : null;
       if (!(await openSession(restored, group))) {
         window.history.replaceState(null, "", "/workspace");
-        setStatus("Previous session no longer available — upload an image to start.");
+        setStatus(
+          "Previous session no longer available — upload an image to start.",
+        );
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -550,14 +741,17 @@ export default function Workspace() {
 
   // MRU sessions for the empty-state recents rows (backend returns newest-first).
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
-  const [sessionStorage, setSessionStorage] = useState<SessionStorageInfo | null>(null);
+  const [sessionStorage, setSessionStorage] =
+    useState<SessionStorageInfo | null>(null);
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false);
   // multi-image groups for the empty-state groups panel
   const [groups, setGroups] = useState<Group[]>([]);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   // group context for the active session (prev/next navigation)
   const [groupCtx, setGroupCtx] = useState<Group | null>(null);
-  const [batchRFStatus, setBatchRFStatus] = useState<BatchRFStatus | null>(null);
+  const [batchRFStatus, setBatchRFStatus] = useState<BatchRFStatus | null>(
+    null,
+  );
   useEffect(() => {
     if (!groupCtx) {
       setBatchRFStatus(null);
@@ -566,9 +760,16 @@ export default function Workspace() {
     let current = true;
     setBatchRFStatus(null);
     getBatchRFStatus(groupCtx.id)
-      .then(result => { if (current) setBatchRFStatus(result); })
-      .catch(err => { if (current) setStatus(`Batch learning unavailable: ${(err as Error).message}`); });
-    return () => { current = false; };
+      .then((result) => {
+        if (current) setBatchRFStatus(result);
+      })
+      .catch((err) => {
+        if (current)
+          setStatus(`Batch learning unavailable: ${(err as Error).message}`);
+      });
+    return () => {
+      current = false;
+    };
   }, [groupCtx?.id]);
   useEffect(() => {
     getRecentSessions()
@@ -610,7 +811,12 @@ export default function Workspace() {
   }
 
   async function handleDeleteSession(sessionId: string, label: string) {
-    if (!window.confirm(`Delete "${label}"? The session and its stats are removed permanently.`)) return;
+    if (
+      !window.confirm(
+        `Delete "${label}"? The session and its stats are removed permanently.`,
+      )
+    )
+      return;
     try {
       await deleteSession(sessionId);
       await refreshLists();
@@ -618,8 +824,12 @@ export default function Workspace() {
       pushToast("err", "Delete failed", (err as Error).message);
       return;
     }
-    if (groupCtx?.sessions.some(session => session.session_id === sessionId)) {
-      const remaining = groupCtx.sessions.filter(session => session.session_id !== sessionId);
+    if (
+      groupCtx?.sessions.some((session) => session.session_id === sessionId)
+    ) {
+      const remaining = groupCtx.sessions.filter(
+        (session) => session.session_id !== sessionId,
+      );
       if (remaining.length === 0) {
         setGroupCtx(null);
         setBatchRFStatus(null);
@@ -630,7 +840,11 @@ export default function Workspace() {
         setGroupCtx(updatedGroup);
         setBatchRFStatus(await getBatchRFStatus(updatedGroup.id));
       } catch (err) {
-        pushToast("err", "Batch learning status refresh failed", (err as Error).message);
+        pushToast(
+          "err",
+          "Batch learning status refresh failed",
+          (err as Error).message,
+        );
       }
     }
   }
@@ -638,7 +852,12 @@ export default function Workspace() {
   async function handleDeleteAllSessions() {
     const count = sessionStorage?.session_count ?? 0;
     if (count === 0) return;
-    if (!window.confirm(`Delete all ${count} sessions and their saved data permanently?`)) return;
+    if (
+      !window.confirm(
+        `Delete all ${count} sessions and their saved data permanently?`,
+      )
+    )
+      return;
     try {
       const result = await deleteAllSessions();
       await refreshLists();
@@ -655,18 +874,25 @@ export default function Workspace() {
     try {
       await renameGroup(g.id, name.trim());
       await refreshLists();
-      setGroupCtx(gc => (gc && gc.id === g.id ? { ...gc, name: name.trim() } : gc));
+      setGroupCtx((gc) =>
+        gc && gc.id === g.id ? { ...gc, name: name.trim() } : gc,
+      );
     } catch (err) {
       pushToast("err", "Rename failed", (err as Error).message);
     }
   }
 
   async function handleDeleteGroup(g: Group) {
-    if (!window.confirm(`Delete group "${g.name}" and its batch learning examples? Its images stay as individual sessions.`)) return;
+    if (
+      !window.confirm(
+        `Delete group "${g.name}" and its batch learning examples? Its images stay as individual sessions.`,
+      )
+    )
+      return;
     try {
       await deleteGroup(g.id);
       await refreshLists();
-      setGroupCtx(gc => (gc && gc.id === g.id ? null : gc));
+      setGroupCtx((gc) => (gc && gc.id === g.id ? null : gc));
     } catch (err) {
       pushToast("err", "Delete failed", (err as Error).message);
     }
@@ -682,29 +908,46 @@ export default function Workspace() {
 
   // image-space cursor position for the footer statusbar. Throttled state
   // update so mousemove doesn't re-render the whole page every event.
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const cursorPosThrottle = useRef(0);
 
   // scale bar calibration
   const [scaleBarMode, setScaleBarMode] = useState(false);
   const [scaleBarPixels, setScaleBarPixels] = useState<number | null>(null);
   const [showScaleBarOverlay, setShowScaleBarOverlay] = useState(false);
-  const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [scaleBarLineSvg, setScaleBarLineSvg] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  } | null>(null);
   const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
 
   // analysis: point-to-point distance measurement. Vertices are image-space
   // points; edges are created explicitly by activating a vertex and then
   // clicking another vertex (or empty space to create a new one).
   const [measureMode, setMeasureMode] = useState(false);
-  const [measureVertices, setMeasureVertices] = useState<{ x: number; y: number }[]>([]);
-  const [measureEdges, setMeasureEdges] = useState<{ a: number; b: number }[]>([]);
-  const [activeMeasureVertex, setActiveMeasureVertex] = useState<number | null>(null);
-  const [lastMeasureVertex, setLastMeasureVertex] = useState<number | null>(null);
+  const [measureVertices, setMeasureVertices] = useState<
+    { x: number; y: number }[]
+  >([]);
+  const [measureEdges, setMeasureEdges] = useState<{ a: number; b: number }[]>(
+    [],
+  );
+  const [activeMeasureVertex, setActiveMeasureVertex] = useState<number | null>(
+    null,
+  );
+  const [lastMeasureVertex, setLastMeasureVertex] = useState<number | null>(
+    null,
+  );
 
   // analysis: angle measurement. Each committed measurement is a triple of
   // image-space points (a, vertex, c); the angle is reported at the vertex.
   const [angleMode, setAngleMode] = useState(false);
-  const [anglePoints, setAnglePoints] = useState<{ x: number; y: number }[]>([]);
+  const [anglePoints, setAnglePoints] = useState<{ x: number; y: number }[]>(
+    [],
+  );
   const [angleMeasurements, setAngleMeasurements] = useState<
     {
       a: { x: number; y: number };
@@ -713,7 +956,10 @@ export default function Workspace() {
       reflex: boolean;
     }[]
   >([]);
-  const [angleCursor, setAngleCursor] = useState<{ x: number; y: number } | null>(null);
+  const [angleCursor, setAngleCursor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const analysisMode = measureMode || angleMode;
 
@@ -764,34 +1010,42 @@ export default function Workspace() {
     if (!sessionId) return;
     if (!annotateMode && !boxMode && !bootstrapMode) return;
     getInstances(sessionId)
-      .then(r => setLoadedInstances(r.instances ?? []))
+      .then((r) => setLoadedInstances(r.instances ?? []))
       .catch(() => {});
   }, [annotateMode, boxMode, bootstrapMode, sessionId]);
 
-
   // segmentation hook
   const seg = useSegmentationState({ sessionId, encoderDepth });
-  const activeSegmentationOutput = seg.comparisonOutputs[seg.currentOutputIndex] ?? null;
-  const latestSegmentationOutput = seg.comparisonOutputs[seg.comparisonOutputs.length - 1] ?? null;
-  const activeOutputIsSessionCurrent = activeSegmentationOutput?.id === latestSegmentationOutput?.id;
+  const activeSegmentationOutput =
+    seg.comparisonOutputs[seg.currentOutputIndex] ?? null;
+  const latestSegmentationOutput =
+    seg.comparisonOutputs[seg.comparisonOutputs.length - 1] ?? null;
+  const activeOutputIsSessionCurrent =
+    activeSegmentationOutput?.id === latestSegmentationOutput?.id;
   const activeMaskUrl = activeOutputIsSessionCurrent
-    ? seg.maskUrl ?? activeSegmentationOutput?.maskUrl ?? null
-    : activeSegmentationOutput?.maskUrl ?? seg.maskUrl;
-  const activeModel = activeSegmentationOutput?.model ?? metadata?.analysis?.model ?? null;
+    ? (seg.maskUrl ?? activeSegmentationOutput?.maskUrl ?? null)
+    : (activeSegmentationOutput?.maskUrl ?? seg.maskUrl);
+  const activeModel =
+    activeSegmentationOutput?.model ?? metadata?.analysis?.model ?? null;
   const activeStats = activeOutputIsSessionCurrent
-    ? seg.stats ?? activeSegmentationOutput?.stats ?? null
-    : activeSegmentationOutput?.stats ?? seg.stats;
+    ? (seg.stats ?? activeSegmentationOutput?.stats ?? null)
+    : (activeSegmentationOutput?.stats ?? seg.stats);
   const activeGroundTruthScore = activeSegmentationOutput
     ? activeSegmentationOutput.groundTruthScore
     : seg.groundTruthScore;
-  const splitOutputs = splitOutputIds.flatMap(outputId => {
-    const output = seg.comparisonOutputs.find(item => item.id === outputId);
+  const splitOutputs = splitOutputIds.flatMap((outputId) => {
+    const output = seg.comparisonOutputs.find((item) => item.id === outputId);
     return output ? [output] : [];
   });
 
   // SAM prompts need the MobileSAM model and an embedding for this image.
   // Mask R-CNN segmentation does not create that embedding.
-  const { data: samStatus, error: samStatusError, isLoading: samStatusLoading, refetch: refetchSamStatus } = useQuery({
+  const {
+    data: samStatus,
+    error: samStatusError,
+    isLoading: samStatusLoading,
+    refetch: refetchSamStatus,
+  } = useQuery({
     queryKey: ["sam-status", sessionId],
     queryFn: () => getSamStatus(sessionId!),
     enabled: !!sessionId,
@@ -811,8 +1065,13 @@ export default function Workspace() {
             : !samStatus.embedding_cached
               ? "MobileSAM is loaded. Encode this image to use Split Instance and other SAM prompts."
               : null;
-  const samCanPrepare = !!sessionId && !samStatusLoading && (!samStatus || samStatus.sam_loaded || samStatus.weights_exist);
-  const samPrepareLabel = samStatus?.sam_loaded ? "Encode Image" : "Load and Encode";
+  const samCanPrepare =
+    !!sessionId &&
+    !samStatusLoading &&
+    (!samStatus || samStatus.sam_loaded || samStatus.weights_exist);
+  const samPrepareLabel = samStatus?.sam_loaded
+    ? "Encode Image"
+    : "Load and Encode";
 
   async function handlePrepareSam() {
     if (!sessionId) return;
@@ -846,23 +1105,23 @@ export default function Workspace() {
     sessionId: sessionId ?? "",
     initialInstances: [],
     onSave: async (updated: Instance[]) => {
-        if (!sessionId) return;
-        const result = await saveInstances(sessionId, updated);
-        if (seg.comparisonOutputs.length > 0) {
-          seg.setCurrentOutputIndex(seg.comparisonOutputs.length - 1);
-        }
-        const ts = Date.now();
-        seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
-        if (result.stats) seg.setStats(result.stats);
-        setLoadedInstances(updated);  // load newly refined instances 
-        setHighlightParticleIdx(null); // clear stale 
-        refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
-        setZoom(1);
-        setPan({ x: 0, y: 0 });
-        setRefineDone(true);
-        setRefineMode(false);
-        setStatus("Edited masks saved.");
-        pushToast("ok", "Edited masks saved");
+      if (!sessionId) return;
+      const result = await saveInstances(sessionId, updated);
+      if (seg.comparisonOutputs.length > 0) {
+        seg.setCurrentOutputIndex(seg.comparisonOutputs.length - 1);
+      }
+      const ts = Date.now();
+      seg.setMaskUrl(`${BASE_URL}${result.mask_url}?t=${ts}`);
+      if (result.stats) seg.setStats(result.stats);
+      setLoadedInstances(updated); // load newly refined instances
+      setHighlightParticleIdx(null); // clear stale
+      refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      setRefineDone(true);
+      setRefineMode(false);
+      setStatus("Edited masks saved.");
+      pushToast("ok", "Edited masks saved");
     },
     onDiscard: () => {
       refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
@@ -902,7 +1161,18 @@ export default function Workspace() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [refineMode, refine.handleDeleteSelected, refine.handleCopy, refine.handleEnterPaste, refine.handleCancelPaste, refine.pasteMode, refine.boxDeleteMode, refine.setBoxDeleteMode, refine.polygonOpacity, refine.setPolygonOpacity]);
+  }, [
+    refineMode,
+    refine.handleDeleteSelected,
+    refine.handleCopy,
+    refine.handleEnterPaste,
+    refine.handleCancelPaste,
+    refine.pasteMode,
+    refine.boxDeleteMode,
+    refine.setBoxDeleteMode,
+    refine.polygonOpacity,
+    refine.setPolygonOpacity,
+  ]);
 
   // image upload
   function resetForNewImage() {
@@ -948,7 +1218,7 @@ export default function Workspace() {
             id: result.group.id,
             name: result.group.name,
             created_at: Date.now() / 1000,
-            sessions: result.sessions.map(s => ({
+            sessions: result.sessions.map((s) => ({
               session_id: s.session_id,
               file_name: s.filename,
               preview_url: s.preview_url,
@@ -976,12 +1246,14 @@ export default function Workspace() {
       }
       applyUploadResult({
         group: null,
-        sessions: [{
-          session_id: result.session_id,
-          filename: result.filename,
-          preview_url: result.preview_url,
-          image_info: result.image_info,
-        }],
+        sessions: [
+          {
+            session_id: result.session_id,
+            filename: result.filename,
+            preview_url: result.preview_url,
+            image_info: result.image_info,
+          },
+        ],
         warnings: [],
       });
       setStatus(`Loaded: ${file.name} — ready to segment.`);
@@ -1006,7 +1278,10 @@ export default function Workspace() {
     setStatus(`Uploading ${list.length} images…`);
     resetForNewImage();
     try {
-      const result = await uploadManyImages(list, groupName.trim() || suggested);
+      const result = await uploadManyImages(
+        list,
+        groupName.trim() || suggested,
+      );
       if (result.error || !result.sessions?.length) {
         setStatus(result.error ?? "Upload failed");
         pushToast("err", "Upload failed", result.error ?? "No loadable images");
@@ -1014,9 +1289,15 @@ export default function Workspace() {
       }
       applyUploadResult(result);
       if (result.warnings?.length) {
-        pushToast("warn", `${result.warnings.length} file(s) skipped`, result.warnings.map(w => w.filename).join(", "));
+        pushToast(
+          "warn",
+          `${result.warnings.length} file(s) skipped`,
+          result.warnings.map((w) => w.filename).join(", "),
+        );
       }
-      setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
+      setStatus(
+        `Loaded ${result.sessions.length} image(s) — ready to segment.`,
+      );
     } catch (err) {
       console.warn("multi-upload failed:", err);
       setStatus(`Upload failed: ${(err as Error).message}`);
@@ -1038,19 +1319,33 @@ export default function Workspace() {
           return;
         }
         setStatus(result.error ?? "Folder import failed");
-        pushToast("err", "Folder import failed", result.error ?? "Unknown error");
+        pushToast(
+          "err",
+          "Folder import failed",
+          result.error ?? "Unknown error",
+        );
         return;
       }
       if (result.error || !result.sessions?.length) {
         setStatus(result.error ?? "Folder import failed");
-        pushToast("err", "Folder import failed", result.error ?? "No loadable images");
+        pushToast(
+          "err",
+          "Folder import failed",
+          result.error ?? "No loadable images",
+        );
         return;
       }
       applyUploadResult(result);
       if (result.warnings?.length) {
-        pushToast("warn", `${result.warnings.length} file(s) skipped`, result.warnings.map(w => w.filename).join(", "));
+        pushToast(
+          "warn",
+          `${result.warnings.length} file(s) skipped`,
+          result.warnings.map((w) => w.filename).join(", "),
+        );
       }
-      setStatus(`Loaded ${result.sessions.length} image(s) — ready to segment.`);
+      setStatus(
+        `Loaded ${result.sessions.length} image(s) — ready to segment.`,
+      );
     } catch (err) {
       console.warn("folder import failed:", err);
       setStatus(`Folder import failed: ${(err as Error).message}`);
@@ -1071,8 +1366,10 @@ export default function Workspace() {
     const activeRegions = seg.isInvBlackoutMode
       ? liveInverseRegionsRef.current
       : liveRegionsRef.current;
-    const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
-    const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
+    const blackout =
+      !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+    const inverse =
+      seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
     seg.uploadGT(file, activeRegions, blackout, inverse);
     e.target.value = "";
   }
@@ -1084,7 +1381,6 @@ export default function Workspace() {
     if (files && files.length > 0) handleFiles(Array.from(files));
   }
 
-
   // Run one model at a time. Appended runs keep their overlays in browser memory.
   async function runModelSegmentation(model: string, append: boolean) {
     if (!sessionId || modelRunBusy) return;
@@ -1095,18 +1391,28 @@ export default function Workspace() {
         ? liveInverseRegionsRef.current
         : liveRegionsRef.current;
 
-      const blackout = !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
-      const inverse = seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
+      const blackout =
+        !seg.isInvBlackoutMode && liveRegionsRef.current.length > 0;
+      const inverse =
+        seg.isInvBlackoutMode && liveInverseRegionsRef.current.length > 0;
 
       setSelectedModel(model);
       setStatus(`${append ? "Appending" : "Running"} ${modelLabel(model)}...`);
       let msg: string | null;
       try {
-        msg = await seg.runSegmentation(model, activeRegions, blackout, inverse, {
-          conf: yoloValue("conf"),
-          iou: yoloValue("iou"),
-          max_det: yoloValue("max_det"),
-        }, append, metadata?.analysis?.model ?? selectedModel);
+        msg = await seg.runSegmentation(
+          model,
+          activeRegions,
+          blackout,
+          inverse,
+          {
+            conf: yoloValue("conf"),
+            iou: yoloValue("iou"),
+            max_det: yoloValue("max_det"),
+          },
+          append,
+          metadata?.analysis?.model ?? selectedModel,
+        );
       } catch (err) {
         if (isRequestAborted(err)) return;
         throw err;
@@ -1114,7 +1420,7 @@ export default function Workspace() {
       await refetchSamStatus();
       getSystemInfo()
         .then(setSystemInfo)
-        .catch(err => console.warn("getSystemInfo failed:", err));
+        .catch((err) => console.warn("getSystemInfo failed:", err));
 
       if (msg) {
         setStatus(msg);
@@ -1133,10 +1439,7 @@ export default function Workspace() {
 
   async function handleRunSegmentation() {
     if (!selectedModel) return;
-    if (
-      seg.comparisonOutputs.length > 1 &&
-      !dontShowResetComparisonWarning
-    ) {
+    if (seg.comparisonOutputs.length > 1 && !dontShowResetComparisonWarning) {
       setResetComparisonWarningOpen(true);
       return;
     }
@@ -1149,7 +1452,10 @@ export default function Workspace() {
       await saveUiPreferences({ hide_comparison_reset_warning: true });
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save UI preference.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save UI preference.";
       setStatus(message);
       pushToast("err", "Could not save preference", message);
       return false;
@@ -1174,19 +1480,24 @@ export default function Workspace() {
   }
 
   function toggleSplitOutput(outputId: string, selected: boolean) {
-    setSplitOutputIds(current => {
+    setSplitOutputIds((current) => {
       if (selected) {
         return current.length < 4 && !current.includes(outputId)
           ? [...current, outputId]
           : current;
       }
-      return current.filter(id => id !== outputId);
+      return current.filter((id) => id !== outputId);
     });
   }
 
   async function openSplitView() {
-    if (seg.comparisonOutputs.length < 2 || splitOutputs.length === 0 || splitOutputs.length > 4) return;
-    const paneModels = splitOutputs.map(output => output.model);
+    if (
+      seg.comparisonOutputs.length < 2 ||
+      splitOutputs.length === 0 ||
+      splitOutputs.length > 4
+    )
+      return;
+    const paneModels = splitOutputs.map((output) => output.model);
     const baseModel = paneModels.includes(comparisonView.base_model ?? "")
       ? comparisonView.base_model
       : paneModels[0];
@@ -1195,7 +1506,10 @@ export default function Workspace() {
       if (sessionId) await saveComparisonView(sessionId, nextView);
       setComparisonView(nextView);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save comparison selection.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save comparison selection.";
       setStatus(message);
       pushToast("err", "Could not save comparison", message);
       return;
@@ -1207,24 +1521,36 @@ export default function Workspace() {
   function openSplitSelector() {
     if (seg.comparisonOutputs.length < 2) return;
     const currentOutput = seg.comparisonOutputs[seg.currentOutputIndex];
-    const savedOutputs = comparisonView.pane_models
-      .filter(model => seg.comparisonOutputs.some(output => output.model === model));
-    setSplitOutputIds(savedOutputs.length > 0 ? savedOutputs : currentOutput ? [currentOutput.id] : []);
+    const savedOutputs = comparisonView.pane_models.filter((model) =>
+      seg.comparisonOutputs.some((output) => output.model === model),
+    );
+    setSplitOutputIds(
+      savedOutputs.length > 0
+        ? savedOutputs
+        : currentOutput
+          ? [currentOutput.id]
+          : [],
+    );
     setSplitSelectorOpen(true);
   }
 
   async function handleSplitBaseChange(model: string) {
-    const nextView = { base_model: model, pane_models: splitOutputs.map(output => output.model) };
+    const nextView = {
+      base_model: model,
+      pane_models: splitOutputs.map((output) => output.model),
+    };
     try {
       if (sessionId) await saveComparisonView(sessionId, nextView);
       setComparisonView(nextView);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save comparison base.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not save comparison base.";
       setStatus(message);
       pushToast("err", "Could not save comparison base", message);
     }
   }
-
 
   // Bootstrap click → POST /from-points, append returned proposal(s) to
   // pendingProposals. Nothing is committed until the user hits Accept.
@@ -1236,7 +1562,9 @@ export default function Workspace() {
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
 
     setBootstrapBusy(true);
-    setStatus(`Proposing particle at (${imgX.toFixed(0)}, ${imgY.toFixed(0)})...`);
+    setStatus(
+      `Proposing particle at (${imgX.toFixed(0)}, ${imgY.toFixed(0)})...`,
+    );
     try {
       const res = await fromPoints(sessionId, [[imgX, imgY]], pendingProposals);
       if (res.proposals.length === 0) {
@@ -1246,7 +1574,7 @@ export default function Workspace() {
         return;
       }
       const added = res.proposals[0];
-      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setPendingProposals((prev) => [...prev, ...res.proposals]);
       setStatus(
         `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
       );
@@ -1270,10 +1598,10 @@ export default function Workspace() {
     setStatus(`Committing ${pendingProposals.length} proposal(s)...`);
     try {
       const existing: Instance[] = await getInstances(sessionId)
-        .then(r => r.instances ?? [])
+        .then((r) => r.instances ?? [])
         .catch(() => []);
-      const usedIds = existing.map(p => p.id);
-      const renumbered = pendingProposals.map(p => {
+      const usedIds = existing.map((p) => p.id);
+      const renumbered = pendingProposals.map((p) => {
         const id = nextFreeId(usedIds);
         usedIds.push(id);
         return { ...p, id };
@@ -1309,7 +1637,7 @@ export default function Workspace() {
   }
 
   function handleRejectProposal(id: number) {
-    setPendingProposals(prev => prev.filter(p => p.id !== id));
+    setPendingProposals((prev) => prev.filter((p) => p.id !== id));
     setStatus(`Removed proposal #${id} from the pending set.`);
   }
 
@@ -1319,8 +1647,8 @@ export default function Workspace() {
   // in logs/debug overlays alongside server-issued positive IDs.
   function handlePolygonComplete(contour: [number, number][]) {
     if (contour.length < 3) return;
-    const xs = contour.map(p => p[0]);
-    const ys = contour.map(p => p[1]);
+    const xs = contour.map((p) => p[0]);
+    const ys = contour.map((p) => p[1]);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     const maxX = Math.max(...xs);
@@ -1350,8 +1678,10 @@ export default function Workspace() {
       area,
       source: "manual",
     };
-    setPendingProposals(prev => [...prev, proposal]);
-    setStatus(`Annotated particle (area ${area}px) — ${pendingProposals.length + 1} pending. Accept to commit.`);
+    setPendingProposals((prev) => [...prev, proposal]);
+    setStatus(
+      `Annotated particle (area ${area}px) — ${pendingProposals.length + 1} pending. Accept to commit.`,
+    );
   }
 
   // Drag-box-to-segment: POST /from-boxes with one box, append the returned
@@ -1359,7 +1689,9 @@ export default function Workspace() {
   async function handleBoxDrawn(box: [number, number, number, number]) {
     if (!sessionId || bootstrapBusy) return;
     setBootstrapBusy(true);
-    setStatus(`Segmenting box (${Math.round(box[2] - box[0])}×${Math.round(box[3] - box[1])})...`);
+    setStatus(
+      `Segmenting box (${Math.round(box[2] - box[0])}×${Math.round(box[3] - box[1])})...`,
+    );
     try {
       const res = await fromBoxes(sessionId, [box], pendingProposals);
       if (res.proposals.length === 0) {
@@ -1369,7 +1701,7 @@ export default function Workspace() {
         return;
       }
       const added = res.proposals[0];
-      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setPendingProposals((prev) => [...prev, ...res.proposals]);
       setStatus(
         `Proposed #${added.id} (area ${added.area}px, SAM ${added.sam_score?.toFixed(2)}) — ${pendingProposals.length + res.proposals.length} pending. Accept to commit.`,
       );
@@ -1397,7 +1729,7 @@ export default function Workspace() {
         pushToast("info", res.message ?? "No similar particles found");
         return;
       }
-      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setPendingProposals((prev) => [...prev, ...res.proposals]);
       setStatus(
         `Found ${res.proposals.length} candidate(s) from ${res.seed_count ?? "?"} seed(s). Review and accept or discard.`,
       );
@@ -1426,7 +1758,7 @@ export default function Workspace() {
         pushToast("info", res.message ?? "RF found no missed regions");
         return;
       }
-      setPendingProposals(prev => [...prev, ...res.proposals]);
+      setPendingProposals((prev) => [...prev, ...res.proposals]);
       setStatus(
         `RF found ${res.proposals.length} missed region(s). Review and accept or discard.`,
       );
@@ -1452,7 +1784,10 @@ export default function Workspace() {
 
   async function handleTeachBatchRF(label: "foreground" | "background") {
     if (!groupCtx || !sessionId) return;
-    const strokes = label === "foreground" ? rfFgScribblesRef.current : rfBgScribblesRef.current;
+    const strokes =
+      label === "foreground"
+        ? rfFgScribblesRef.current
+        : rfBgScribblesRef.current;
     if (strokes.length === 0) return;
     setBootstrapBusy(true);
     try {
@@ -1481,13 +1816,21 @@ export default function Workspace() {
     setBootstrapBusy(true);
     try {
       const saved = await getInstances(sessionId);
-      const instanceIds = saved.instances.map(instance => instance.id);
+      const instanceIds = saved.instances.map((instance) => instance.id);
       if (instanceIds.length === 0) {
-        throw new Error("No saved particle masks to teach. Segment or annotate this image first.");
+        throw new Error(
+          "No saved particle masks to teach. Segment or annotate this image first.",
+        );
       }
-      const result = await teachBatchRFInstances(groupCtx.id, sessionId, instanceIds);
+      const result = await teachBatchRFInstances(
+        groupCtx.id,
+        sessionId,
+        instanceIds,
+      );
       setBatchRFStatus(result.status);
-      setStatus(`Saved ${instanceIds.length} reviewed particle masks as a batch example.`);
+      setStatus(
+        `Saved ${instanceIds.length} reviewed particle masks as a batch example.`,
+      );
     } catch (err) {
       if (isRequestAborted(err)) return;
       pushToast("err", "Cannot teach particle masks", (err as Error).message);
@@ -1509,7 +1852,9 @@ export default function Workspace() {
   async function handleBatchRFPropose() {
     if (!sessionId || !groupCtx) return;
     if (pendingProposals.length > 0) {
-      setStatus("Review or discard pending proposals before running batch recovery again.");
+      setStatus(
+        "Review or discard pending proposals before running batch recovery again.",
+      );
       return;
     }
     setBootstrapBusy(true);
@@ -1521,7 +1866,9 @@ export default function Workspace() {
         return;
       }
       setPendingProposals(result.proposals);
-      setStatus(`Batch RF and SAM found ${result.proposals.length} particle candidate(s). Review and accept or discard.`);
+      setStatus(
+        `Batch RF and SAM found ${result.proposals.length} particle candidate(s). Review and accept or discard.`,
+      );
     } catch (err) {
       if (isRequestAborted(err)) return;
       pushToast("err", "Batch RF recovery failed", (err as Error).message);
@@ -1533,14 +1880,14 @@ export default function Workspace() {
   async function enterRefineMode() {
     (document.activeElement as HTMLElement)?.blur();
     if (!sessionId) return;
-    setZoom(1);           // reset zoom before entering
-    setPan({ x: 0, y: 0 });  
+    setZoom(1); // reset zoom before entering
+    setPan({ x: 0, y: 0 });
     const res = await getInstances(sessionId).catch(() => null);
     if (!res) {
       pushToast("err", "Refine unavailable", "Could not load particles.");
       return;
     }
-    refine.reinit(res.instances);  // feed instances into hook
+    refine.reinit(res.instances); // feed instances into hook
     refine.setViewBox({ x: 0, y: 0, w: imgSize.width, h: imgSize.height });
     setRefineMode(true);
     seg.setMasksVisible(false);
@@ -1548,7 +1895,6 @@ export default function Workspace() {
     seg.setGtVisible(false);
     setStatus("Refine mode — drag vertices, space+drag to pan.");
   }
-
 
   // blackout apply
   function handleApplyBlackout() {
@@ -1559,9 +1905,9 @@ export default function Workspace() {
     setStatus("Regions applied — ready to segment.");
   }
 
-
   // css zoom/pan handlers. disabled when blackout or refine active
-  const zoomBy = (delta: number) => setZoom(z => Math.min(Math.max(z * delta, 0.5), 5));
+  const zoomBy = (delta: number) =>
+    setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
@@ -1573,7 +1919,18 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    if (seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || rfBgMode || rfFgMode || analysisMode || scaleBarMode) return;
+    if (
+      seg.isBlackoutMode ||
+      refineMode ||
+      bootstrapMode ||
+      annotateMode ||
+      boxMode ||
+      rfBgMode ||
+      rfFgMode ||
+      analysisMode ||
+      scaleBarMode
+    )
+      return;
     setHighlightParticleIdx(null); // clear particle highlight
     setHighlightShape(null);
     e.preventDefault();
@@ -1595,7 +1952,9 @@ export default function Workspace() {
         const rect = e.currentTarget.getBoundingClientRect();
         setCursorPos({
           x: Math.round(((e.clientX - rect.left) / rect.width) * imgSize.width),
-          y: Math.round(((e.clientY - rect.top) / rect.height) * imgSize.height),
+          y: Math.round(
+            ((e.clientY - rect.top) / rect.height) * imgSize.height,
+          ),
         });
       }
     }
@@ -1615,20 +1974,20 @@ export default function Workspace() {
     setCursorPos(null);
   }
 
-  // locate particle give id 
-  // used for detail view -> click id-> show particle mapping 
+  // locate particle give id
+  // used for detail view -> click id-> show particle mapping
   async function handleLocateParticle(particleIndex: number) {
     if (!sessionId) return;
-    setHighlightShape(null);  // clear shape highlight
+    setHighlightShape(null); // clear shape highlight
 
-    // if the last mode the user was in the workspace was refine mode 
+    // if the last mode the user was in the workspace was refine mode
     // and the user goes to the stats dashboard and uses ParticleHighlight
-    // through the table, it doesn't work as it expects the workspace to be 
-    // in the normal mode to add highlights. So we need to set refine mdoe 
-    // to false, which 
-    // WILL DISCARD ALL CURRENT EDITS. 
+    // through the table, it doesn't work as it expects the workspace to be
+    // in the normal mode to add highlights. So we need to set refine mdoe
+    // to false, which
+    // WILL DISCARD ALL CURRENT EDITS.
     // Need to see what we want to do about this
-    setRefineMode(false);  
+    setRefineMode(false);
     let instances = loadedInstances;
     if (instances.length === 0) {
       const res = await getInstances(sessionId).catch(() => null); // this should always be up to date
@@ -1643,23 +2002,22 @@ export default function Workspace() {
     setZoom(1); // reset so the highlight isn't clipped by a stale pan/zoom
     setPan({ x: 0, y: 0 });
     seg.setMasksVisible(true);
-    setStatus(`Highlighting particle id: ${particleIndex+1}`);
+    setStatus(`Highlighting particle id: ${particleIndex + 1}`);
   }
 
-  async function handleLocateShape(shape:string) {
+  async function handleLocateShape(shape: string) {
+    if (!sessionId) return;
 
-    if(!sessionId) return;
-
-    setHighlightParticleIdx(null);  // clear particle id highlight
-    // if the last mode the user was in the workspace was refine mode 
+    setHighlightParticleIdx(null); // clear particle id highlight
+    // if the last mode the user was in the workspace was refine mode
     // and the user goes to the stats dashboard and uses ParticleHighlight
-    // through the table, it doesn't work as it expects the workspace to be 
-    // in the normal mode to add highlights. So we need to set refine mdoe 
-    // to false, which 
-    // WILL DISCARD ALL CURRENT EDITS. 
+    // through the table, it doesn't work as it expects the workspace to be
+    // in the normal mode to add highlights. So we need to set refine mdoe
+    // to false, which
+    // WILL DISCARD ALL CURRENT EDITS.
     // Need to see what we want to do about this
     setRefineMode(false);
-    let instances= loadedInstances;
+    let instances = loadedInstances;
     if (instances.length === 0) {
       const res = await getInstances(sessionId).catch(() => null); // this should always be up to date
       if (res) {
@@ -1681,7 +2039,9 @@ export default function Workspace() {
     if (newStats) {
       seg.setStats(newStats);
     }
-    setStatus(`Pixel size updated${meta.pixel_size != null && meta.pixel_size !== "-" ? `: ${meta.pixel_size} ${meta.pixel_unit ?? ""}` : ""}`);
+    setStatus(
+      `Pixel size updated${meta.pixel_size != null && meta.pixel_size !== "-" ? `: ${meta.pixel_size} ${meta.pixel_unit ?? ""}` : ""}`,
+    );
     pushToast("ok", "Pixel size updated");
   }
 
@@ -1720,7 +2080,12 @@ export default function Workspace() {
     const rect = e.currentTarget.getBoundingClientRect();
     const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
-    setScaleBarLineSvg({ x1: scaleBarStart.current.x, y1: scaleBarStart.current.y, x2: imgX, y2: imgY });
+    setScaleBarLineSvg({
+      x1: scaleBarStart.current.x,
+      y1: scaleBarStart.current.y,
+      x2: imgX,
+      y2: imgY,
+    });
   }
 
   function handleScaleBarMouseUp(e: React.MouseEvent<HTMLDivElement>) {
@@ -1728,8 +2093,15 @@ export default function Workspace() {
     const rect = e.currentTarget.getBoundingClientRect();
     const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
-    const line = { x1: scaleBarStart.current.x, y1: scaleBarStart.current.y, x2: imgX, y2: imgY };
-    const pixels = Math.sqrt((line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2);
+    const line = {
+      x1: scaleBarStart.current.x,
+      y1: scaleBarStart.current.y,
+      x2: imgX,
+      y2: imgY,
+    };
+    const pixels = Math.sqrt(
+      (line.x2 - line.x1) ** 2 + (line.y2 - line.y1) ** 2,
+    );
     scaleBarStart.current = null;
     if (pixels < 5) {
       setScaleBarLineSvg(null);
@@ -1750,13 +2122,15 @@ export default function Workspace() {
       metadata?.pixel_unit && metadata.pixel_unit !== "-"
         ? metadata.pixel_unit
         : "nm";
-    const scr = viewportSize.width > 0
-      ? (viewportSize.width / imgSize.width) * zoom
-      : zoom;
-    const nice = [10, 20, 50, 100, 200, 500].find(n => {
-      const onScreen = (n / pixelSize) * scr;
-      return onScreen >= 55 && onScreen <= 190;
-    }) ?? 100;
+    const scr =
+      viewportSize.width > 0
+        ? (viewportSize.width / imgSize.width) * zoom
+        : zoom;
+    const nice =
+      [10, 20, 50, 100, 200, 500].find((n) => {
+        const onScreen = (n / pixelSize) * scr;
+        return onScreen >= 55 && onScreen <= 190;
+      }) ?? 100;
     const px = nice / pixelSize;
     const x0 = imgSize.width - 18 / scr - px;
     const y0 = imgSize.height - 18 / scr;
@@ -1765,28 +2139,56 @@ export default function Workspace() {
         viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
         preserveAspectRatio="xMidYMid meet"
         style={{
-          position: "absolute", top: 0, left: 0,
-          width: "100%", height: "100%",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
           pointerEvents: "none",
           zIndex: 13,
         }}
       >
         <g fill="#ffffff" stroke="#111111">
           <rect
-            x={x0 - 6 / scr} y={y0 - 26 / scr}
-            width={px + 12 / scr} height={38 / scr}
-            fill="rgba(8,10,12,0.55)" stroke="none"
+            x={x0 - 6 / scr}
+            y={y0 - 26 / scr}
+            width={px + 12 / scr}
+            height={38 / scr}
+            fill="rgba(8,10,12,0.55)"
+            stroke="none"
           />
-          <line x1={x0} y1={y0} x2={x0 + px} y2={y0}
-            strokeWidth={2.4} vectorEffect="non-scaling-stroke" />
-          <line x1={x0} y1={y0 - 6 / scr} x2={x0} y2={y0 + 6 / scr}
-            strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
-          <line x1={x0 + px} y1={y0 - 6 / scr} x2={x0 + px} y2={y0 + 6 / scr}
-            strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+          <line
+            x1={x0}
+            y1={y0}
+            x2={x0 + px}
+            y2={y0}
+            strokeWidth={2.4}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x0}
+            y1={y0 - 6 / scr}
+            x2={x0}
+            y2={y0 + 6 / scr}
+            strokeWidth={1.6}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={x0 + px}
+            y1={y0 - 6 / scr}
+            x2={x0 + px}
+            y2={y0 + 6 / scr}
+            strokeWidth={1.6}
+            vectorEffect="non-scaling-stroke"
+          />
           <text
-            x={x0 + px / 2} y={y0 - 9 / scr}
-            textAnchor="middle" fontSize={11 / scr} fontFamily="inherit"
-            fill="#ffffff" stroke="none"
+            x={x0 + px / 2}
+            y={y0 - 9 / scr}
+            textAnchor="middle"
+            fontSize={11 / scr}
+            fontFamily="inherit"
+            fill="#ffffff"
+            stroke="none"
           >
             {nice} {unit}
           </text>
@@ -1851,9 +2253,9 @@ export default function Workspace() {
         // Connect the active vertex to this existing vertex.
         const a = activeMeasureVertex;
         const b = hitIdx;
-        setMeasureEdges(prev => {
+        setMeasureEdges((prev) => {
           const exists = prev.some(
-            e => (e.a === a && e.b === b) || (e.a === b && e.b === a),
+            (e) => (e.a === a && e.b === b) || (e.a === b && e.b === a),
           );
           return exists ? prev : [...prev, { a, b }];
         });
@@ -1866,30 +2268,33 @@ export default function Workspace() {
     // No vertex here: draw one and (when possible) auto-chain it from the last
     // vertex, unless an explicit edge is currently active.
     const newIdx = measureVertices.length;
-    setMeasureVertices(prev => [...prev, { x: imgX, y: imgY }]);
+    setMeasureVertices((prev) => [...prev, { x: imgX, y: imgY }]);
     if (activeMeasureVertex !== null) {
-      setMeasureEdges(prev => [...prev, { a: activeMeasureVertex, b: newIdx }]);
+      setMeasureEdges((prev) => [
+        ...prev,
+        { a: activeMeasureVertex, b: newIdx },
+      ]);
       setActiveMeasureVertex(null);
     } else if (lastMeasureVertex !== null) {
-      setMeasureEdges(prev => [...prev, { a: lastMeasureVertex, b: newIdx }]);
+      setMeasureEdges((prev) => [...prev, { a: lastMeasureVertex, b: newIdx }]);
     }
     setLastMeasureVertex(newIdx);
   }
 
   function deleteMeasureVertex(del: number) {
-    setMeasureVertices(prev => prev.filter((_, i) => i !== del));
-    setMeasureEdges(prev =>
+    setMeasureVertices((prev) => prev.filter((_, i) => i !== del));
+    setMeasureEdges((prev) =>
       prev
-        .filter(e => e.a !== del && e.b !== del)
-        .map(e => ({
+        .filter((e) => e.a !== del && e.b !== del)
+        .map((e) => ({
           a: e.a > del ? e.a - 1 : e.a,
           b: e.b > del ? e.b - 1 : e.b,
         })),
     );
-    setActiveMeasureVertex(prev =>
+    setActiveMeasureVertex((prev) =>
       prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
     );
-    setLastMeasureVertex(prev =>
+    setLastMeasureVertex((prev) =>
       prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
     );
   }
@@ -1929,7 +2334,7 @@ export default function Workspace() {
       }
     });
     if (edgeIdx !== null && edgeDist <= measureHitR) {
-      setMeasureEdges(prev => prev.filter((_, i) => i !== edgeIdx));
+      setMeasureEdges((prev) => prev.filter((_, i) => i !== edgeIdx));
     }
   }
 
@@ -1943,7 +2348,9 @@ export default function Workspace() {
 
   function formatMeasureListLabel(px: number): string {
     const unit =
-      metadata?.pixel_unit && metadata.pixel_unit !== "-" ? metadata.pixel_unit : "nm";
+      metadata?.pixel_unit && metadata.pixel_unit !== "-"
+        ? metadata.pixel_unit
+        : "nm";
     const ps = metadata?.pixel_size;
     if (typeof ps === "number" && ps > 0) {
       return `${px.toFixed(1)} px · ${(px * ps).toFixed(1)} ${unit}`;
@@ -1978,7 +2385,7 @@ export default function Workspace() {
   }
 
   function toggleAngleReflex(index: number) {
-    setAngleMeasurements(prev =>
+    setAngleMeasurements((prev) =>
       prev.map((m, i) => (i === index ? { ...m, reflex: !m.reflex } : m)),
     );
   }
@@ -1991,7 +2398,7 @@ export default function Workspace() {
     const next = [...anglePoints, { x: imgX, y: imgY }];
     if (next.length === 3) {
       const [a, b, c] = next;
-      setAngleMeasurements(prev => [...prev, { a, b, c, reflex: false }]);
+      setAngleMeasurements((prev) => [...prev, { a, b, c, reflex: false }]);
       setAnglePoints([]);
       setAngleCursor(null);
     } else {
@@ -2029,7 +2436,7 @@ export default function Workspace() {
       }
     });
     if (pointIdx !== null && pointDist <= measureHitR) {
-      setAnglePoints(prev => prev.filter((_, i) => i !== pointIdx));
+      setAnglePoints((prev) => prev.filter((_, i) => i !== pointIdx));
       return;
     }
 
@@ -2038,7 +2445,7 @@ export default function Workspace() {
     let angleIdx: number | null = null;
     let angleDist = Infinity;
     angleMeasurements.forEach((m, i) => {
-      [m.a, m.b, m.c].forEach(p => {
+      [m.a, m.b, m.c].forEach((p) => {
         const d = Math.hypot(imgX - p.x, imgY - p.y);
         if (d < angleDist) {
           angleDist = d;
@@ -2057,7 +2464,7 @@ export default function Workspace() {
       }
     });
     if (angleIdx !== null && angleDist <= measureHitR) {
-      setAngleMeasurements(prev => prev.filter((_, i) => i !== angleIdx));
+      setAngleMeasurements((prev) => prev.filter((_, i) => i !== angleIdx));
     }
   }
 
@@ -2166,7 +2573,11 @@ export default function Workspace() {
     <>
       {/*If in stats dashboard hide the workspace*/}
       {showStatsDetail && activeStats && sessionId && (
-        <div className={styles.themeScope} data-theme={theme} style={{ display: "contents" }}>
+        <div
+          className={styles.themeScope}
+          data-theme={theme}
+          style={{ display: "contents" }}
+        >
           <StatsDetailView
             stats={activeStats}
             metadata={metadata}
@@ -2180,52 +2591,87 @@ export default function Workspace() {
       )}
 
       {/* Main workspace */}
-      <div className={`${styles.workspaceRoot} ${styles.themeScope}`} data-theme={theme} style={{display: showStatsDetail? "none" : "flex" }}>
-
+      <div
+        className={`${styles.workspaceRoot} ${styles.themeScope}`}
+        data-theme={theme}
+        style={{ display: showStatsDetail ? "none" : "flex" }}
+      >
         {/* topbar */}
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <button type="button" className={styles.brandWrap}
-              onClick={() => { abortInFlightRequests(); setZoom(1); setPan({ x: 0, y: 0 }); window.location.href = "/workspace/"; }}
+            <button
+              type="button"
+              className={styles.brandWrap}
+              onClick={() => {
+                abortInFlightRequests();
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+                window.location.href = "/workspace/";
+              }}
               title="New workspace"
             >
-              <span className={styles.logo}>TEM<span className={styles.logoAccent}>seg</span></span>
+              <span className={styles.logo}>
+                TEM<span className={styles.logoAccent}>seg</span>
+              </span>
               <span className={styles.brandTag}>v0</span>
             </button>
             <span className={styles.sessionChip}>
-              <span className={styles.sdot}
-                data-src={seg.isSegmenting ? "busy" : seg.segDone ? "ready-after-run" : "idle"} />
-              {sessionId ? `session · ${sessionId.slice(0, 8)}` : "upload image to start"}
+              <span
+                className={styles.sdot}
+                data-src={
+                  seg.isSegmenting
+                    ? "busy"
+                    : seg.segDone
+                      ? "ready-after-run"
+                      : "idle"
+                }
+              />
+              {sessionId
+                ? `session · ${sessionId.slice(0, 8)}`
+                : "upload image to start"}
             </span>
-            {groupCtx && sessionId && (() => {
-              const idx = groupCtx.sessions.findIndex(s => s.session_id === sessionId);
-              const prev = idx > 0 ? groupCtx.sessions[idx - 1] : null;
-              const next = idx >= 0 && idx < groupCtx.sessions.length - 1 ? groupCtx.sessions[idx + 1] : null;
-              return (
-                <span className={styles.groupNav} title={groupCtx.name}>
-                  <span className={styles.groupLabel}>Image</span>
-                  <button
-                    type="button"
-                    className={styles.navBtn}
-                    disabled={!prev}
-                    title={prev?.file_name ?? ""}
-                    onClick={() => prev && goToSession(prev.session_id, groupCtx)}
-                  >
-                    <ChevronLeft size={14} />
-                  </button>
-                  <span className={styles.groupPos}>{idx >= 0 ? `${idx + 1}/${groupCtx.session_count}` : "–"}</span>
-                  <button
-                    type="button"
-                    className={styles.navBtn}
-                    disabled={!next}
-                    title={next?.file_name ?? ""}
-                    onClick={() => next && goToSession(next.session_id, groupCtx)}
-                  >
-                    <ChevronRight size={14} />
-                  </button>
-                </span>
-              );
-            })()}
+            {groupCtx &&
+              sessionId &&
+              (() => {
+                const idx = groupCtx.sessions.findIndex(
+                  (s) => s.session_id === sessionId,
+                );
+                const prev = idx > 0 ? groupCtx.sessions[idx - 1] : null;
+                const next =
+                  idx >= 0 && idx < groupCtx.sessions.length - 1
+                    ? groupCtx.sessions[idx + 1]
+                    : null;
+                return (
+                  <span className={styles.groupNav} title={groupCtx.name}>
+                    <span className={styles.groupLabel}>Image</span>
+                    <button
+                      type="button"
+                      className={styles.navBtn}
+                      disabled={!prev}
+                      title={prev?.file_name ?? ""}
+                      onClick={() =>
+                        prev && goToSession(prev.session_id, groupCtx)
+                      }
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <span className={styles.groupPos}>
+                      {idx >= 0 ? `${idx + 1}/${groupCtx.session_count}` : "–"}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.navBtn}
+                      disabled={!next}
+                      title={next?.file_name ?? ""}
+                      onClick={() =>
+                        next && goToSession(next.session_id, groupCtx)
+                      }
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </span>
+                );
+              })()}
           </div>
 
           {/* model + SAM depth selectors live in the top bar (moved from the
@@ -2233,23 +2679,34 @@ export default function Workspace() {
               Only YoloSAM/FasterYoloSAM support depth — hidden for MaskRCNN. */}
           <div className={styles.topbarCentre}>
             <div className={styles.dropdownWrap} ref={modelDropdownRef}>
-              <button type="button" className={styles.dropdownBtn} onClick={() => {
-                const nextOpen = !modelDropdownOpen;
-                setModelDropdownOpen(nextOpen);
-                if (nextOpen) refreshSystemInfo();
-              }}>
+              <button
+                type="button"
+                className={styles.dropdownBtn}
+                onClick={() => {
+                  const nextOpen = !modelDropdownOpen;
+                  setModelDropdownOpen(nextOpen);
+                  if (nextOpen) refreshSystemInfo();
+                }}
+              >
                 {modelLabel(selectedModel ?? "")} <ChevronDown size={14} />
               </button>
               {modelDropdownOpen && (
                 <ul className={styles.dropdownList}>
-                  {models.map(m => {
-                    const modelStatus = systemInfo?.models.find(status => status.key === m);
+                  {models.map((m) => {
+                    const modelStatus = systemInfo?.models.find(
+                      (status) => status.key === m,
+                    );
                     const unavailable = !modelStatus?.available;
                     return (
-                      <li key={m}
+                      <li
+                        key={m}
                         aria-disabled={unavailable}
                         className={`${styles.dropdownItem} ${m === selectedModel ? styles.dropdownItemActive : ""} ${unavailable ? styles.dropdownItemDisabled : ""}`}
-                        title={modelStatus && !modelStatus.available ? `Weights needed: ${modelStatus.missing_weights.join(", ")}` : undefined}
+                        title={
+                          modelStatus && !modelStatus.available
+                            ? `Weights needed: ${modelStatus.missing_weights.join(", ")}`
+                            : undefined
+                        }
                         onClick={() => {
                           if (unavailable) return;
                           setSelectedModel(m);
@@ -2261,8 +2718,8 @@ export default function Workspace() {
                           {!modelStatus
                             ? "Checking model weights…"
                             : unavailable
-                            ? "Weights needed"
-                            : MODEL_DESCRIPTIONS[m] ?? "Segmentation model"}
+                              ? "Weights needed"
+                              : (MODEL_DESCRIPTIONS[m] ?? "Segmentation model")}
                         </span>
                       </li>
                     );
@@ -2270,18 +2727,32 @@ export default function Workspace() {
                 </ul>
               )}
             </div>
-            {(selectedModel === "YoloSAM" || selectedModel === "FasterYoloSAM") && (
-              <div className={`${styles.dropdownWrap} ${styles.dropdownWrapDepth}`} ref={depthDropdownRef}>
-                <button type="button" className={styles.dropdownBtn} onClick={() => setDepthDropdownOpen(o => !o)}>
+            {(selectedModel === "YoloSAM" ||
+              selectedModel === "FasterYoloSAM") && (
+              <div
+                className={`${styles.dropdownWrap} ${styles.dropdownWrapDepth}`}
+                ref={depthDropdownRef}
+              >
+                <button
+                  type="button"
+                  className={styles.dropdownBtn}
+                  onClick={() => setDepthDropdownOpen((o) => !o)}
+                >
                   n={encoderDepth} <ChevronDown size={14} />
                 </button>
                 {depthDropdownOpen && (
                   <ul className={styles.dropdownList}>
-                    {([12, 8] as const).map(d => (
-                      <li key={d}
+                    {([12, 8] as const).map((d) => (
+                      <li
+                        key={d}
                         className={`${styles.dropdownItem} ${d === encoderDepth ? styles.dropdownItemActive : ""}`}
-                        onClick={() => { setEncoderDepth(d); setDepthDropdownOpen(false); }}
-                      >{`n=${d}`} {d === 8 ? "(early-exit)" : "(full)"}</li>
+                        onClick={() => {
+                          setEncoderDepth(d);
+                          setDepthDropdownOpen(false);
+                        }}
+                      >
+                        {`n=${d}`} {d === 8 ? "(early-exit)" : "(full)"}
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -2292,7 +2763,8 @@ export default function Workspace() {
           <div className={styles.topbarRight}>
             {seg.regionsOutOfSync && (
               <span className={styles.warnPill}>
-                <AlertTriangle size={11} /> blackout regions changed — re-run seg
+                <AlertTriangle size={11} /> blackout regions changed — re-run
+                seg
               </span>
             )}
 
@@ -2312,22 +2784,30 @@ export default function Workspace() {
                 type="button"
                 className={`${styles.statusPill} ${isBlocked ? styles.statusPillBlocked : ""}`}
                 key={isBlocked ? "blocked" : status}
-                onClick={() => setActivityOpen(o => !o)}
+                onClick={() => setActivityOpen((o) => !o)}
                 title="Activity"
               >
                 {isBlocked ? <AsciiWaterfall active /> : status}
                 <ChevronDown size={11} style={{ marginLeft: 6 }} />
               </button>
-              {activityOpen && <StatusPanel onClose={() => setActivityOpen(false)} />}
+              {activityOpen && (
+                <StatusPanel onClose={() => setActivityOpen(false)} />
+              )}
             </div>
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.iconBtn} ${styles.themeBtn}`}
               onClick={toggleTheme}
-              title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={
+                theme === "dark"
+                  ? "Switch to light theme"
+                  : "Switch to dark theme"
+              }
             >
               {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <button type="button"
+            <button
+              type="button"
               className={styles.iconBtn}
               onClick={() => setHelpOpen(true)}
               title="Keyboard shortcuts"
@@ -2339,43 +2819,51 @@ export default function Workspace() {
 
         {/* Main workspace */}
         <div className={styles.workspaceBody}>
-
           {/* mode rail. switching mode discards any in-progress work in the
               mode being left (unsaved refine edits, pending augment proposals). */}
           <nav className={styles.rail} aria-label="Workspace modes">
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.railBtn} ${activeTab === "segment" ? styles.railBtnActive : ""}`}
               onClick={() => switchTab("segment")}
               title="Segment"
             >
-              <Slice size={16} /><span className={styles.railLabel}>Segment</span>
+              <Slice size={16} />
+              <span className={styles.railLabel}>Segment</span>
             </button>
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.railBtn} ${activeTab === "refine" ? styles.railBtnActive : ""}`}
               onClick={() => switchTab("refine")}
               disabled={!seg.segDone}
               title="Refine"
             >
-              <Pencil size={16} /><span className={styles.railLabel}>Refine</span>
+              <Pencil size={16} />
+              <span className={styles.railLabel}>Refine</span>
             </button>
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.railBtn} ${activeTab === "augment" ? styles.railBtnActive : ""}`}
               onClick={() => switchTab("augment")}
               disabled={!sessionId}
               title="Augment"
             >
-              <CirclePlus size={16} /><span className={styles.railLabel}>Augment</span>
+              <CirclePlus size={16} />
+              <span className={styles.railLabel}>Augment</span>
             </button>
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.railBtn} ${activeTab === "analysis" ? styles.railBtnActive : ""}`}
               onClick={() => switchTab("analysis")}
               disabled={!image}
               title="Analysis"
             >
-              <BarChart2 size={16} /><span className={styles.railLabel}>Analyze</span>
+              <BarChart2 size={16} />
+              <span className={styles.railLabel}>Analyze</span>
             </button>
             <div className={styles.railSpacer} />
-            <button type="button"
+            <button
+              type="button"
               className={`${styles.railBtn} ${settingsOpen ? styles.railBtnActive : ""}`}
               onClick={() => {
                 setSettingsOpen(true);
@@ -2383,16 +2871,23 @@ export default function Workspace() {
               }}
               title="Settings"
             >
-              <Settings size={16} /><span className={styles.railLabel}>Settings</span>
+              <Settings size={16} />
+              <span className={styles.railLabel}>Settings</span>
             </button>
           </nav>
 
           {/* left sidebar — per-mode control pane. The mode rail switches
               between them. */}
           <aside className={styles.sidebar}>
-
             <p className={styles.paneHead}>
-              {{ segment: "Segment", refine: "Refine", augment: "Augment", analysis: "Analysis" }[activeTab]}
+              {
+                {
+                  segment: "Segment",
+                  refine: "Refine",
+                  augment: "Augment",
+                  analysis: "Analysis",
+                }[activeTab]
+              }
             </p>
 
             {activeTab === "segment" && (
@@ -2407,20 +2902,34 @@ export default function Workspace() {
                     onClick={handleRunSegmentation}
                     disabled={!image || modelRunBusy || seg.isSegmenting}
                   >
-                    <Play size={14} /> {modelRunBusy || seg.isSegmenting ? "Running..." : "Run Segmentation"}
+                    <Play size={14} />{" "}
+                    {modelRunBusy || seg.isSegmenting
+                      ? "Running..."
+                      : "Run Segmentation"}
                   </button>
                 </section>
                 <section className={styles.sidebarSection}>
                   <p className={styles.sidebarLabel}>Compare outputs</p>
                   <p className={styles.sidebarHint}>
-                    Select a model in the top bar, then append its result to the comparison.
+                    Select a model in the top bar, then append its result to the
+                    comparison.
                   </p>
                   <button
                     type="button"
                     className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                     onClick={handleAppendSegmentation}
-                    disabled={!seg.segDone || !sessionId || !selectedModel || modelRunBusy || seg.isSegmenting}
-                    title={!seg.segDone ? "Run segmentation once before appending another model" : undefined}
+                    disabled={
+                      !seg.segDone ||
+                      !sessionId ||
+                      !selectedModel ||
+                      modelRunBusy ||
+                      seg.isSegmenting
+                    }
+                    title={
+                      !seg.segDone
+                        ? "Run segmentation once before appending another model"
+                        : undefined
+                    }
                   >
                     <Play size={14} />
                     {modelRunBusy || seg.isSegmenting
@@ -2428,18 +2937,24 @@ export default function Workspace() {
                       : `Append ${modelLabel(selectedModel ?? "model")}`}
                   </button>
                   {!seg.segDone && (
-                    <p className={styles.sidebarHint}>Run one segmentation first to enable comparison.</p>
+                    <p className={styles.sidebarHint}>
+                      Run one segmentation first to enable comparison.
+                    </p>
                   )}
                 </section>
                 {seg.segDone && seg.masksVisible && (
                   <div style={{ marginBottom: 8 }}>
-                    <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
+                    <p className={styles.sidebarHint}>
+                      Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%
+                    </p>
                     <input
                       type="range"
                       min={5}
                       max={100}
                       value={Math.round(polygonOpacity * 100)}
-                      onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
+                      onChange={(e) =>
+                        setPolygonOpacity(Number(e.target.value) / 100)
+                      }
                       style={{ width: "100%" }}
                     />
                   </div>
@@ -2449,33 +2964,56 @@ export default function Workspace() {
                 <section className={styles.sidebarSection}>
                   <p className={styles.sidebarLabel}>Blackout Regions</p>
                   <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.actionBtn} ${!seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
                       onClick={() => seg.setIsInvBlackoutMode(false)}
                       disabled={!image}
-                    >Exclude</button>
-                    <button type="button"
+                    >
+                      Exclude
+                    </button>
+                    <button
+                      type="button"
                       className={`${styles.actionBtn} ${seg.isInvBlackoutMode ? styles.actionBtnPrimary : ""}`}
                       onClick={() => seg.setIsInvBlackoutMode(true)}
                       disabled={!image}
-                    >Isolate</button>
+                    >
+                      Isolate
+                    </button>
                   </div>
-                  <button type="button" className={styles.actionBtn} disabled={!image}
-                    onClick={() => { seg.setMasksVisible(false); seg.setIsBlackoutMode(b => !b); }}>
-                    <Trash2 size={14} /> {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
+                    disabled={!image}
+                    onClick={() => {
+                      seg.setMasksVisible(false);
+                      seg.setIsBlackoutMode((b) => !b);
+                    }}
+                  >
+                    <Trash2 size={14} />{" "}
+                    {seg.isBlackoutMode ? "Exit" : "Draw Regions"}
                   </button>
                   {seg.isBlackoutMode && (
-                    <button type="button" className={styles.actionBtn} onClick={handleApplyBlackout}>
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={handleApplyBlackout}
+                    >
                       Apply
                     </button>
                   )}
                   {hasRegions && !seg.isBlackoutMode && (
-                    <button type="button" className={styles.actionBtn} onClick={() => {
-                      seg.clearRegions();
-                      if (seg.isInvBlackoutMode) liveInverseRegionsRef.current = [];
-                      else liveRegionsRef.current = [];
-                      setStatus("Regions cleared.");
-                    }}>
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => {
+                        seg.clearRegions();
+                        if (seg.isInvBlackoutMode)
+                          liveInverseRegionsRef.current = [];
+                        else liveRegionsRef.current = [];
+                        setStatus("Regions cleared.");
+                      }}
+                    >
                       Clear Regions
                     </button>
                   )}
@@ -2493,17 +3031,35 @@ export default function Workspace() {
                   <p className={styles.sidebarHint}>
                     Brightness {(brightness * 100).toFixed(0)}%
                   </p>
-                  <input type="range" min={50} max={150} value={Math.round(brightness * 100)}
-                    onChange={e => setBrightness(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <input
+                    type="range"
+                    min={50}
+                    max={150}
+                    value={Math.round(brightness * 100)}
+                    onChange={(e) =>
+                      setBrightness(Number(e.target.value) / 100)
+                    }
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
                   <p className={styles.sidebarHint}>
                     Contrast {(contrast * 100).toFixed(0)}%
                   </p>
-                  <input type="range" min={50} max={180} value={Math.round(contrast * 100)}
-                    onChange={e => setContrast(Number(e.target.value) / 100)}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
-                  <button type="button" className={styles.actionBtn}
-                    onClick={() => { setBrightness(1); setContrast(1); }}>
+                  <input
+                    type="range"
+                    min={50}
+                    max={180}
+                    value={Math.round(contrast * 100)}
+                    onChange={(e) => setContrast(Number(e.target.value) / 100)}
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
+                    onClick={() => {
+                      setBrightness(1);
+                      setContrast(1);
+                    }}
+                  >
                     Reset
                   </button>
                 </section>
@@ -2521,31 +3077,53 @@ export default function Workspace() {
                     onToggleScaleBar={handleToggleScaleBar}
                     onScaleBarCancel={handleScaleBarCancel}
                   />
-                  <label className={styles.sidebarHint}
-                    style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <input type="checkbox"
+                  <label
+                    className={styles.sidebarHint}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <input
+                      type="checkbox"
                       checked={showScaleBarOverlay}
-                      disabled={!image || typeof metadata?.pixel_size !== "number" || metadata.pixel_size <= 0}
-                      onChange={e => setShowScaleBarOverlay(e.target.checked)}
-                      style={{ accentColor: "#7ee8a2" }} />
+                      disabled={
+                        !image ||
+                        typeof metadata?.pixel_size !== "number" ||
+                        metadata.pixel_size <= 0
+                      }
+                      onChange={(e) => setShowScaleBarOverlay(e.target.checked)}
+                      style={{ accentColor: "#7ee8a2" }}
+                    />
                     Scale bar overlay
                   </label>
                 </section>
 
                 <section className={styles.sidebarSection}>
                   <p className={styles.sidebarLabel}>Ground Truth</p>
-                  <button type="button" className={styles.actionBtn}
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
                     onClick={() => gtFileRef.current?.click()}
-                    disabled={!sessionId}>
+                    disabled={!sessionId}
+                  >
                     <Upload size={14} /> Upload GT
                   </button>
-                  <input ref={gtFileRef} type="file" accept=".npy,.png,.tiff,.tif,.json"
-                    hidden onChange={onGroundTruthFileChange} />
+                  <input
+                    ref={gtFileRef}
+                    type="file"
+                    accept=".npy,.png,.tiff,.tif,.json"
+                    hidden
+                    onChange={onGroundTruthFileChange}
+                  />
                   <p className={styles.sidebarHint}>
-                    {seg.groundTruth ? seg.groundTruthStatus : "Upload a ground truth mask to compute accuracy scores."}
+                    {seg.groundTruth
+                      ? seg.groundTruthStatus
+                      : "Upload a ground truth mask to compute accuracy scores."}
                   </p>
                   {seg.gtUrl && (
-                    <button type="button" className={styles.actionBtn} onClick={() => seg.setGtVisible(v => !v)}>
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => seg.setGtVisible((v) => !v)}
+                    >
                       {seg.gtVisible ? <EyeOff size={14} /> : <Eye size={14} />}
                       {seg.gtVisible ? "Hide GT" : "Show GT"}
                     </button>
@@ -2557,26 +3135,43 @@ export default function Workspace() {
             {activeTab === "refine" && (
               <section>
                 {/*[ACTION]: refine masks */}
-                <button type="button" className={styles.actionBtn} disabled={!seg.segDone}
+                <button
+                  type="button"
+                  className={styles.actionBtn}
+                  disabled={!seg.segDone}
                   onClick={
                     refineMode
                       ? () => {
-                          refine.handleSave().catch(err => pushToast("err", "Save failed", (err as Error).message));
+                          refine
+                            .handleSave()
+                            .catch((err) =>
+                              pushToast(
+                                "err",
+                                "Save failed",
+                                (err as Error).message,
+                              ),
+                            );
                         }
                       : () => {
                           enterRefineMode();
                         }
                   }
-                  >
+                >
                   <Sliders size={14} />
                   {refineMode
-                    ? (refine.isSaving ? "Saving..." : "Save Refinements")
+                    ? refine.isSaving
+                      ? "Saving..."
+                      : "Save Refinements"
                     : "Refine Masks"}
                 </button>
 
                 {/* discard all changes made while refining masks*/}
                 {refineMode && (
-                  <button type="button" className={styles.actionBtn} onClick={refine.handleDiscard}>
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
+                    onClick={refine.handleDiscard}
+                  >
                     Discard
                   </button>
                 )}
@@ -2587,29 +3182,46 @@ export default function Workspace() {
                     <p className={styles.sidebarLabel}>Refine</p>
 
                     <div style={{ marginBottom: 8 }}>
-                      <p className={styles.sidebarHint}>Fill mask opacity: {(refine.polygonOpacity * 100).toFixed(0)}%</p>
+                      <p className={styles.sidebarHint}>
+                        Fill mask opacity:{" "}
+                        {(refine.polygonOpacity * 100).toFixed(0)}%
+                      </p>
                       <input
                         type="range"
                         min={5}
                         max={100}
                         value={Math.round(refine.polygonOpacity * 100)}
-                        onChange={e => refine.setPolygonOpacity(Number(e.target.value) / 100)}
+                        onChange={(e) =>
+                          refine.setPolygonOpacity(Number(e.target.value) / 100)
+                        }
                         style={{ width: "100%", accentColor: "#7ee8a2" }}
                       />
                     </div>
 
                     <div style={{ marginBottom: 8 }}>
                       <p className={styles.sidebarHint}>Hover tooltip fields</p>
-                      {PARTICLE_METRIC_FIELDS.map(field => (
-                        <label key={field} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                      {PARTICLE_METRIC_FIELDS.map((field) => (
+                        <label
+                          key={field}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 11,
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={refine.tooltipFields.includes(field)}
-                            onChange={e => refine.setTooltipFields(
-                              e.target.checked
-                                ? [...refine.tooltipFields, field]
-                                : refine.tooltipFields.filter((f: ParticleMetricField) => f !== field)
-                            )}
+                            onChange={(e) =>
+                              refine.setTooltipFields(
+                                e.target.checked
+                                  ? [...refine.tooltipFields, field]
+                                  : refine.tooltipFields.filter(
+                                      (f: ParticleMetricField) => f !== field,
+                                    ),
+                              )
+                            }
                           />
                           {TOOLTIP_FIELD_LABELS[field]}
                         </label>
@@ -2618,62 +3230,90 @@ export default function Workspace() {
 
                     {/* batch delete: shift click multi select, or drag a box */}
                     {refine.selectedIds.length > 1 && (
-                      <button type="button" className={styles.actionBtn} onClick={refine.handleDeleteSelected}>
+                      <button
+                        type="button"
+                        className={styles.actionBtn}
+                        onClick={refine.handleDeleteSelected}
+                      >
                         Delete {refine.selectedIds.length} selected
                       </button>
                     )}
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.actionBtn} ${refine.boxDeleteMode ? styles.actionBtnPrimary : ""}`}
-                      onClick={() => refine.setBoxDeleteMode(!refine.boxDeleteMode)}
+                      onClick={() =>
+                        refine.setBoxDeleteMode(!refine.boxDeleteMode)
+                      }
                     >
-                      {refine.boxDeleteMode ? "Box Delete: ON (Esc)" : "Box Delete"}
+                      {refine.boxDeleteMode
+                        ? "Box Delete: ON (Esc)"
+                        : "Box Delete"}
                     </button>
                     {refine.boxDeleteMode && (
                       <p className={styles.sidebarHint}>
-                        Drag a box on the image. Every particle that touches it is deleted.
+                        Drag a box on the image. Every particle that touches it
+                        is deleted.
                       </p>
                     )}
                     <p className={styles.sidebarHint}>
-                      Shift+click particles to multi select. Delete key removes the selection.
+                      Shift+click particles to multi select. Delete key removes
+                      the selection.
                     </p>
 
-                    {refine.selectedId !== null && !refine.splitMode && !refine.pasteMode && (
-                      <>
-                        {samBlockNote && (
-                          <SamGateNote
-                            note={samBlockNote}
-                            canPrepare={samCanPrepare}
-                            preparing={samPreparing}
-                            actionLabel={samPrepareLabel}
-                            onPrepare={handlePrepareSam}
-                          />
-                        )}
-                        <button type="button"
-                          className={styles.actionBtn}
-                          disabled={!samReady}
-                          title={samBlockNote ?? undefined}
-                          onClick={refine.handleEnterSplit}
-                        >
-                          Split Instance
-                        </button>
-                        <button type="button" className={styles.actionBtn} onClick={refine.handleCopy}>
-                          Copy (⌘C)
-                        </button>
-                      </>
-                    )}
+                    {refine.selectedId !== null &&
+                      !refine.splitMode &&
+                      !refine.pasteMode && (
+                        <>
+                          {samBlockNote && (
+                            <SamGateNote
+                              note={samBlockNote}
+                              canPrepare={samCanPrepare}
+                              preparing={samPreparing}
+                              actionLabel={samPrepareLabel}
+                              onPrepare={handlePrepareSam}
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            disabled={!samReady}
+                            title={samBlockNote ?? undefined}
+                            onClick={refine.handleEnterSplit}
+                          >
+                            Split Instance
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            onClick={refine.handleCopy}
+                          >
+                            Copy (⌘C)
+                          </button>
+                        </>
+                      )}
 
-                    {refine.clipboard && !refine.pasteMode && !refine.splitMode && (
-                      <button type="button" className={styles.actionBtn} onClick={refine.handleEnterPaste}>
-                        Paste (⌘V)
-                      </button>
-                    )}
+                    {refine.clipboard &&
+                      !refine.pasteMode &&
+                      !refine.splitMode && (
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={refine.handleEnterPaste}
+                        >
+                          Paste (⌘V)
+                        </button>
+                      )}
 
                     {refine.pasteMode && (
                       <>
                         <p className={styles.sidebarHint}>
                           Click on image to place copied polygon
                         </p>
-                        <button type="button" className={styles.actionBtn} onClick={refine.handleCancelPaste}>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={refine.handleCancelPaste}
+                        >
                           Cancel (Esc)
                         </button>
                       </>
@@ -2682,19 +3322,35 @@ export default function Workspace() {
                     {refine.splitMode && (
                       <>
                         <p className={styles.sidebarHint}>
-                          {refine.splitPoints.length} point{refine.splitPoints.length !== 1 ? "s" : ""} placed
+                          {refine.splitPoints.length} point
+                          {refine.splitPoints.length !== 1 ? "s" : ""} placed
                         </p>
                         <p className={styles.sidebarHint}>
                           Click each particle to place a seed point
                         </p>
-                        <button type="button"
+                        <button
+                          type="button"
                           className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                           disabled={refine.splitPoints.length < 2}
-                          onClick={() => refine.handleConfirmSplit().catch(err => pushToast("err", "Split failed", (err as Error).message))}
+                          onClick={() =>
+                            refine
+                              .handleConfirmSplit()
+                              .catch((err) =>
+                                pushToast(
+                                  "err",
+                                  "Split failed",
+                                  (err as Error).message,
+                                ),
+                              )
+                          }
                         >
                           Confirm Split
                         </button>
-                        <button type="button" className={styles.actionBtn} onClick={refine.handleCancelSplit}>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={refine.handleCancelSplit}
+                        >
                           Cancel Split
                         </button>
                       </>
@@ -2708,20 +3364,29 @@ export default function Workspace() {
               <section className={styles.sidebarSection}>
                 <div className={styles.subWindow}>
                   <p className={styles.subWindowTitle}>
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "click" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("click")}
-                    >Point</button>
+                    >
+                      Point
+                    </button>
                     {"/"}
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "box" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("box")}
-                    >Box</button>
+                    >
+                      Box
+                    </button>
                     {"/"}
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "similar" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("similar")}
-                    >Similar</button>
+                    >
+                      Similar
+                    </button>
                   </p>
                   {samBlockNote && (
                     <SamGateNote
@@ -2738,18 +3403,29 @@ export default function Workspace() {
                       {/* bootstrap mode. click on the image to *propose* particles via
                           SAM point-prompt. needs the SAM embedding cached: automatic
                           after a SAM segment run, or via Prepare SAM */}
-                      <button type="button"
+                      <button
+                        type="button"
                         className={styles.actionBtn}
-                        disabled={!sessionId || refineMode || annotateMode || boxMode || !samReady}
-                        onClick={() => setBootstrapMode(b => !b)}
+                        disabled={
+                          !sessionId ||
+                          refineMode ||
+                          annotateMode ||
+                          boxMode ||
+                          !samReady
+                        }
+                        onClick={() => setBootstrapMode((b) => !b)}
                         title={samBlockNote ?? undefined}
                       >
                         <MousePointerClick size={14} />
-                        {bootstrapMode ? "Stop Clicking" : "Click to Add Particles"}
+                        {bootstrapMode
+                          ? "Stop Clicking"
+                          : "Click to Add Particles"}
                       </button>
                       <ExpandableHint summary="Point prompt tips">
                         <p className={styles.sidebarHint}>
-                          Click a missed particle so SAM segments it from that point using a point prompt, best for particles that sit clearly apart from their neighbors.
+                          Click a missed particle so SAM segments it from that
+                          point using a point prompt, best for particles that
+                          sit clearly apart from their neighbors.
                         </p>
                       </ExpandableHint>
                     </>
@@ -2760,10 +3436,17 @@ export default function Workspace() {
                       {/* box-prompt annotation. drag a tight box, SAM segments inside.
                           Preferred over click-to-add for OOD particles where point
                           prompts bleed; preferred over polygon for speed. */}
-                      <button type="button"
+                      <button
+                        type="button"
                         className={styles.actionBtn}
-                        disabled={!sessionId || refineMode || annotateMode || bootstrapMode || !samReady}
-                        onClick={() => setBoxMode(m => !m)}
+                        disabled={
+                          !sessionId ||
+                          refineMode ||
+                          annotateMode ||
+                          bootstrapMode ||
+                          !samReady
+                        }
+                        onClick={() => setBoxMode((m) => !m)}
                         title={samBlockNote ?? undefined}
                       >
                         <BoxSelect size={14} />
@@ -2771,7 +3454,10 @@ export default function Workspace() {
                       </button>
                       <ExpandableHint summary="Box prompt tips">
                         <p className={styles.sidebarHint}>
-                          Drag a box around a missed particle so SAM segments it from that box using a box prompt, best when particles sit close together and a point would bleed into neighbors.
+                          Drag a box around a missed particle so SAM segments it
+                          from that box using a box prompt, best when particles
+                          sit close together and a point would bleed into
+                          neighbors.
                         </p>
                       </ExpandableHint>
                       {boxMode && (
@@ -2787,7 +3473,8 @@ export default function Workspace() {
                       {/* propose-similar: build a SAM-embedding prior from existing
                           annotations and find more candidates across the image. Needs
                           at least one annotated particle to construct the prior. */}
-                      <button type="button"
+                      <button
+                        type="button"
                         className={styles.actionBtn}
                         disabled={
                           !sessionId ||
@@ -2809,11 +3496,15 @@ export default function Workspace() {
                         }
                       >
                         <Sparkles size={14} />
-                        {bootstrapBusy ? "Searching..." : "Find Similar Particles"}
+                        {bootstrapBusy
+                          ? "Searching..."
+                          : "Find Similar Particles"}
                       </button>
                       <ExpandableHint summary="Similar search tips">
                         <p className={styles.sidebarHint}>
-                          Search the rest of the image for particles like the ones you already annotated, once you have a few examples to build from.
+                          Search the rest of the image for particles like the
+                          ones you already annotated, once you have a few
+                          examples to build from.
                         </p>
                       </ExpandableHint>
                     </>
@@ -2825,13 +3516,17 @@ export default function Workspace() {
                 {seg.segDone && seg.masksVisible && (
                   <div className={styles.subWindow}>
                     <p className={styles.subWindowTitle}>Display</p>
-                    <p className={styles.sidebarHint}>Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%</p>
+                    <p className={styles.sidebarHint}>
+                      Fill mask opacity: {(polygonOpacity * 100).toFixed(0)}%
+                    </p>
                     <input
                       type="range"
                       min={5}
                       max={100}
                       value={Math.round(polygonOpacity * 100)}
-                      onChange={e => setPolygonOpacity(Number(e.target.value) / 100)}
+                      onChange={(e) =>
+                        setPolygonOpacity(Number(e.target.value) / 100)
+                      }
                       style={{ width: "100%" }}
                     />
                   </div>
@@ -2842,14 +3537,21 @@ export default function Workspace() {
 
                   {groupCtx && (
                     <>
-                      <p className={styles.sidebarHint}>Batch: {groupCtx.name}</p>
+                      <p className={styles.sidebarHint}>
+                        Batch: {groupCtx.name}
+                      </p>
                       {!batchRFStatus?.enabled ? (
-                        <button type="button" className={styles.actionBtn} onClick={handleEnableBatchRF}>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={handleEnableBatchRF}
+                        >
                           Enable Batch Learning
                         </button>
                       ) : (
                         <p className={styles.sidebarHint}>
-                          Confirmed examples: {batchRFStatus.foreground_count} particle, {batchRFStatus.background_count} background
+                          Confirmed examples: {batchRFStatus.foreground_count}{" "}
+                          particle, {batchRFStatus.background_count} background
                         </p>
                       )}
                     </>
@@ -2860,7 +3562,8 @@ export default function Workspace() {
                       assuming everything far from a known particle is background
                       (which mislabels particles the model missed). Comes first —
                       RF Recover Missed needs this to have anything to train on. */}
-                  <button type="button"
+                  <button
+                    type="button"
                     className={`${styles.actionBtn} ${rfBgMode ? styles.actionBtnPrimary : ""}`}
                     disabled={
                       !sessionId ||
@@ -2870,65 +3573,112 @@ export default function Workspace() {
                       !seg.segDone ||
                       bootstrapBusy
                     }
-                    onClick={() => { setRfFgMode(false); setRfBgMode(v => !v); }}
+                    onClick={() => {
+                      setRfFgMode(false);
+                      setRfBgMode((v) => !v);
+                    }}
                   >
-                    <PenTool size={14} /> {rfBgMode ? "Done Marking" : "Mark RF Background"}
+                    <PenTool size={14} />{" "}
+                    {rfBgMode ? "Done Marking" : "Mark RF Background"}
                   </button>
                   {rfBgScribbles.length > 0 && !rfBgMode && (
-                    <button type="button" className={styles.actionBtn} onClick={() => {
-                      rfBgScribblesRef.current = [];
-                      setRfBgScribbles([]);
-                      setStatus("RF background scribbles cleared.");
-                    }}>
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => {
+                        rfBgScribblesRef.current = [];
+                        setRfBgScribbles([]);
+                        setStatus("RF background scribbles cleared.");
+                      }}
+                    >
                       Clear Background Marks
                     </button>
                   )}
                   {batchRFStatus?.enabled && groupCtx && (
                     <>
-                      <button type="button"
+                      <button
+                        type="button"
                         className={`${styles.actionBtn} ${rfFgMode ? styles.actionBtnPrimary : ""}`}
-                        disabled={!sessionId || !seg.segDone || refineMode || annotateMode || boxMode || bootstrapBusy}
-                        onClick={() => { setRfBgMode(false); setRfFgMode(v => !v); }}
+                        disabled={
+                          !sessionId ||
+                          !seg.segDone ||
+                          refineMode ||
+                          annotateMode ||
+                          boxMode ||
+                          bootstrapBusy
+                        }
+                        onClick={() => {
+                          setRfBgMode(false);
+                          setRfFgMode((v) => !v);
+                        }}
                       >
-                        <PenTool size={14} /> {rfFgMode ? "Done Marking" : "Mark Confirmed Particles"}
+                        <PenTool size={14} />{" "}
+                        {rfFgMode ? "Done Marking" : "Mark Confirmed Particles"}
                       </button>
-                      <button type="button" className={styles.actionBtn}
-                        disabled={!sessionId || !seg.segDone || rfBgMode || rfFgMode || bootstrapBusy}
+                      <button
+                        type="button"
+                        className={styles.actionBtn}
+                        disabled={
+                          !sessionId ||
+                          !seg.segDone ||
+                          rfBgMode ||
+                          rfFgMode ||
+                          bootstrapBusy
+                        }
                         onClick={handleTeachReviewedMasks}
                       >
                         Teach Reviewed Masks as Particles
                       </button>
                       <p className={styles.sidebarHint}>
-                        Use reviewed masks for this batch. Any incorrect particle masks will also teach the classifier.
+                        Use reviewed masks for this batch. Any incorrect
+                        particle masks will also teach the classifier.
                       </p>
                       {rfFgScribbles.length > 0 && !rfFgMode && (
-                        <button type="button" className={styles.actionBtn} onClick={() => {
-                          rfFgScribblesRef.current = [];
-                          setRfFgScribbles([]);
-                        }}>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          onClick={() => {
+                            rfFgScribblesRef.current = [];
+                            setRfFgScribbles([]);
+                          }}
+                        >
                           Clear Particle Marks
                         </button>
                       )}
                       {rfFgScribbles.length > 0 && !rfFgMode && (
-                        <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          disabled={bootstrapBusy}
                           onClick={() => handleTeachBatchRF("foreground")}
                         >
                           Teach Batch: Particles
                         </button>
                       )}
                       {rfBgScribbles.length > 0 && !rfBgMode && (
-                        <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          disabled={bootstrapBusy}
                           onClick={() => handleTeachBatchRF("background")}
                         >
                           Teach Batch: Background
                         </button>
                       )}
-                      {batchRFStatus.examples.map(example => (
+                      {batchRFStatus.examples.map((example) => (
                         <div key={example.id} className={styles.sidebarHint}>
-                          {example.label} ({example.source_kind}) · image {groupCtx.sessions.find(s => s.session_id === example.session_id)?.file_name ?? example.session_id}
-                          <button type="button" className={styles.actionBtn} disabled={bootstrapBusy}
+                          {example.label} ({example.source_kind}) · image{" "}
+                          {groupCtx.sessions.find(
+                            (s) => s.session_id === example.session_id,
+                          )?.file_name ?? example.session_id}
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            disabled={bootstrapBusy}
                             onClick={() => handleRetractBatchRF(example.id)}
-                          >Remove example</button>
+                          >
+                            Remove example
+                          </button>
                         </div>
                       ))}
                     </>
@@ -2937,7 +3687,9 @@ export default function Workspace() {
                     <>
                       <ExpandableHint summary="Background marking tips">
                         <p className={styles.sidebarHint}>
-                          Mark patches that definitely contain no particle so the classifier learns real background instead of guessing.
+                          Mark patches that definitely contain no particle so
+                          the classifier learns real background instead of
+                          guessing.
                         </p>
                       </ExpandableHint>
                       {/* brush size: wheel on-canvas and this slider both write
@@ -2945,19 +3697,30 @@ export default function Workspace() {
                       <p className={styles.sidebarHint}>
                         Brush: {rfBgBrushSize}px
                       </p>
-                      <input type="range" min={6} max={400} value={rfBgBrushSize}
-                        onChange={e => setRfBgBrushSize(Number(e.target.value))}
-                        style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                      <input
+                        type="range"
+                        min={6}
+                        max={400}
+                        value={rfBgBrushSize}
+                        onChange={(e) =>
+                          setRfBgBrushSize(Number(e.target.value))
+                        }
+                        style={{ width: "100%", accentColor: "#7ee8a2" }}
+                      />
                       <p className={styles.sidebarShortcuts}>
                         · [scroll]: resize brush
                       </p>
                     </>
                   ) : rfFgMode ? (
-                    <p className={styles.sidebarHint}>Mark only pixels inside particles you have checked.</p>
+                    <p className={styles.sidebarHint}>
+                      Mark only pixels inside particles you have checked.
+                    </p>
                   ) : (
                     <ExpandableHint summary="Why mark background">
                       <p className={styles.sidebarHint}>
-                        Mark a few patches that definitely contain no particle, since RF Recover below needs real background examples and cannot guess them safely on its own.
+                        Mark a few patches that definitely contain no particle,
+                        since RF Recover below needs real background examples
+                        and cannot guess them safely on its own.
                       </p>
                     </ExpandableHint>
                   )}
@@ -2966,7 +3729,8 @@ export default function Workspace() {
                       and requires marked background since the RF trains on your annotated
                       particles as foreground and your marks as background, and has
                       nothing reliable to learn from otherwise. */}
-                  <button type="button"
+                  <button
+                    type="button"
                     className={styles.actionBtn}
                     disabled={
                       !sessionId ||
@@ -2992,21 +3756,40 @@ export default function Workspace() {
                     {bootstrapBusy ? "Running..." : "RF Recover Missed"}
                   </button>
                   {batchRFStatus?.enabled && groupCtx && (
-                    <button type="button" className={styles.actionBtn}
-                      disabled={!sessionId || !seg.segDone || refineMode || annotateMode || boxMode || rfBgMode || rfFgMode || bootstrapBusy || pendingProposals.length > 0 || batchRFStatus.foreground_count === 0 || batchRFStatus.background_count === 0}
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      disabled={
+                        !sessionId ||
+                        !seg.segDone ||
+                        refineMode ||
+                        annotateMode ||
+                        boxMode ||
+                        rfBgMode ||
+                        rfFgMode ||
+                        bootstrapBusy ||
+                        pendingProposals.length > 0 ||
+                        batchRFStatus.foreground_count === 0 ||
+                        batchRFStatus.background_count === 0
+                      }
                       onClick={handleBatchRFPropose}
-                      title={pendingProposals.length > 0
-                        ? "Review or discard pending proposals first"
-                        : batchRFStatus.foreground_count === 0 || batchRFStatus.background_count === 0
-                          ? "Teach both confirmed particles and background before batch recovery"
-                          : undefined}
+                      title={
+                        pendingProposals.length > 0
+                          ? "Review or discard pending proposals first"
+                          : batchRFStatus.foreground_count === 0 ||
+                              batchRFStatus.background_count === 0
+                            ? "Teach both confirmed particles and background before batch recovery"
+                            : undefined
+                      }
                     >
                       <Sparkles size={14} /> Batch RF Recover
                     </button>
                   )}
                   <ExpandableHint summary="RF recovery tips">
                     <p className={styles.sidebarHint}>
-                      Train a classifier on your annotated particles as foreground and your marked background as the negative class to catch particles missed everywhere in the image.
+                      Train a classifier on your annotated particles as
+                      foreground and your marked background as the negative
+                      class to catch particles missed everywhere in the image.
                     </p>
                   </ExpandableHint>
                 </div>
@@ -3017,10 +3800,13 @@ export default function Workspace() {
                   {/* manual annotation. fallback when both YOLO and SAM-with-point
                       fail (small / clumped / OOD particles). Doesn't require a
                       prior /segment run since it doesn't use any model output. */}
-                  <button type="button"
+                  <button
+                    type="button"
                     className={styles.actionBtn}
-                    disabled={!sessionId || refineMode || bootstrapMode || boxMode}
-                    onClick={() => setAnnotateMode(m => !m)}
+                    disabled={
+                      !sessionId || refineMode || bootstrapMode || boxMode
+                    }
+                    onClick={() => setAnnotateMode((m) => !m)}
                   >
                     <PenTool size={14} />
                     {annotateMode ? "Stop Annotating" : "Annotate Manually"}
@@ -3029,13 +3815,18 @@ export default function Workspace() {
                     <>
                       <ExpandableHint summary="Manual trace tips">
                         <p className={styles.sidebarHint}>
-                          Trace a particle by hand when SAM cannot separate it from its neighbors, since this does not depend on any model.
+                          Trace a particle by hand when SAM cannot separate it
+                          from its neighbors, since this does not depend on any
+                          model.
                         </p>
                       </ExpandableHint>
                       <p className={styles.sidebarShortcuts}>
-                        [Enter] or double-click close<br />
-                        [Backspace]: undo vertex<br />
-                        [Space]+drag: pan<br />
+                        [Enter] or double-click close
+                        <br />
+                        [Backspace]: undo vertex
+                        <br />
+                        [Space]+drag: pan
+                        <br />
                         [Esc]: cancel
                       </p>
                     </>
@@ -3044,14 +3835,17 @@ export default function Workspace() {
 
                 {pendingProposals.length > 0 && (
                   <div className={styles.proposalsBar}>
-                    <button type="button"
+                    <button
+                      type="button"
                       className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
                       onClick={handleAcceptProposals}
                       disabled={bootstrapBusy}
                     >
-                      Accept {pendingProposals.length} Proposal{pendingProposals.length === 1 ? "" : "s"}
+                      Accept {pendingProposals.length} Proposal
+                      {pendingProposals.length === 1 ? "" : "s"}
                     </button>
-                    <button type="button"
+                    <button
+                      type="button"
                       className={styles.actionBtn}
                       onClick={handleDiscardProposals}
                       disabled={bootstrapBusy}
@@ -3068,106 +3862,132 @@ export default function Workspace() {
 
             {activeTab === "analysis" && (
               <>
-              <section className={styles.sidebarSection}>
-                <p className={styles.sidebarLabel}>Measurements</p>
-                <button type="button"
-                  className={`${styles.actionBtn} ${measureMode ? styles.actionBtnPrimary : ""}`}
-                  disabled={!image}
-                  onClick={() => (measureMode ? cancelMeasure() : startMeasure())}
-                >
-                  <Ruler size={14} /> {measureMode ? "Done" : "Measure Distance"}
-                </button>
-                {measureMode && (
-                  <p className={styles.sidebarHint}>
-                    Click empty space to chain a new vertex from the last one. Click an existing vertex to branch/connect from it instead.
-                  </p>
-                )}
-                <button type="button"
-                  className={`${styles.actionBtn} ${angleMode ? styles.actionBtnPrimary : ""}`}
-                  disabled={!image}
-                  onClick={() => (angleMode ? cancelAngle() : startAngle())}
-                >
-                  <Compass size={14} /> {angleMode ? "Done" : "Measure Angle"}
-                </button>
-                {angleMode && (
-                  <p className={styles.sidebarHint}>
-                    Click three points. The angle is measured at the second point.
-                  </p>
-                )}
-                {(measureEdges.length > 0 || angleMeasurements.length > 0) && (
-                  <div className={styles.subWindow}>
-                    <p className={styles.subWindowTitle}>Measurements</p>
-                    {measureEdges.map((e, i) => {
-                      const p = measureVertices[e.a];
-                      const q = measureVertices[e.b];
-                      if (!p || !q) return null;
-                      const len = Math.hypot(q.x - p.x, q.y - p.y);
-                      return (
-                        <div key={`e${i}`} className={styles.measureRow}>
-                          <span className={styles.measureNum}>#{i + 1}</span>
-                          <span className={styles.measureVal}>{formatMeasureListLabel(len)}</span>
-                          <button
-                            type="button"
-                            className={styles.miniBtn}
-                            onClick={() => setMeasureEdges(prev => prev.filter((_, j) => j !== i))}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                    {angleMeasurements.map((m, i) => {
-                      const minor = angleMetrics(m.a, m.b, m.c).deg;
-                      const shown = m.reflex ? 360 - minor : minor;
-                      return (
-                        <div key={`a${i}`} className={styles.measureRow}>
-                          <span className={styles.measureNum}>∠{i + 1}</span>
-                          <span className={styles.measureVal}>{shown.toFixed(1)}°</span>
-                          <button
-                            type="button"
-                            className={`${styles.miniBtn} ${m.reflex ? styles.miniBtnOn : ""}`}
-                            onClick={() => toggleAngleReflex(i)}
-                          >
-                            {m.reflex ? "Reflex" : "Minor"}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.miniBtn}
-                            onClick={() => setAngleMeasurements(prev => prev.filter((_, j) => j !== i))}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {(measureVertices.length > 0 || measureEdges.length > 0 || angleMeasurements.length > 0) && (
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Measurements</p>
                   <button
                     type="button"
-                    className={styles.actionBtn}
-                    onClick={() => { clearMeasurements(); clearAngleMeasurements(); pushToast("info", "Measurements cleared"); }}
+                    className={`${styles.actionBtn} ${measureMode ? styles.actionBtnPrimary : ""}`}
+                    disabled={!image}
+                    onClick={() =>
+                      measureMode ? cancelMeasure() : startMeasure()
+                    }
                   >
-                    <Trash2 size={14} /> Clear All Measurements
+                    <Ruler size={14} />{" "}
+                    {measureMode ? "Done" : "Measure Distance"}
                   </button>
-                )}
-              </section>
+                  {measureMode && (
+                    <p className={styles.sidebarHint}>
+                      Click empty space to chain a new vertex from the last one.
+                      Click an existing vertex to branch/connect from it
+                      instead.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${angleMode ? styles.actionBtnPrimary : ""}`}
+                    disabled={!image}
+                    onClick={() => (angleMode ? cancelAngle() : startAngle())}
+                  >
+                    <Compass size={14} /> {angleMode ? "Done" : "Measure Angle"}
+                  </button>
+                  {angleMode && (
+                    <p className={styles.sidebarHint}>
+                      Click three points. The angle is measured at the second
+                      point.
+                    </p>
+                  )}
+                  {(measureEdges.length > 0 ||
+                    angleMeasurements.length > 0) && (
+                    <div className={styles.subWindow}>
+                      <p className={styles.subWindowTitle}>Measurements</p>
+                      {measureEdges.map((e, i) => {
+                        const p = measureVertices[e.a];
+                        const q = measureVertices[e.b];
+                        if (!p || !q) return null;
+                        const len = Math.hypot(q.x - p.x, q.y - p.y);
+                        return (
+                          <div key={`e${i}`} className={styles.measureRow}>
+                            <span className={styles.measureNum}>#{i + 1}</span>
+                            <span className={styles.measureVal}>
+                              {formatMeasureListLabel(len)}
+                            </span>
+                            <button
+                              type="button"
+                              className={styles.miniBtn}
+                              onClick={() =>
+                                setMeasureEdges((prev) =>
+                                  prev.filter((_, j) => j !== i),
+                                )
+                              }
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {angleMeasurements.map((m, i) => {
+                        const minor = angleMetrics(m.a, m.b, m.c).deg;
+                        const shown = m.reflex ? 360 - minor : minor;
+                        return (
+                          <div key={`a${i}`} className={styles.measureRow}>
+                            <span className={styles.measureNum}>∠{i + 1}</span>
+                            <span className={styles.measureVal}>
+                              {shown.toFixed(1)}°
+                            </span>
+                            <button
+                              type="button"
+                              className={`${styles.miniBtn} ${m.reflex ? styles.miniBtnOn : ""}`}
+                              onClick={() => toggleAngleReflex(i)}
+                            >
+                              {m.reflex ? "Reflex" : "Minor"}
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.miniBtn}
+                              onClick={() =>
+                                setAngleMeasurements((prev) =>
+                                  prev.filter((_, j) => j !== i),
+                                )
+                              }
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(measureVertices.length > 0 ||
+                    measureEdges.length > 0 ||
+                    angleMeasurements.length > 0) && (
+                    <button
+                      type="button"
+                      className={styles.actionBtn}
+                      onClick={() => {
+                        clearMeasurements();
+                        clearAngleMeasurements();
+                        pushToast("info", "Measurements cleared");
+                      }}
+                    >
+                      <Trash2 size={14} /> Clear All Measurements
+                    </button>
+                  )}
+                </section>
 
-              <section className={styles.sidebarSection}>
-                <p className={styles.sidebarLabel}>Calibrate</p>
-                <CalibrateSection
-                  sessionId={sessionId}
-                  metadata={metadata}
-                  scaleBarMode={scaleBarMode}
-                  scaleBarPixels={scaleBarPixels}
-                  onMetadataUpdate={handleMetadataUpdate}
-                  onToggleScaleBar={handleToggleScaleBar}
-                  onScaleBarCancel={handleScaleBarCancel}
-                />
-              </section>
+                <section className={styles.sidebarSection}>
+                  <p className={styles.sidebarLabel}>Calibrate</p>
+                  <CalibrateSection
+                    sessionId={sessionId}
+                    metadata={metadata}
+                    scaleBarMode={scaleBarMode}
+                    scaleBarPixels={scaleBarPixels}
+                    onMetadataUpdate={handleMetadataUpdate}
+                    onToggleScaleBar={handleToggleScaleBar}
+                    onScaleBarCancel={handleScaleBarCancel}
+                  />
+                </section>
               </>
             )}
-
           </aside>
 
           {/* canvas */}
@@ -3175,7 +3995,10 @@ export default function Workspace() {
             {!image ? (
               <div
                 className={`${styles.dropZone} ${isDragging ? styles.dropZoneDragging : ""}`}
-                onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
                 onClick={() => fileRef.current?.click()}
@@ -3183,13 +4006,18 @@ export default function Workspace() {
                 <div className={styles.emptyInner}>
                   <div className={styles.dropBox}>
                     <Upload size={32} strokeWidth={1.5} />
-                    <p className={styles.dropLabel}>Drop images here or click to upload</p>
-                    <p className={styles.dropHint}>EMD, TIF, TIFF, JPEG, PNG, NPY supported — multiple files become a group</p>
+                    <p className={styles.dropLabel}>
+                      Drop images here or click to upload
+                    </p>
+                    <p className={styles.dropHint}>
+                      EMD, TIF, TIFF, JPEG, PNG, NPY supported — multiple files
+                      become a group
+                    </p>
                   </div>
                   <button
                     type="button"
                     className={styles.folderBtn}
-                    onClick={e => {
+                    onClick={(e) => {
                       e.stopPropagation();
                       if (isFolderImportAvailable()) handleFolderImport();
                       else folderRef.current?.click();
@@ -3198,85 +4026,184 @@ export default function Workspace() {
                     <FolderOpen size={14} /> Open Folder
                   </button>
                   {sessionStorage && (
-                    <section className={styles.sessionStorageSummary} onClick={e => e.stopPropagation()}>
+                    <section
+                      className={styles.sessionStorageSummary}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className={styles.sessionStorageSummaryTop}>
                         <div className={styles.sessionStorageMetrics}>
-                          <span><strong>{sessionStorage.session_count}</strong> sessions</span>
-                          <span><strong>{formatSessionStorageBytes(sessionStorage.total_size_bytes)}</strong> session data</span>
+                          <span>
+                            <strong>{sessionStorage.session_count}</strong>{" "}
+                            sessions
+                          </span>
+                          <span>
+                            <strong>
+                              {formatSessionStorageBytes(
+                                sessionStorage.total_size_bytes,
+                              )}
+                            </strong>{" "}
+                            session data
+                          </span>
                         </div>
-                        <button type="button" onClick={() => setSessionManagerOpen(true)}>Manage sessions</button>
+                        <button
+                          type="button"
+                          onClick={() => setSessionManagerOpen(true)}
+                        >
+                          Manage sessions
+                        </button>
                       </div>
-                      <div className={styles.sessionStorageLocation} title={sessionStorage.storage_dir}>
+                      <div
+                        className={styles.sessionStorageLocation}
+                        title={sessionStorage.storage_dir}
+                      >
                         Stored in <code>{sessionStorage.storage_dir}</code>
                       </div>
                     </section>
                   )}
                   {groupsShown.length > 0 && (
-                    <div className={styles.recents} onClick={e => e.stopPropagation()}>
-                      <div className={styles.recentsHead}><span>Groups</span><span>images</span></div>
-                      {groupsShown.map(g => (
+                    <div
+                      className={styles.recents}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className={styles.recentsHead}>
+                        <span>Groups</span>
+                        <span>images</span>
+                      </div>
+                      {groupsShown.map((g) => (
                         <div key={g.id}>
                           <div className={styles.rowWrap}>
                             <button
                               type="button"
                               className={styles.recentRow}
-                              onClick={() => setExpandedGroup(e => (e === g.id ? null : g.id))}
+                              onClick={() =>
+                                setExpandedGroup((e) =>
+                                  e === g.id ? null : g.id,
+                                )
+                              }
                             >
                               <Folder size={13} className={styles.recentIco} />
-                              <span className={styles.recentName}>{g.name}</span>
-                              <span className={styles.recentMeta}>{g.session_count}</span>
+                              <span className={styles.recentName}>
+                                {g.name}
+                              </span>
+                              <span className={styles.recentMeta}>
+                                {g.session_count}
+                              </span>
                             </button>
                             <span className={styles.rowActions}>
-                              <button type="button" className={styles.rowAction} title="Rename group" onClick={() => handleRenameGroup(g)}>
+                              <button
+                                type="button"
+                                className={styles.rowAction}
+                                title="Rename group"
+                                onClick={() => handleRenameGroup(g)}
+                              >
                                 <Pencil size={11} />
                               </button>
-                              <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete group (images kept)" onClick={() => handleDeleteGroup(g)}>
+                              <button
+                                type="button"
+                                className={`${styles.rowAction} ${styles.dangerRowAction}`}
+                                title="Delete group (images kept)"
+                                onClick={() => handleDeleteGroup(g)}
+                              >
                                 <Trash2 size={11} />
                               </button>
                             </span>
                           </div>
-                          {expandedGroup === g.id && g.sessions.map(s => (
-                            <div key={s.session_id} className={styles.rowWrap}>
-                              <button
-                                type="button"
-                                className={`${styles.recentRow} ${styles.groupSessionRow}`}
-                                onClick={() => goToSession(s.session_id, g)}
+                          {expandedGroup === g.id &&
+                            g.sessions.map((s) => (
+                              <div
+                                key={s.session_id}
+                                className={styles.rowWrap}
                               >
-                                <img src={`${BASE_URL}${s.preview_url}`} className={styles.groupThumb} alt="" />
-                                <span className={styles.recentName}>{s.file_name}</span>
-                              </button>
-                              <span className={styles.rowActions}>
-                                <button type="button" className={styles.rowAction} title="Rename image" onClick={() => handleRenameSession(s.session_id, s.file_name)}>
-                                  <Pencil size={11} />
+                                <button
+                                  type="button"
+                                  className={`${styles.recentRow} ${styles.groupSessionRow}`}
+                                  onClick={() => goToSession(s.session_id, g)}
+                                >
+                                  <img
+                                    src={`${BASE_URL}${s.preview_url}`}
+                                    className={styles.groupThumb}
+                                    alt=""
+                                  />
+                                  <span className={styles.recentName}>
+                                    {s.file_name}
+                                  </span>
                                 </button>
-                                <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete image" onClick={() => handleDeleteSession(s.session_id, s.file_name)}>
-                                  <Trash2 size={11} />
-                                </button>
-                              </span>
-                            </div>
-                          ))}
+                                <span className={styles.rowActions}>
+                                  <button
+                                    type="button"
+                                    className={styles.rowAction}
+                                    title="Rename image"
+                                    onClick={() =>
+                                      handleRenameSession(
+                                        s.session_id,
+                                        s.file_name,
+                                      )
+                                    }
+                                  >
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`${styles.rowAction} ${styles.dangerRowAction}`}
+                                    title="Delete image"
+                                    onClick={() =>
+                                      handleDeleteSession(
+                                        s.session_id,
+                                        s.file_name,
+                                      )
+                                    }
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </span>
+                              </div>
+                            ))}
                         </div>
                       ))}
                     </div>
                   )}
                   {recentsShown.length > 0 && (
-                    <div className={styles.recents} onClick={e => e.stopPropagation()}>
-                      <div className={styles.recentsHead}><span>Recent</span><span>session dir</span></div>
-                      {recentsShown.map(s => (
+                    <div
+                      className={styles.recents}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className={styles.recentsHead}>
+                        <span>Recent</span>
+                        <span>session dir</span>
+                      </div>
+                      {recentsShown.map((s) => (
                         <div key={s.session_id} className={styles.rowWrap}>
                           <button
                             className={styles.recentRow}
                             onClick={() => goToSession(s.session_id, null)}
                           >
                             <File size={13} className={styles.recentIco} />
-                            <span className={styles.recentName}>{s.file_name}</span>
-                            <span className={styles.recentMeta}>{formatRecentMeta(s)}</span>
+                            <span className={styles.recentName}>
+                              {s.file_name}
+                            </span>
+                            <span className={styles.recentMeta}>
+                              {formatRecentMeta(s)}
+                            </span>
                           </button>
                           <span className={styles.rowActions}>
-                            <button type="button" className={styles.rowAction} title="Rename image" onClick={() => handleRenameSession(s.session_id, s.file_name)}>
+                            <button
+                              type="button"
+                              className={styles.rowAction}
+                              title="Rename image"
+                              onClick={() =>
+                                handleRenameSession(s.session_id, s.file_name)
+                              }
+                            >
                               <Pencil size={11} />
                             </button>
-                            <button type="button" className={`${styles.rowAction} ${styles.dangerRowAction}`} title="Delete image" onClick={() => handleDeleteSession(s.session_id, s.file_name)}>
+                            <button
+                              type="button"
+                              className={`${styles.rowAction} ${styles.dangerRowAction}`}
+                              title="Delete image"
+                              onClick={() =>
+                                handleDeleteSession(s.session_id, s.file_name)
+                              }
+                            >
                               <Trash2 size={11} />
                             </button>
                           </span>
@@ -3299,14 +4226,36 @@ export default function Workspace() {
                   position: "relative",
                   display: "inline-block",
                   lineHeight: 0,
-                  transform: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || rfFgMode || analysisMode
-                    ? "none"
-                    : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                  transform:
+                    seg.isBlackoutMode ||
+                    refineMode ||
+                    bootstrapMode ||
+                    annotateMode ||
+                    boxMode ||
+                    scaleBarMode ||
+                    rfBgMode ||
+                    rfFgMode ||
+                    analysisMode
+                      ? "none"
+                      : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
-                  transition: isPanning.current ? "none" : "transform 0.05s ease-out",
-                  cursor: seg.isBlackoutMode || refineMode || bootstrapMode || annotateMode || boxMode || scaleBarMode || rfBgMode || rfFgMode || analysisMode
-                    ? "default"
-                    : panning ? "grabbing" : "grab",
+                  transition: isPanning.current
+                    ? "none"
+                    : "transform 0.05s ease-out",
+                  cursor:
+                    seg.isBlackoutMode ||
+                    refineMode ||
+                    bootstrapMode ||
+                    annotateMode ||
+                    boxMode ||
+                    scaleBarMode ||
+                    rfBgMode ||
+                    rfFgMode ||
+                    analysisMode
+                      ? "default"
+                      : panning
+                        ? "grabbing"
+                        : "grab",
                 }}
               >
                 {/* base image. hidden when blackout/refine canvas is active (they render their own) */}
@@ -3316,23 +4265,33 @@ export default function Workspace() {
                   className={styles.temImage}
                   style={{
                     display: "block",
-                    visibility: seg.isBlackoutMode || refineMode || annotateMode || boxMode || rfBgMode || rfFgMode ? "hidden" : "visible",
+                    visibility:
+                      seg.isBlackoutMode ||
+                      refineMode ||
+                      annotateMode ||
+                      boxMode ||
+                      rfBgMode ||
+                      rfFgMode
+                        ? "hidden"
+                        : "visible",
                     filter: imgFilter,
                     ...(displayWidth > 0 && displayHeight > 0
                       ? { width: displayWidth, height: displayHeight }
                       : {}),
                   }}
-                  onLoad={e => setImgSize({
-                    width: e.currentTarget.naturalWidth,
-                    height: e.currentTarget.naturalHeight,
-                  })}
+                  onLoad={(e) =>
+                    setImgSize({
+                      width: e.currentTarget.naturalWidth,
+                      height: e.currentTarget.naturalHeight,
+                    })
+                  }
                 />
 
                 {/* blackout canvas */}
                 {seg.isBlackoutMode && imgSize.width > 0 && (
                   <div style={{ position: "absolute", top: 0, left: 0 }}>
                     <BlackoutCanvas
-                      imageSrc={image} 
+                      imageSrc={image}
                       width={viewportSize.width}
                       height={viewportSize.height}
                       imgWidth={imgSize.width}
@@ -3340,8 +4299,12 @@ export default function Workspace() {
                       imageBrightness={konvaBrightness}
                       imageContrast={konvaContrast}
                       isInverse={seg.isInvBlackoutMode}
-                      initialRegions={seg.isInvBlackoutMode ? seg.invBlackoutRegions : seg.blackoutRegions}
-                      onChange={regions => {
+                      initialRegions={
+                        seg.isInvBlackoutMode
+                          ? seg.invBlackoutRegions
+                          : seg.blackoutRegions
+                      }
+                      onChange={(regions) => {
                         if (seg.isInvBlackoutMode) {
                           liveInverseRegionsRef.current = regions;
                           seg.setInvBlackoutRegions(regions);
@@ -3369,7 +4332,7 @@ export default function Workspace() {
                       initialStrokes={rfFgMode ? rfFgScribbles : rfBgScribbles}
                       brushSize={rfBgBrushSize}
                       onBrushSizeChange={setRfBgBrushSize}
-                      onChange={scribbles => {
+                      onChange={(scribbles) => {
                         if (rfFgMode) {
                           rfFgScribblesRef.current = scribbles;
                           setRfFgScribbles(scribbles);
@@ -3420,23 +4383,44 @@ export default function Workspace() {
                 )}
 
                 {/* yolo detection boxes overlay (full image + green boxes) */}
-                {!refineMode && seg.segDone && seg.boxesVisible && seg.boxesUrl && (
-                  <img src={seg.boxesUrl} alt="" style={{
-                    position: "absolute", top: 0, left: 0,
-                    width: "100%", height: "100%",
-                    pointerEvents: "none",
-                  }} />
-                )}
+                {!refineMode &&
+                  seg.segDone &&
+                  seg.boxesVisible &&
+                  seg.boxesUrl && (
+                    <img
+                      src={seg.boxesUrl}
+                      alt=""
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
 
                 {/* seg mask overlay */}
-                {!refineMode && seg.segDone && seg.masksVisible && activeMaskUrl && (
-                  <img src={activeMaskUrl} alt="" style={{
-                    position: "absolute", top: 0, left: 0,
-                    width: "100%", height: "100%",
-                    opacity: polygonOpacity, mixBlendMode: "screen",
-                    pointerEvents: "none",
-                  }} />
-                )}
+                {!refineMode &&
+                  seg.segDone &&
+                  seg.masksVisible &&
+                  activeMaskUrl && (
+                    <img
+                      src={activeMaskUrl}
+                      alt=""
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        opacity: polygonOpacity,
+                        mixBlendMode: "screen",
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
 
                 {/* calibrated scale bar, bottom-right of the image */}
                 {renderScaleBarOverlay()}
@@ -3482,15 +4466,21 @@ export default function Workspace() {
                       viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
                       preserveAspectRatio="none"
                       style={{
-                        position: "absolute", top: 0, left: 0,
-                        width: "100%", height: "100%",
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
                         pointerEvents: "none",
                         zIndex: 11,
                       }}
                     >
-                      {loadedInstances.map(inst => {
-                        if (!inst.contour || inst.contour.length < 3) return null;
-                        const pts = inst.contour.map(([x, y]) => `${x},${y}`).join(" ");
+                      {loadedInstances.map((inst) => {
+                        if (!inst.contour || inst.contour.length < 3)
+                          return null;
+                        const pts = inst.contour
+                          .map(([x, y]) => `${x},${y}`)
+                          .join(" ");
                         return (
                           <g key={`existing-${inst.id}`}>
                             <polygon
@@ -3503,7 +4493,9 @@ export default function Workspace() {
                             {(inst.extra_contours ?? []).map((c, ci) => (
                               <polygon
                                 key={`xe-${ci}`}
-                                points={c.map(([x, y]) => `${x},${y}`).join(" ")}
+                                points={c
+                                  .map(([x, y]) => `${x},${y}`)
+                                  .join(" ")}
                                 fill="rgba(126, 232, 162, 0.10)"
                                 stroke="#7ee8a2"
                                 strokeWidth={1.5}
@@ -3517,8 +4509,11 @@ export default function Workspace() {
                     <div
                       onClick={handleBootstrapClick}
                       style={{
-                        position: "absolute", top: 0, left: 0,
-                        width: "100%", height: "100%",
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
                         cursor: bootstrapBusy ? "wait" : "crosshair",
                         // thin accent outline so the user knows the mode is
                         // active — no colour wash over the image itself
@@ -3536,21 +4531,36 @@ export default function Workspace() {
                     viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
                     preserveAspectRatio="xMidYMid meet"
                     style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
                       pointerEvents: "none",
                       zIndex: 14,
                     }}
                   >
                     <line
-                      x1={scaleBarLineSvg.x1} y1={scaleBarLineSvg.y1}
-                      x2={scaleBarLineSvg.x2} y2={scaleBarLineSvg.y2}
+                      x1={scaleBarLineSvg.x1}
+                      y1={scaleBarLineSvg.y1}
+                      x2={scaleBarLineSvg.x2}
+                      y2={scaleBarLineSvg.y2}
                       stroke="#7ee8a2"
                       strokeWidth={2}
                       strokeDasharray={scaleBarPixels ? undefined : "8 4"}
                     />
-                    <circle cx={scaleBarLineSvg.x1} cy={scaleBarLineSvg.y1} r={5} fill="#7ee8a2" />
-                    <circle cx={scaleBarLineSvg.x2} cy={scaleBarLineSvg.y2} r={5} fill="#7ee8a2" />
+                    <circle
+                      cx={scaleBarLineSvg.x1}
+                      cy={scaleBarLineSvg.y1}
+                      r={5}
+                      fill="#7ee8a2"
+                    />
+                    <circle
+                      cx={scaleBarLineSvg.x2}
+                      cy={scaleBarLineSvg.y2}
+                      r={5}
+                      fill="#7ee8a2"
+                    />
                   </svg>
                 )}
 
@@ -3560,10 +4570,15 @@ export default function Workspace() {
                     onMouseDown={handleScaleBarMouseDown}
                     onMouseMove={handleScaleBarMouseMove}
                     onMouseUp={handleScaleBarMouseUp}
-                    onMouseLeave={e => { if (scaleBarStart.current) handleScaleBarMouseUp(e); }}
+                    onMouseLeave={(e) => {
+                      if (scaleBarStart.current) handleScaleBarMouseUp(e);
+                    }}
                     style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
                       cursor: "crosshair",
                       background: "rgba(126, 232, 162, 0.04)",
                       zIndex: 15,
@@ -3573,93 +4588,106 @@ export default function Workspace() {
 
                 {/* analysis measurement overlay. Vertices + explicit edges,
                     each edge labeled with its distance; stays visible after Done. */}
-                {(measureVertices.length > 0 || measureEdges.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && !rfFgMode && (
-                  <svg
-                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
-                    preserveAspectRatio="xMidYMid meet"
-                    style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
-                      pointerEvents: "none",
-                      zIndex: 13,
-                    }}
-                  >
-                    {measureVertices.map((p, i) => {
-                      const active = i === activeMeasureVertex;
-                      return (
-                        <circle
-                          key={`mv-${i}`}
-                          cx={p.x} cy={p.y}
-                          r={active ? measureMarkerR * 1.5 : measureMarkerR}
-                          fill={active ? "#0d0d0d" : "#5ad1ff"}
-                          stroke={active ? "#5ad1ff" : "#0d0d0d"}
-                          strokeWidth={measureStroke}
-                        />
-                      );
-                    })}
-                    {measureEdges.map((edge, i) => {
-                      const p = measureVertices[edge.a];
-                      const q = measureVertices[edge.b];
-                      if (!p || !q) return null;
-
-                      const dx = q.x - p.x;
-                      const dy = q.y - p.y;
-                      const px = Math.hypot(dx, dy);
-                      const mx = (p.x + q.x) / 2;
-                      const my = (p.y + q.y) / 2;
-
-                      // Rotate the label to run parallel to the edge, then flip
-                      // it 180° when it would otherwise read upside down.
-                      let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-                      if (angle > 90) angle -= 180;
-                      else if (angle < -90) angle += 180;
-
-                      // Place the label on the outside of the edge: pick the
-                      // perpendicular side farther from the image center, i.e.
-                      // the side facing the image boundary.
-                      const len = px || 1;
-                      const nx = -dy / len;
-                      const ny = dx / len;
-                      const offset = measureFontSize * 0.9;
-                      const cx = imgSize.width / 2;
-                      const cy = imgSize.height / 2;
-                      const p1x = mx + nx * offset;
-                      const p1y = my + ny * offset;
-                      const p2x = mx - nx * offset;
-                      const p2y = my - ny * offset;
-                      const d1 = (p1x - cx) ** 2 + (p1y - cy) ** 2;
-                      const d2 = (p2x - cx) ** 2 + (p2y - cy) ** 2;
-                      const lx = d1 >= d2 ? p1x : p2x;
-                      const ly = d1 >= d2 ? p1y : p2y;
-
-                      return (
-                        <g key={`me-${i}`}>
-                          <line
-                            x1={p.x} y1={p.y}
-                            x2={q.x} y2={q.y}
-                            stroke="#5ad1ff"
+                {(measureVertices.length > 0 || measureEdges.length > 0) &&
+                  imgSize.width > 0 &&
+                  !refineMode &&
+                  !seg.isBlackoutMode &&
+                  !annotateMode &&
+                  !boxMode &&
+                  !rfBgMode &&
+                  !rfFgMode && (
+                    <svg
+                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 13,
+                      }}
+                    >
+                      {measureVertices.map((p, i) => {
+                        const active = i === activeMeasureVertex;
+                        return (
+                          <circle
+                            key={`mv-${i}`}
+                            cx={p.x}
+                            cy={p.y}
+                            r={active ? measureMarkerR * 1.5 : measureMarkerR}
+                            fill={active ? "#0d0d0d" : "#5ad1ff"}
+                            stroke={active ? "#5ad1ff" : "#0d0d0d"}
                             strokeWidth={measureStroke}
                           />
-                          <text
-                            x={lx}
-                            y={ly}
-                            transform={`rotate(${angle} ${lx} ${ly})`}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fill="#5ad1ff"
-                            stroke="#0d0d0d"
-                            strokeWidth={measureTextStroke}
-                            paintOrder="stroke"
-                            fontSize={measureFontSize}
-                            fontFamily="monospace"
-                          >
-                            {formatMeasureLabel(px)}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                )}
+                        );
+                      })}
+                      {measureEdges.map((edge, i) => {
+                        const p = measureVertices[edge.a];
+                        const q = measureVertices[edge.b];
+                        if (!p || !q) return null;
+
+                        const dx = q.x - p.x;
+                        const dy = q.y - p.y;
+                        const px = Math.hypot(dx, dy);
+                        const mx = (p.x + q.x) / 2;
+                        const my = (p.y + q.y) / 2;
+
+                        // Rotate the label to run parallel to the edge, then flip
+                        // it 180° when it would otherwise read upside down.
+                        let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+                        if (angle > 90) angle -= 180;
+                        else if (angle < -90) angle += 180;
+
+                        // Place the label on the outside of the edge: pick the
+                        // perpendicular side farther from the image center, i.e.
+                        // the side facing the image boundary.
+                        const len = px || 1;
+                        const nx = -dy / len;
+                        const ny = dx / len;
+                        const offset = measureFontSize * 0.9;
+                        const cx = imgSize.width / 2;
+                        const cy = imgSize.height / 2;
+                        const p1x = mx + nx * offset;
+                        const p1y = my + ny * offset;
+                        const p2x = mx - nx * offset;
+                        const p2y = my - ny * offset;
+                        const d1 = (p1x - cx) ** 2 + (p1y - cy) ** 2;
+                        const d2 = (p2x - cx) ** 2 + (p2y - cy) ** 2;
+                        const lx = d1 >= d2 ? p1x : p2x;
+                        const ly = d1 >= d2 ? p1y : p2y;
+
+                        return (
+                          <g key={`me-${i}`}>
+                            <line
+                              x1={p.x}
+                              y1={p.y}
+                              x2={q.x}
+                              y2={q.y}
+                              stroke="#5ad1ff"
+                              strokeWidth={measureStroke}
+                            />
+                            <text
+                              x={lx}
+                              y={ly}
+                              transform={`rotate(${angle} ${lx} ${ly})`}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill="#5ad1ff"
+                              stroke="#0d0d0d"
+                              strokeWidth={measureTextStroke}
+                              paintOrder="stroke"
+                              fontSize={measureFontSize}
+                              fontFamily="monospace"
+                            >
+                              {formatMeasureLabel(px)}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  )}
 
                 {/* analysis mouse capture to place measurement points */}
                 {measureMode && imgSize.width > 0 && (
@@ -3667,8 +4695,11 @@ export default function Workspace() {
                     onClick={handleMeasureClick}
                     onContextMenu={handleMeasureContextMenu}
                     style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
                       cursor: "crosshair",
                       background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
@@ -3678,122 +4709,179 @@ export default function Workspace() {
 
                 {/* angle measurement overlay. draws the two arms + standard arc
                     and labels the angle in degrees (radians also computed). */}
-                {(angleMeasurements.length > 0 || anglePoints.length > 0) && imgSize.width > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && !rfBgMode && !rfFgMode && (
-                  <svg
-                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
-                    preserveAspectRatio="xMidYMid meet"
-                    style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
-                      pointerEvents: "none",
-                      zIndex: 13,
-                    }}
-                  >
-                    {/* in-progress points (first arm endpoint + vertex) */}
-                    {anglePoints.map((p, i) => (
-                      <g key={`ap-${i}`}>
-                        <circle
-                          cx={p.x} cy={p.y}
-                          r={measureMarkerR}
-                          fill="#5ad1ff"
-                          stroke="#0d0d0d"
-                          strokeWidth={measureStroke}
-                        />
-                        <text
-                          x={p.x + measureMarkerR * 2.5}
-                          y={p.y - measureMarkerR * 2.5}
-                          fontSize={measureFontSize * 0.9}
-                          fill="#5ad1ff"
-                          stroke="#0d0d0d"
-                          strokeWidth={measureTextStroke}
-                          paintOrder="stroke"
-                          fontFamily="monospace"
-                        >
-                          {i === 1 ? "V" : "1"}
-                        </text>
-                      </g>
-                    ))}
-
-                    {/* live preview of the third point */}
-                    {angleMode && anglePoints.length === 2 && angleCursor && (() => {
-                      const a = anglePoints[0];
-                      const b = anglePoints[1];
-                      const c = angleCursor;
-                      const g = angleArcGeometry(a, b, c);
-                      return (
-                        <g opacity={0.8}>
-                          <line
-                            x1={b.x} y1={b.y} x2={a.x} y2={a.y}
-                            stroke="#5ad1ff"
+                {(angleMeasurements.length > 0 || anglePoints.length > 0) &&
+                  imgSize.width > 0 &&
+                  !refineMode &&
+                  !seg.isBlackoutMode &&
+                  !annotateMode &&
+                  !boxMode &&
+                  !rfBgMode &&
+                  !rfFgMode && (
+                    <svg
+                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 13,
+                      }}
+                    >
+                      {/* in-progress points (first arm endpoint + vertex) */}
+                      {anglePoints.map((p, i) => (
+                        <g key={`ap-${i}`}>
+                          <circle
+                            cx={p.x}
+                            cy={p.y}
+                            r={measureMarkerR}
+                            fill="#5ad1ff"
+                            stroke="#0d0d0d"
                             strokeWidth={measureStroke}
-                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
                           />
-                          <line
-                            x1={b.x} y1={b.y} x2={c.x} y2={c.y}
-                            stroke="#5ad1ff"
-                            strokeWidth={measureStroke}
-                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
-                          />
-                          <path d={g.d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
                           <text
-                            x={g.lx}
-                            y={g.ly}
-                            textAnchor="middle"
-                            dominantBaseline="central"
+                            x={p.x + measureMarkerR * 2.5}
+                            y={p.y - measureMarkerR * 2.5}
+                            fontSize={measureFontSize * 0.9}
                             fill="#5ad1ff"
                             stroke="#0d0d0d"
                             strokeWidth={measureTextStroke}
                             paintOrder="stroke"
-                            fontSize={measureFontSize}
                             fontFamily="monospace"
                           >
-                            {g.deg.toFixed(1)}°
+                            {i === 1 ? "V" : "1"}
                           </text>
                         </g>
-                      );
-                    })()}
+                      ))}
 
-                    {angleMeasurements.map((m, i) => {
-                      const { a, b, c } = m;
-                      const g = angleArcGeometry(a, b, c, m.reflex);
+                      {/* live preview of the third point */}
+                      {angleMode &&
+                        anglePoints.length === 2 &&
+                        angleCursor &&
+                        (() => {
+                          const a = anglePoints[0];
+                          const b = anglePoints[1];
+                          const c = angleCursor;
+                          const g = angleArcGeometry(a, b, c);
+                          return (
+                            <g opacity={0.8}>
+                              <line
+                                x1={b.x}
+                                y1={b.y}
+                                x2={a.x}
+                                y2={a.y}
+                                stroke="#5ad1ff"
+                                strokeWidth={measureStroke}
+                                strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                              />
+                              <line
+                                x1={b.x}
+                                y1={b.y}
+                                x2={c.x}
+                                y2={c.y}
+                                stroke="#5ad1ff"
+                                strokeWidth={measureStroke}
+                                strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                              />
+                              <path
+                                d={g.d}
+                                fill="none"
+                                stroke="#5ad1ff"
+                                strokeWidth={measureStroke}
+                              />
+                              <text
+                                x={g.lx}
+                                y={g.ly}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fill="#5ad1ff"
+                                stroke="#0d0d0d"
+                                strokeWidth={measureTextStroke}
+                                paintOrder="stroke"
+                                fontSize={measureFontSize}
+                                fontFamily="monospace"
+                              >
+                                {g.deg.toFixed(1)}°
+                              </text>
+                            </g>
+                          );
+                        })()}
 
-                      return (
-                        <g key={`am-${i}`}>
-                          <line
-                            x1={b.x} y1={b.y} x2={a.x} y2={a.y}
-                            stroke="#5ad1ff"
-                            strokeWidth={measureStroke}
-                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
-                          />
-                          <line
-                            x1={b.x} y1={b.y} x2={c.x} y2={c.y}
-                            stroke="#5ad1ff"
-                            strokeWidth={measureStroke}
-                            strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
-                          />
-                          <circle cx={a.x} cy={a.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
-                          <circle cx={b.x} cy={b.y} r={measureMarkerR} fill="#0d0d0d" stroke="#5ad1ff" strokeWidth={measureStroke} />
-                          <circle cx={c.x} cy={c.y} r={measureMarkerR} fill="#5ad1ff" stroke="#0d0d0d" strokeWidth={measureStroke} />
-                          <path d={g.d} fill="none" stroke="#5ad1ff" strokeWidth={measureStroke} />
-                          <text
-                            x={g.lx}
-                            y={g.ly}
-                            textAnchor="middle"
-                            dominantBaseline="central"
-                            fill="#5ad1ff"
-                            stroke="#0d0d0d"
-                            strokeWidth={measureTextStroke}
-                            paintOrder="stroke"
-                            fontSize={measureFontSize}
-                            fontFamily="monospace"
-                          >
-                            {g.deg.toFixed(1)}°
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                )}
+                      {angleMeasurements.map((m, i) => {
+                        const { a, b, c } = m;
+                        const g = angleArcGeometry(a, b, c, m.reflex);
+
+                        return (
+                          <g key={`am-${i}`}>
+                            <line
+                              x1={b.x}
+                              y1={b.y}
+                              x2={a.x}
+                              y2={a.y}
+                              stroke="#5ad1ff"
+                              strokeWidth={measureStroke}
+                              strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                            />
+                            <line
+                              x1={b.x}
+                              y1={b.y}
+                              x2={c.x}
+                              y2={c.y}
+                              stroke="#5ad1ff"
+                              strokeWidth={measureStroke}
+                              strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                            />
+                            <circle
+                              cx={a.x}
+                              cy={a.y}
+                              r={measureMarkerR}
+                              fill="#5ad1ff"
+                              stroke="#0d0d0d"
+                              strokeWidth={measureStroke}
+                            />
+                            <circle
+                              cx={b.x}
+                              cy={b.y}
+                              r={measureMarkerR}
+                              fill="#0d0d0d"
+                              stroke="#5ad1ff"
+                              strokeWidth={measureStroke}
+                            />
+                            <circle
+                              cx={c.x}
+                              cy={c.y}
+                              r={measureMarkerR}
+                              fill="#5ad1ff"
+                              stroke="#0d0d0d"
+                              strokeWidth={measureStroke}
+                            />
+                            <path
+                              d={g.d}
+                              fill="none"
+                              stroke="#5ad1ff"
+                              strokeWidth={measureStroke}
+                            />
+                            <text
+                              x={g.lx}
+                              y={g.ly}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fill="#5ad1ff"
+                              stroke="#0d0d0d"
+                              strokeWidth={measureTextStroke}
+                              paintOrder="stroke"
+                              fontSize={measureFontSize}
+                              fontFamily="monospace"
+                            >
+                              {g.deg.toFixed(1)}°
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  )}
 
                 {/* angle mouse capture to place the three points */}
                 {angleMode && imgSize.width > 0 && (
@@ -3803,8 +4891,11 @@ export default function Workspace() {
                     onMouseMove={handleAngleMouseMove}
                     onMouseLeave={handleAngleMouseLeave}
                     style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
                       cursor: "crosshair",
                       background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
@@ -3818,84 +4909,117 @@ export default function Workspace() {
                     canvas mode is active and those canvases render their own
                     in-image-space proposal overlay so the viewBox transforms
                     them together with the image. */}
-                {pendingProposals.length > 0 && !refineMode && !seg.isBlackoutMode && !annotateMode && !boxMode && imgSize.width > 0 && (
-                  <svg
-                    viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
-                    preserveAspectRatio="xMidYMid meet"
-                    style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "100%", height: "100%",
-                      pointerEvents: "none",
-                      zIndex: 11,
-                    }}
-                  >
-                    {pendingProposals.map(p => {
-                      if (!p.contour || p.contour.length < 3) return null;
-                      const pts = p.contour.map(([x, y]) => `${x},${y}`).join(" ");
-                      return (
-                        <g key={p.id}>
-                          <polygon
-                            points={pts}
-                            fill="#ffd166"
-                            fillOpacity={0.18}
-                            stroke="#ffd166"
-                            strokeWidth={2}
-                            style={{ pointerEvents: "auto", cursor: "pointer" }}
-                            onClick={(ev) => {
-                              ev.stopPropagation();
-                              handleRejectProposal(p.id);
-                            }}
-                          >
-                            <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
-                          </polygon>
-                          {(p.extra_contours ?? []).map((c, ci) => (
+                {pendingProposals.length > 0 &&
+                  !refineMode &&
+                  !seg.isBlackoutMode &&
+                  !annotateMode &&
+                  !boxMode &&
+                  imgSize.width > 0 && (
+                    <svg
+                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 11,
+                      }}
+                    >
+                      {pendingProposals.map((p) => {
+                        if (!p.contour || p.contour.length < 3) return null;
+                        const pts = p.contour
+                          .map(([x, y]) => `${x},${y}`)
+                          .join(" ");
+                        return (
+                          <g key={p.id}>
                             <polygon
-                              key={`xp-${ci}`}
-                              points={c.map(([x, y]) => `${x},${y}`).join(" ")}
+                              points={pts}
                               fill="#ffd166"
                               fillOpacity={0.18}
                               stroke="#ffd166"
                               strokeWidth={2}
-                              pointerEvents="none"
-                            />
-                          ))}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                )}
+                              style={{
+                                pointerEvents: "auto",
+                                cursor: "pointer",
+                              }}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                handleRejectProposal(p.id);
+                              }}
+                            >
+                              <title>
+                                Click to reject proposal #{p.id} (area {p.area}
+                                px)
+                              </title>
+                            </polygon>
+                            {(p.extra_contours ?? []).map((c, ci) => (
+                              <polygon
+                                key={`xp-${ci}`}
+                                points={c
+                                  .map(([x, y]) => `${x},${y}`)
+                                  .join(" ")}
+                                fill="#ffd166"
+                                fillOpacity={0.18}
+                                stroke="#ffd166"
+                                strokeWidth={2}
+                                pointerEvents="none"
+                              />
+                            ))}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  )}
 
                 {/* GT overlay */}
                 {seg.gtVisible && seg.gtUrl && (
-                  <img src={seg.gtUrl} alt="" style={{
-                    position: "absolute", top: 0, left: 0,
-                    width: "100%", height: "100%",
-                    opacity: 0.5, mixBlendMode: "screen",
-                    filter: "hue-rotate(200deg)",
-                    pointerEvents: "none",
-                  }} />
-                )}
-
-                {/* particle highlight from stats table */}
-                {highlightParticleIdx !== null && loadedInstances.length > highlightParticleIdx && !refineMode && !seg.isBlackoutMode && (
-                  <ParticleHighlight
-                    instance={loadedInstances[highlightParticleIdx]}
-                    imgWidth={imgSize.width}
-                    imgHeight={imgSize.height}
-                    viewportWidth={viewportSize.width}
-                    viewportHeight={viewportSize.height}
+                  <img
+                    src={seg.gtUrl}
+                    alt=""
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: "100%",
+                      opacity: 0.5,
+                      mixBlendMode: "screen",
+                      filter: "hue-rotate(200deg)",
+                      pointerEvents: "none",
+                    }}
                   />
                 )}
 
+                {/* particle highlight from stats table */}
+                {highlightParticleIdx !== null &&
+                  loadedInstances.length > highlightParticleIdx &&
+                  !refineMode &&
+                  !seg.isBlackoutMode && (
+                    <ParticleHighlight
+                      instance={loadedInstances[highlightParticleIdx]}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      viewportWidth={viewportSize.width}
+                      viewportHeight={viewportSize.height}
+                    />
+                  )}
+
                 {/* highlights all particles of that shape selected from stats table */}
-                {highlightShape !== null && !refineMode && !seg.isBlackoutMode &&
+                {highlightShape !== null &&
+                  !refineMode &&
+                  !seg.isBlackoutMode &&
                   loadedInstances
-                    .filter(inst => {
+                    .filter((inst) => {
                       // find this instance's shape from stats
-                      const particle = seg.stats?.particles?.find(p => p.id === inst.id);
+                      const particle = seg.stats?.particles?.find(
+                        (p) => p.id === inst.id,
+                      );
                       return particle?.shape === highlightShape;
                     })
-                    .map(inst => (
+                    .map((inst) => (
                       <ParticleHighlight
                         key={inst.id}
                         instance={inst}
@@ -3904,16 +5028,21 @@ export default function Workspace() {
                         viewportWidth={viewportSize.width}
                         viewportHeight={viewportSize.height}
                       />
-                    ))
-                }
-
+                    ))}
               </div>
             )}
             {image && !refineMode && (
               <div className={styles.canvasTools}>
                 {seg.comparisonOutputs.length > 1 && (
                   <>
-                    <span className={styles.toolOutputNav} title={activeModel ? modelLabel(activeModel) : "Segmentation outputs"}>
+                    <span
+                      className={styles.toolOutputNav}
+                      title={
+                        activeModel
+                          ? modelLabel(activeModel)
+                          : "Segmentation outputs"
+                      }
+                    >
                       <span className={styles.toolOutputLabel}>Mask</span>
                       <button
                         type="button"
@@ -3921,20 +5050,35 @@ export default function Workspace() {
                         aria-label="Previous mask output"
                         title="Previous mask output"
                         disabled={seg.currentOutputIndex <= 0}
-                        onClick={() => seg.setCurrentOutputIndex(index => Math.max(0, index - 1))}
+                        onClick={() =>
+                          seg.setCurrentOutputIndex((index) =>
+                            Math.max(0, index - 1),
+                          )
+                        }
                       >
                         <ChevronLeft size={14} />
                       </button>
                       <span className={styles.toolOutputPosition}>
-                        {seg.currentOutputIndex + 1}/{seg.comparisonOutputs.length}
+                        {seg.currentOutputIndex + 1}/
+                        {seg.comparisonOutputs.length}
                       </span>
                       <button
                         type="button"
                         className={styles.toolBtn}
                         aria-label="Next mask output"
                         title="Next mask output"
-                        disabled={seg.currentOutputIndex >= seg.comparisonOutputs.length - 1}
-                        onClick={() => seg.setCurrentOutputIndex(index => Math.min(seg.comparisonOutputs.length - 1, index + 1))}
+                        disabled={
+                          seg.currentOutputIndex >=
+                          seg.comparisonOutputs.length - 1
+                        }
+                        onClick={() =>
+                          seg.setCurrentOutputIndex((index) =>
+                            Math.min(
+                              seg.comparisonOutputs.length - 1,
+                              index + 1,
+                            ),
+                          )
+                        }
                       >
                         <ChevronRight size={14} />
                       </button>
@@ -3942,26 +5086,47 @@ export default function Workspace() {
                     <span className={styles.toolSep} />
                   </>
                 )}
-                <button type="button" className={styles.toolBtn} title="Fit to view"
+                <button
+                  type="button"
+                  className={styles.toolBtn}
+                  title="Fit to view"
                   disabled={analysisMode || scaleBarMode}
-                  onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+                  onClick={() => {
+                    setZoom(1);
+                    setPan({ x: 0, y: 0 });
+                  }}
+                >
                   <Maximize size={13} />
                 </button>
-                <button type="button" className={styles.toolBtn} title="Zoom out"
+                <button
+                  type="button"
+                  className={styles.toolBtn}
+                  title="Zoom out"
                   disabled={analysisMode || scaleBarMode}
-                  onClick={() => zoomBy(0.9)}>
+                  onClick={() => zoomBy(0.9)}
+                >
                   <Minus size={13} />
                 </button>
-                <span className={styles.toolZoomLabel}>{Math.round(zoom * 100)}%</span>
-                <button type="button" className={styles.toolBtn} title="Zoom in"
+                <span className={styles.toolZoomLabel}>
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  className={styles.toolBtn}
+                  title="Zoom in"
                   disabled={analysisMode || scaleBarMode}
-                  onClick={() => zoomBy(1.1)}>
+                  onClick={() => zoomBy(1.1)}
+                >
                   <Plus size={13} />
                 </button>
                 <button
                   type="button"
                   className={styles.toolBtn}
-                  title={seg.comparisonOutputs.length < 2 ? "Append another segmentation to enable split view" : "Open split view"}
+                  title={
+                    seg.comparisonOutputs.length < 2
+                      ? "Append another segmentation to enable split view"
+                      : "Open split view"
+                  }
                   aria-label="Open split view"
                   disabled={seg.comparisonOutputs.length < 2}
                   onClick={openSplitSelector}
@@ -3969,33 +5134,49 @@ export default function Workspace() {
                   <span className={styles.splitIcon} aria-hidden="true" />
                 </button>
                 <span className={styles.toolSep} />
-                <button type="button"
+                <button
+                  type="button"
                   className={`${styles.toolBtn}${seg.masksVisible ? ` ${styles.toolBtnOn}` : ""}`}
                   title={seg.masksVisible ? "Hide masks" : "Show masks"}
                   disabled={!seg.segDone}
-                  onClick={() => seg.setMasksVisible(!seg.masksVisible)}>
+                  onClick={() => seg.setMasksVisible(!seg.masksVisible)}
+                >
                   <Eye size={13} />
                 </button>
-                <button type="button"
+                <button
+                  type="button"
                   className={`${styles.toolBtn}${seg.boxesVisible ? ` ${styles.toolBtnOn}` : ""}`}
                   title={seg.boxesVisible ? "Hide boxes" : "Show boxes"}
                   disabled={!seg.segDone}
-                  onClick={() => seg.setBoxesVisible(!seg.boxesVisible)}>
+                  onClick={() => seg.setBoxesVisible(!seg.boxesVisible)}
+                >
                   <Square size={13} />
                 </button>
               </div>
             )}
-            <input ref={fileRef} type="file" multiple accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
-              hidden onChange={onFileChange} />
-            <input ref={folderRef} type="file" multiple hidden
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept=".emd,.tif,.tiff,.jpg,.jpeg,.png,.npy"
+              hidden
+              onChange={onFileChange}
+            />
+            <input
+              ref={folderRef}
+              type="file"
+              multiple
+              hidden
               {...{ webkitdirectory: "", directory: "" }}
-              onChange={e => {
-                const files = Array.from(e.target.files ?? [])
-                  .filter(f => /\.(emd|tiff?|jpe?g|png|npy)$/i.test(f.name));
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []).filter((f) =>
+                  /\.(emd|tiff?|jpe?g|png|npy)$/i.test(f.name),
+                );
                 e.target.value = "";
                 if (files.length) handleFiles(files);
                 else setStatus("No supported images in that folder.");
-              }} />
+              }}
+            />
           </main>
 
           {/* right panel */}
@@ -4017,7 +5198,6 @@ export default function Workspace() {
             onToggleScaleBar={handleToggleScaleBar}
             onScaleBarCancel={handleScaleBarCancel}
           />
-
         </div>
 
         <footer className={styles.statusbar}>
@@ -4040,20 +5220,29 @@ export default function Workspace() {
 
         {settingsOpen && (
           <div className={styles.modalRoot}>
-            <div className={styles.modalBackdrop} onClick={() => setSettingsOpen(false)} />
+            <div
+              className={styles.modalBackdrop}
+              onClick={() => setSettingsOpen(false)}
+            />
             <div className={styles.modal}>
               <div className={styles.modalHead}>
                 <div>
                   <h3>Settings</h3>
                 </div>
-                <button type="button" className={styles.modalClose} onClick={() => setSettingsOpen(false)}>✕</button>
+                <button
+                  type="button"
+                  className={styles.modalClose}
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  ✕
+                </button>
               </div>
               <div className={styles.modalBody}>
                 {systemInfo ? (
                   <>
                     <div className={styles.settingsGroup}>
                       <p className={styles.settingsGroupLabel}>models</p>
-                      {systemInfo.models.map(m => (
+                      {systemInfo.models.map((m) => (
                         <div key={m.key}>
                           <div className={styles.settingsRow}>
                             <span className={styles.settingsName}>
@@ -4065,31 +5254,54 @@ export default function Workspace() {
                                   title="Loaded in memory"
                                 />
                               )}
-                              <span className={styles.settingsModelLabel}>{m.name}</span>
+                              <span className={styles.settingsModelLabel}>
+                                {m.name}
+                              </span>
                             </span>
-                            <span className={`${styles.settingsNum} ${m.available ? "" : styles.settingsNumMissing}`}>
+                            <span
+                              className={`${styles.settingsNum} ${m.available ? "" : styles.settingsNumMissing}`}
+                            >
                               {!m.available
                                 ? "weights needed"
                                 : m.loaded
-                                ? [m.engine ?? "loaded", m.runs_on, m.ram_bytes ? formatBytes(m.ram_bytes) : null]
-                                  .filter(Boolean)
-                                  .join(" · ")
-                                : "not loaded"}
+                                  ? [
+                                      m.engine ?? "loaded",
+                                      m.runs_on,
+                                      m.ram_bytes
+                                        ? formatBytes(m.ram_bytes)
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")
+                                  : "not loaded"}
                             </span>
                             <span>
                               {m.key === "yolo" && (
-                                <button type="button" className={styles.settingsCfg}
-                                  onClick={() => setYoloCfgOpen(true)}>
+                                <button
+                                  type="button"
+                                  className={styles.settingsCfg}
+                                  onClick={() => setYoloCfgOpen(true)}
+                                >
                                   configure
                                 </button>
                               )}
                             </span>
                           </div>
-                          {m.weights.map(w => (
-                            <div key={w.name} className={`${styles.settingsRow} ${styles.settingsWeight}`}>
-                              <span className={styles.settingsWeightName} title={w.name}>{w.name}</span>
+                          {m.weights.map((w) => (
+                            <div
+                              key={w.name}
+                              className={`${styles.settingsRow} ${styles.settingsWeight}`}
+                            >
+                              <span
+                                className={styles.settingsWeightName}
+                                title={w.name}
+                              >
+                                {w.name}
+                              </span>
                               <span className={styles.settingsNum}>
-                                {w.present ? `${Math.round(w.size_mb)} MB` : "missing"}
+                                {w.present
+                                  ? `${Math.round(w.size_mb)} MB`
+                                  : "missing"}
                               </span>
                             </div>
                           ))}
@@ -4098,33 +5310,60 @@ export default function Workspace() {
                     </div>
 
                     <div className={styles.settingsGroup}>
-                      <p className={styles.settingsGroupLabel}>segmentors in memory</p>
-                      <p className={styles.settingsMemoryHint}>
-                        YOLO stays loaded. Keep at least one segmentor loaded. SAM ViT-B is shared by YoloSAM and FasterYoloSAM.
+                      <p className={styles.settingsGroupLabel}>
+                        segmentors in memory
                       </p>
-                      {systemInfo.segmentor_groups.map(group => (
+                      <p className={styles.settingsMemoryHint}>
+                        YOLO stays loaded. Keep at least one segmentor loaded.
+                        SAM ViT-B is shared by YoloSAM and FasterYoloSAM.
+                      </p>
+                      {systemInfo.segmentor_groups.map((group) => (
                         <div className={styles.settingsRow} key={group.id}>
-                          <span className={styles.settingsName} title={group.models.join(", ")}>
-                            {group.loaded && <span className={styles.deviceLed} role="img" aria-label="Loaded in memory" />}
-                            <span className={styles.settingsModelLabel}>{group.name}</span>
+                          <span
+                            className={styles.settingsName}
+                            title={group.models.join(", ")}
+                          >
+                            {group.loaded && (
+                              <span
+                                className={styles.deviceLed}
+                                role="img"
+                                aria-label="Loaded in memory"
+                              />
+                            )}
+                            <span className={styles.settingsModelLabel}>
+                              {group.name}
+                            </span>
                           </span>
                           <span className={styles.settingsNum}>
                             {group.loaded
-                              ? group.ram_bytes ? `~${formatBytes(group.ram_bytes)} · loaded` : "loaded"
+                              ? group.ram_bytes
+                                ? `${formatBytes(group.ram_bytes)} · loaded`
+                                : "loaded"
                               : "not loaded"}
                           </span>
                           <button
                             type="button"
                             className={styles.settingsCfg}
-                            disabled={!group.loaded || !group.can_eject || ejectingSegmentorGroup !== null || isBlocked}
-                            title={!group.loaded
-                              ? "This segmentor is not loaded."
-                              : !group.can_eject
-                                ? "At least one segmentor must stay loaded."
-                                : undefined}
-                            onClick={() => void handleEjectSegmentorGroup(group.id)}
+                            disabled={
+                              !group.loaded ||
+                              !group.can_eject ||
+                              ejectingSegmentorGroup !== null ||
+                              isBlocked
+                            }
+                            title={
+                              !group.loaded
+                                ? "This segmentor is not loaded."
+                                : !group.can_eject
+                                  ? "At least one segmentor must stay loaded."
+                                  : undefined
+                            }
+                            onClick={() =>
+                              void handleEjectSegmentorGroup(group.id)
+                            }
                           >
-                            {ejectingSegmentorGroup === group.id ? "ejecting…" : "eject"}
+                            {ejectingSegmentorGroup === group.id
+                              ? "ejecting…"
+                              : "eject"}
                           </button>
                         </div>
                       ))}
@@ -4134,7 +5373,10 @@ export default function Workspace() {
                       <p className={styles.settingsGroupLabel}>app</p>
                       <div className={styles.settingsRow}>
                         <span className={styles.settingsKey}>logs</span>
-                        <span className={`${styles.settingsVal} ${styles.settingsValPath}`} title={systemInfo.log_dir}>
+                        <span
+                          className={`${styles.settingsVal} ${styles.settingsValPath}`}
+                          title={systemInfo.log_dir}
+                        >
                           {systemInfo.log_dir}
                         </span>
                       </div>
@@ -4146,7 +5388,9 @@ export default function Workspace() {
                           ram (live)
                         </span>
                         <span className={styles.settingsVal}>
-                          {systemMemory ? `~${formatBytes(systemMemory.current_rss_bytes)}` : "reading…"}
+                          {systemMemory
+                            ? `~${formatBytes(systemMemory.current_rss_bytes)}`
+                            : "reading…"}
                         </span>
                       </div>
                       <div className={styles.settingsRow}>
@@ -4179,70 +5423,126 @@ export default function Workspace() {
         )}
         {yoloCfgOpen && (
           <div className={styles.modalRoot}>
-            <div className={styles.modalBackdrop} onClick={() => setYoloCfgOpen(false)} />
+            <div
+              className={styles.modalBackdrop}
+              onClick={() => setYoloCfgOpen(false)}
+            />
             <div className={styles.modal}>
               <div className={styles.modalHead}>
                 <div>
                   <h3>Configure yolo</h3>
-                  <p className={styles.modalHeadSub}>Detection thresholds. They apply on the next segmentation run.</p>
+                  <p className={styles.modalHeadSub}>
+                    Detection thresholds. They apply on the next segmentation
+                    run.
+                  </p>
                 </div>
-                <button type="button" className={styles.modalClose} onClick={() => setYoloCfgOpen(false)}>✕</button>
+                <button
+                  type="button"
+                  className={styles.modalClose}
+                  onClick={() => setYoloCfgOpen(false)}
+                >
+                  ✕
+                </button>
               </div>
               <div className={styles.modalBody}>
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>conf</span>
                     <span className={styles.cfgValWrap}>
-                      <span className={styles.cfgVal}>{yoloValue("conf").toFixed(2)}</span>
-                      <button type="button" className={styles.settingsCfg}
+                      <span className={styles.cfgVal}>
+                        {yoloValue("conf").toFixed(2)}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.settingsCfg}
                         title={`Back to the default value (${yolo.conf.default})`}
-                        onClick={() => setYoloOverride("conf", null)}>
+                        onClick={() => setYoloOverride("conf", null)}
+                      >
                         reset
                       </button>
                     </span>
                   </div>
-                  <input type="range" min={0.01} max={0.95} step={0.01} value={yoloValue("conf")}
-                    onChange={e => setYoloOverride("conf", Number(e.target.value))}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <input
+                    type="range"
+                    min={0.01}
+                    max={0.95}
+                    step={0.01}
+                    value={yoloValue("conf")}
+                    onChange={(e) =>
+                      setYoloOverride("conf", Number(e.target.value))
+                    }
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
                   <p className={styles.settingsHint}>
-                    Lowest score to keep a detection. Lower finds faint particles but keeps more false ones.
+                    Lowest score to keep a detection. Lower finds faint
+                    particles but keeps more false ones.
                   </p>
                 </div>
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>nms</span>
                     <span className={styles.cfgValWrap}>
-                      <span className={styles.cfgVal}>{yoloValue("iou").toFixed(2)}</span>
-                      <button type="button" className={styles.settingsCfg}
+                      <span className={styles.cfgVal}>
+                        {yoloValue("iou").toFixed(2)}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.settingsCfg}
                         title={`Back to the default value (${yolo.iou.default})`}
-                        onClick={() => setYoloOverride("iou", null)}>
+                        onClick={() => setYoloOverride("iou", null)}
+                      >
                         reset
                       </button>
                     </span>
                   </div>
-                  <input type="range" min={0.05} max={0.95} step={0.05} value={yoloValue("iou")}
-                    onChange={e => setYoloOverride("iou", Number(e.target.value))}
-                    style={{ width: "100%", accentColor: "#7ee8a2" }} />
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={0.95}
+                    step={0.05}
+                    value={yoloValue("iou")}
+                    onChange={(e) =>
+                      setYoloOverride("iou", Number(e.target.value))
+                    }
+                    style={{ width: "100%", accentColor: "#7ee8a2" }}
+                  />
                   <p className={styles.settingsHint}>
-                    Overlap cutoff. Two boxes above this overlap become one box. Lower kills more duplicate boxes but can merge touching particles.
+                    Overlap cutoff. Two boxes above this overlap become one box.
+                    Lower kills more duplicate boxes but can merge touching
+                    particles.
                   </p>
                 </div>
                 <div>
                   <div className={styles.cfgHead}>
                     <span className={styles.cfgName}>max bbox</span>
                     <span className={styles.cfgValWrap}>
-                      <input type="number" min={1} max={100000} step={100} value={yoloValue("max_det")}
-                        onChange={e => setYoloOverride("max_det", Math.max(1, Number(e.target.value) || 1))}
-                        className={styles.cfgNum} />
-                      <button type="button" className={styles.settingsCfg}
+                      <input
+                        type="number"
+                        min={1}
+                        max={100000}
+                        step={100}
+                        value={yoloValue("max_det")}
+                        onChange={(e) =>
+                          setYoloOverride(
+                            "max_det",
+                            Math.max(1, Number(e.target.value) || 1),
+                          )
+                        }
+                        className={styles.cfgNum}
+                      />
+                      <button
+                        type="button"
+                        className={styles.settingsCfg}
                         title={`Back to the default value (${yolo.max_det.default})`}
-                        onClick={() => setYoloOverride("max_det", null)}>
+                        onClick={() => setYoloOverride("max_det", null)}
+                      >
                         reset
                       </button>
                     </span>
                   </div>
                   <p className={styles.settingsHint}>
-                    The most boxes kept after filtering. Raise it only for very crowded images.
+                    The most boxes kept after filtering. Raise it only for very
+                    crowded images.
                   </p>
                 </div>
               </div>
@@ -4251,25 +5551,53 @@ export default function Workspace() {
         )}
         {helpOpen && (
           <div className={styles.modalRoot}>
-            <div className={styles.modalBackdrop} onClick={() => setHelpOpen(false)} />
+            <div
+              className={styles.modalBackdrop}
+              onClick={() => setHelpOpen(false)}
+            />
             <div className={styles.modal}>
               <div className={styles.modalHead}>
                 <div>
                   <h3>Keyboard shortcuts</h3>
-                  <p className={styles.modalHeadSub}>Everything is reachable without leaving the keyboard</p>
+                  <p className={styles.modalHeadSub}>
+                    Everything is reachable without leaving the keyboard
+                  </p>
                 </div>
-                <button type="button" className={styles.modalClose} onClick={() => setHelpOpen(false)}>✕</button>
+                <button
+                  type="button"
+                  className={styles.modalClose}
+                  onClick={() => setHelpOpen(false)}
+                >
+                  ✕
+                </button>
               </div>
               <div className={styles.modalBody}>
                 <p className={styles.reworkBanner}>
-                  <AlertTriangle size={12} /> THIS SHORTCUT MAP NEEDS REWORKED — entries may not match this build
+                  <AlertTriangle size={12} /> THIS SHORTCUT MAP NEEDS REWORKED —
+                  entries may not match this build
                 </p>
                 <div className={styles.kbdRow}>
-                  <span><span className={styles.kbd}>wheel / pinch</span></span><span>zoom at cursor</span>
-                  <span><span className={styles.kbd}>space + drag</span></span><span>pan</span>
-                  <span><span className={styles.kbd}>[</span> <span className={styles.kbd}>]</span></span><span>mask fill opacity down / up</span>
-                  <span><span className={styles.kbd}>delete</span></span><span>remove selection (refine / measure vertices)</span>
-                  <span><span className={styles.kbd}>shift + click</span></span><span>multi select particles (refine)</span>
+                  <span>
+                    <span className={styles.kbd}>wheel / pinch</span>
+                  </span>
+                  <span>zoom at cursor</span>
+                  <span>
+                    <span className={styles.kbd}>space + drag</span>
+                  </span>
+                  <span>pan</span>
+                  <span>
+                    <span className={styles.kbd}>[</span>{" "}
+                    <span className={styles.kbd}>]</span>
+                  </span>
+                  <span>mask fill opacity down / up</span>
+                  <span>
+                    <span className={styles.kbd}>delete</span>
+                  </span>
+                  <span>remove selection (refine / measure vertices)</span>
+                  <span>
+                    <span className={styles.kbd}>shift + click</span>
+                  </span>
+                  <span>multi select particles (refine)</span>
                 </div>
               </div>
             </div>
@@ -4277,7 +5605,9 @@ export default function Workspace() {
         )}
         {toasts.length > 0 && (
           <div className={styles.toasts}>
-            {toasts.map(t => <ToastCard key={t.id} msg={t} onDone={removeToast} />)}
+            {toasts.map((t) => (
+              <ToastCard key={t.id} msg={t} onDone={removeToast} />
+            ))}
           </div>
         )}
         {splitSelectorOpen && (
@@ -4305,8 +5635,18 @@ export default function Workspace() {
             imageSrc={image}
             imageFilter={imgFilter}
             outputs={splitOutputs}
-            imageWidth={splitOutputs.find(output => output.labelMask)?.labelMask?.width ?? metadata?.image_shape?.[1] ?? 1}
-            imageHeight={splitOutputs.find(output => output.labelMask)?.labelMask?.height ?? metadata?.image_shape?.[0] ?? 1}
+            imageWidth={
+              splitOutputs.find((output) => output.labelMask)?.labelMask
+                ?.width ??
+              metadata?.image_shape?.[1] ??
+              1
+            }
+            imageHeight={
+              splitOutputs.find((output) => output.labelMask)?.labelMask
+                ?.height ??
+              metadata?.image_shape?.[0] ??
+              1
+            }
             maskOpacity={polygonOpacity}
             onMaskOpacityChange={setPolygonOpacity}
             formatModel={modelLabel}
@@ -4319,12 +5659,23 @@ export default function Workspace() {
           <SessionManager
             storage={sessionStorage}
             onClose={() => setSessionManagerOpen(false)}
-            onDelete={sessionId => { void handleDeleteSession(sessionId, sessionId); }}
-            onDeleteAll={() => { void handleDeleteAllSessions(); }}
-            onCopySessionPath={storagePath => {
-              void navigator.clipboard.writeText(storagePath)
+            onDelete={(sessionId) => {
+              void handleDeleteSession(sessionId, sessionId);
+            }}
+            onDeleteAll={() => {
+              void handleDeleteAllSessions();
+            }}
+            onCopySessionPath={(storagePath) => {
+              void navigator.clipboard
+                .writeText(storagePath)
                 .then(() => pushToast("ok", "Session folder path copied"))
-                .catch(error => pushToast("err", "Could not copy session folder path", (error as Error).message));
+                .catch((error) =>
+                  pushToast(
+                    "err",
+                    "Could not copy session folder path",
+                    (error as Error).message,
+                  ),
+                );
             }}
           />
         )}
