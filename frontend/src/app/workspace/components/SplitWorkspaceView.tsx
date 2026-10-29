@@ -206,6 +206,9 @@ export default function SplitWorkspaceView({
   const panGesture = useRef<PanGesture | null>(null);
   const stageByOutput = useRef<Map<string, HTMLDivElement>>(new Map());
   const referenceOutput = outputs.find(output => output.id === referenceOutputId) ?? outputs[0];
+  const orderedOutputs = useMemo(() => referenceOutput
+    ? [referenceOutput, ...outputs.filter(output => output.id !== referenceOutput.id)]
+    : outputs, [outputs, referenceOutput]);
   const canCompareOutputs = outputs.length > 1 && outputs.every(output => Boolean(output.labelMask));
   const comparisonByOutput = useMemo(() => {
     if (!referenceOutput?.labelMask) return new Map<string, ReturnType<typeof compareSegmentations>>();
@@ -353,7 +356,11 @@ export default function SplitWorkspaceView({
           <label className={styles.referenceControl}>
             <span>Compare to</span>
             <select value={referenceOutput?.id ?? ""} onChange={event => { setReferenceOutputId(event.target.value); setRegionIndex(0); }}>
-              {outputs.map((output, index) => <option key={output.id} value={output.id}>Output {index + 1} · {formatModel(output.model)}</option>)}
+              {outputs.map(output => {
+                const sameModelOutputs = outputs.filter(item => item.model === output.model);
+                const runSuffix = sameModelOutputs.length > 1 ? ` · run ${sameModelOutputs.indexOf(output) + 1}` : "";
+                return <option key={output.id} value={output.id}>{formatModel(output.model)}{runSuffix}</option>;
+              })}
             </select>
           </label>
         )}
@@ -430,7 +437,7 @@ export default function SplitWorkspaceView({
         )}
       </div>
       <div className={`${styles.grid} ${layoutClassName(outputs.length)}`}>
-        {outputs.map((output, index) => {
+        {orderedOutputs.map(output => {
           const view = viewByOutput[output.id] ?? INITIAL_PANE_VIEW;
           const isPanning = panGesture.current?.outputId === output.id;
           const candidateAreas = activeCandidateAreasByOutput.get(output.id) ?? [];
@@ -439,24 +446,21 @@ export default function SplitWorkspaceView({
             <article className={styles.pane} key={output.id}>
               <header className={styles.paneHeader}>
                 <div className={styles.paneLabel}>
-                  <span className={styles.paneIndex}>OUTPUT {index + 1}</span>
                   <strong>{formatModel(output.model)}</strong>
                   {output.stats && <span>{output.stats.particle_count} particles</span>}
-                  {comparisonMode === "pixels" && (
-                    <span className={styles.paneRole}>
-                      {output.id === referenceOutput?.id ? "BASE" : `DIFF VS ${referenceOutput ? formatModel(referenceOutput.model) : "base"}`}
-                    </span>
-                  )}
+                  <span className={styles.paneRole}>
+                    {output.id === referenceOutput?.id ? "BASE" : `VS ${referenceOutput ? formatModel(referenceOutput.model) : "BASE"}`}
+                  </span>
                 </div>
                 <div className={styles.zoomControls}>
-                  <button type="button" onClick={() => changeZoom(output.id, -0.25)} disabled={view.zoom <= 1} aria-label={`Zoom out output ${index + 1}`}>
+                  <button type="button" onClick={() => changeZoom(output.id, -0.25)} disabled={view.zoom <= 1} aria-label={`Zoom out ${formatModel(output.model)}`}>
                     <Minus size={13} />
                   </button>
                   <span>{Math.round(view.zoom * 100)}%</span>
-                  <button type="button" onClick={() => changeZoom(output.id, 0.25)} disabled={view.zoom >= 4} aria-label={`Zoom in output ${index + 1}`}>
+                  <button type="button" onClick={() => changeZoom(output.id, 0.25)} disabled={view.zoom >= 4} aria-label={`Zoom in ${formatModel(output.model)}`}>
                     <Plus size={13} />
                   </button>
-                  <button type="button" onClick={() => resetZoom(output.id)} aria-label={`Fit output ${index + 1}`} title="Fit to pane">
+                  <button type="button" onClick={() => resetZoom(output.id)} aria-label={`Fit ${formatModel(output.model)}`} title="Fit to pane">
                     <Maximize size={12} />
                   </button>
                 </div>

@@ -129,7 +129,6 @@
 .paneLabel { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .paneLabel strong { overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .paneLabel > span:last-child { color: var(--text-faint); font-size: 9px; white-space: nowrap; }
-.paneIndex { color: var(--accent); font-size: 9px; letter-spacing: 0.08em; white-space: nowrap; }
 
 .zoomControls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .zoomControls button {
