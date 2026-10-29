@@ -185,6 +185,10 @@
 
 .footer {
   min-height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
   padding: 5px 12px;
   box-sizing: border-box;
   color: var(--text-faint);
@@ -193,6 +197,8 @@
   font-size: 9px;
   text-align: right;
 }
+
+.cursorCoordinates { flex: 0 0 auto; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 @media (max-width: 760px) {
   .toolbar { flex-wrap: wrap; gap: 8px 16px; padding: 8px 12px; }

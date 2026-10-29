@@ -203,6 +203,7 @@ export default function SplitWorkspaceView({
   onClose,
 }: Props) {
   const [viewByOutput, setViewByOutput] = useState<Record<string, PaneViewState>>({});
+  const [cursorPosition, setCursorPosition] = useState<{ x: number; y: number } | null>(null);
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("masks");
   const [referenceOutputId, setReferenceOutputId] = useState(
     outputs.find(output => output.model === initialBaseModel)?.id ?? outputs[0]?.id ?? "",
@@ -210,6 +211,7 @@ export default function SplitWorkspaceView({
   const [regionIndex, setRegionIndex] = useState(0);
   const [regionGap, setRegionGap] = useState(1.5);
   const panGesture = useRef<PanGesture | null>(null);
+  const cursorPositionThrottle = useRef(0);
   const stageByOutput = useRef<Map<string, HTMLDivElement>>(new Map());
   const referenceOutput = outputs.find(output => output.id === referenceOutputId) ?? outputs[0];
   const orderedOutputs = useMemo(() => referenceOutput
@@ -321,6 +323,31 @@ export default function SplitWorkspaceView({
   function handleWheel(outputId: string, event: React.WheelEvent<HTMLDivElement>) {
     event.preventDefault();
     changeZoom(outputId, event.deltaY > 0 ? -0.1 : 0.1);
+  }
+
+  function handleCoordinateMove(view: PaneViewState, event: React.PointerEvent<HTMLDivElement>) {
+    const now = performance.now();
+    if (now - cursorPositionThrottle.current < 50) return;
+    cursorPositionThrottle.current = now;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const displayedWidth = Math.min(rect.width, rect.height * imageWidth / imageHeight);
+    const displayedHeight = displayedWidth * imageHeight / imageWidth;
+    const offsetX = (rect.width - displayedWidth) / 2;
+    const offsetY = (rect.height - displayedHeight) / 2;
+    const unscaledX = (event.clientX - rect.left - rect.width / 2 - view.panX) / view.zoom + rect.width / 2;
+    const unscaledY = (event.clientY - rect.top - rect.height / 2 - view.panY) / view.zoom + rect.height / 2;
+    const imageX = (unscaledX - offsetX) * imageWidth / displayedWidth;
+    const imageY = (unscaledY - offsetY) * imageHeight / displayedHeight;
+
+    if (imageX < 0 || imageX >= imageWidth || imageY < 0 || imageY >= imageHeight) {
+      setCursorPosition(null);
+      return;
+    }
+    setCursorPosition({
+      x: Math.min(imageWidth - 1, Math.round(imageX)),
+      y: Math.min(imageHeight - 1, Math.round(imageY)),
+    });
   }
 
   function handlePanStart(outputId: string, view: PaneViewState, event: React.PointerEvent<HTMLDivElement>) {
@@ -496,7 +523,11 @@ export default function SplitWorkspaceView({
                 }}
                 onWheel={event => handleWheel(output.id, event)}
                 onPointerDown={event => handlePanStart(output.id, view, event)}
-                onPointerMove={handlePanMove}
+                onPointerMove={event => {
+                  handleCoordinateMove(view, event);
+                  handlePanMove(event);
+                }}
+                onPointerLeave={() => setCursorPosition(null)}
                 onPointerUp={handlePanEnd}
                 onPointerCancel={handlePanEnd}
                 style={{ cursor: isPanning ? "grabbing" : view.zoom > 1 ? "grab" : "default" }}
@@ -533,7 +564,12 @@ export default function SplitWorkspaceView({
         })}
       </div>
       <footer className={styles.footer}>
-        Scroll to zoom · ⌘/Ctrl-drag to pan · Zoom and pan are independent. {comparisonMode === "pixels" ? "Cyan is reference only; red is compared only. Crosshairs label selected particle IDs." : "Black and white outlines mark selected instances. Mask opacity applies to the masks."}
+        <span className={styles.cursorCoordinates}>
+          {cursorPosition ? `x ${cursorPosition.x} · y ${cursorPosition.y}` : "x — · y —"}
+        </span>
+        <span>
+          Scroll to zoom · ⌘/Ctrl-drag to pan · Zoom and pan are independent. {comparisonMode === "pixels" ? "Cyan is reference only; red is compared only. Crosshairs label selected particle IDs." : "Black and white outlines mark selected instances. Mask opacity applies to the masks."}
+        </span>
       </footer>
     </section>
   );
