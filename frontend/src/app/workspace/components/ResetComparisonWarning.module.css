@@ -1,0 +1,66 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(5px);
+}
+
+.dialog {
+  width: min(500px, 100%);
+  color: var(--text);
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
+}
+
+.header,
+.body,
+.actions {
+  padding: 16px 18px;
+}
+
+.header { border-bottom: 1px solid var(--border); }
+.header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.body p { margin: 0; color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+.body strong { color: var(--text); }
+
+.preference {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.preference input { accent-color: var(--accent); margin: 0; }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.actions button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.secondaryButton { color: var(--text-dim); background: var(--bg-elev); }
+.appendButton { color: var(--text); background: var(--bg-elev); }
+.resetButton {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent) !important;
+  font-weight: 600 !important;
+}

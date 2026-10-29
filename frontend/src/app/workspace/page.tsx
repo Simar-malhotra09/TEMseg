@@ -29,6 +29,7 @@ import ExpandableHint from "./components/ExpandableHint";
 import CalibrateSection from "./components/CalibrateSection";
 import SplitOutputSelector from "./components/SplitOutputSelector";
 import SplitWorkspaceView from "./components/SplitWorkspaceView";
+import ResetComparisonWarning from "./components/ResetComparisonWarning";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -80,6 +81,7 @@ type ToastKind = "ok" | "info" | "warn" | "err";
 interface ToastMsg { id: number; kind: ToastKind; title: string; desc?: string }
 
 const TOAST_DURATION = 2500;
+const RESET_COMPARISON_WARNING_KEY = "temseg-hide-comparison-reset-warning";
 const TOAST_CLASS: Record<ToastKind, string> = {
   ok: styles.toastOk, info: styles.toastInfo, warn: styles.toastWarn, err: styles.toastErr,
 };
@@ -234,6 +236,8 @@ export default function Workspace() {
   const [splitViewOpen, setSplitViewOpen] = useState(false);
   const [splitOutputIds, setSplitOutputIds] = useState<string[]>([]);
   const [comparisonView, setComparisonView] = useState<ComparisonView>({ base_model: null, pane_models: [] });
+  const [resetComparisonWarningOpen, setResetComparisonWarningOpen] = useState(false);
+  const [dontShowResetComparisonWarning, setDontShowResetComparisonWarning] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   // SAM encoder depth (12 full / 8 early-exit) — YoloSAM variants only
   const [encoderDepth, setEncoderDepth] = useState<number>(12);
@@ -1056,7 +1060,32 @@ export default function Workspace() {
 
   async function handleRunSegmentation() {
     if (!selectedModel) return;
+    if (
+      seg.comparisonOutputs.length > 1 &&
+      localStorage.getItem(RESET_COMPARISON_WARNING_KEY) !== "true"
+    ) {
+      setResetComparisonWarningOpen(true);
+      return;
+    }
     await runModelSegmentation(selectedModel, false);
+  }
+
+  function rememberResetComparisonWarningChoice() {
+    if (dontShowResetComparisonWarning) {
+      localStorage.setItem(RESET_COMPARISON_WARNING_KEY, "true");
+    }
+  }
+
+  async function handleConfirmResetComparison() {
+    rememberResetComparisonWarningChoice();
+    setResetComparisonWarningOpen(false);
+    if (selectedModel) await runModelSegmentation(selectedModel, false);
+  }
+
+  async function handleAppendFromResetWarning() {
+    rememberResetComparisonWarningChoice();
+    setResetComparisonWarningOpen(false);
+    if (selectedModel) await runModelSegmentation(selectedModel, true);
   }
 
   async function handleAppendSegmentation() {
@@ -4100,6 +4129,16 @@ export default function Workspace() {
             onToggle={toggleSplitOutput}
             onCancel={() => setSplitSelectorOpen(false)}
             onOpen={openSplitView}
+          />
+        )}
+        {resetComparisonWarningOpen && selectedModel && (
+          <ResetComparisonWarning
+            modelName={modelLabel(selectedModel)}
+            dontShowAgain={dontShowResetComparisonWarning}
+            onDontShowAgainChange={setDontShowResetComparisonWarning}
+            onCancel={() => setResetComparisonWarningOpen(false)}
+            onAppend={handleAppendFromResetWarning}
+            onReset={handleConfirmResetComparison}
           />
         )}
         {splitViewOpen && image && splitOutputs.length > 0 && (
