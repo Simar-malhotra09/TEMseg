@@ -5008,6 +5008,60 @@ export default function Workspace() {
                   )}
 
                 {/* highlights all particles of that shape selected from stats table */}
+                {/* particle IDs in the Analyze workspace view */}
+                {activeTab === "analysis" &&
+                  loadedInstances.length > 0 &&
+                  imgSize.width > 0 &&
+                  imgSize.height > 0 && (
+                    <svg
+                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
+                      preserveAspectRatio="xMidYMid meet"
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        height: "100%",
+                        pointerEvents: "none",
+                        zIndex: 12,
+                      }}
+                    >
+                      {loadedInstances.map((inst) => {
+                        const cx = inst.bbox.x + inst.bbox.w / 2;
+                        const cy = inst.bbox.y + inst.bbox.h / 2;
+                        const bboxMinScreen =
+                          Math.min(inst.bbox.w, inst.bbox.h) * displayScale;
+                        const r =
+                          Math.max(6, Math.min(12, bboxMinScreen * 0.35)) /
+                          (displayScale || 1);
+                        return (
+                          <g key={inst.id}>
+                            <circle
+                              cx={cx}
+                              cy={cy}
+                              r={r}
+                              fill="#0d0d0d"
+                              fillOpacity={0.8}
+                              stroke="#7ee8a2"
+                              strokeWidth={1}
+                            />
+                            <text
+                              x={cx}
+                              y={cy}
+                              fontSize={r * 0.9}
+                              fill="#fff"
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontFamily="monospace"
+                            >
+                              {inst.id}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  )}
+
                 {highlightShape !== null &&
                   !refineMode &&
                   !seg.isBlackoutMode &&
