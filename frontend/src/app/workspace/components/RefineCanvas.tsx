@@ -19,6 +19,8 @@ interface Props {
   viewBox: ViewBox;
   splitMode: boolean;
   splitPoints: [number, number][];
+  mergeMode: boolean;
+  mergeIds: number[];
   boxDeleteMode?: boolean;
   pasteMode?: boolean;
   clipboard?: Instance | null;
@@ -33,6 +35,7 @@ interface Props {
   onVertexDelete: (instId: number, vi: number) => void;
   onEdgeClick: (instId: number, pos: [number, number]) => void;
   onSplitPointPlace: (pos: [number, number]) => void;
+  onMergeInstanceSelect: (instanceId: number) => void;
   onPastePlace?: (pos: [number, number]) => void;
   onBoxDelete?: (box: { x: number; y: number; w: number; h: number }) => void;
   onRotateStart?: () => void;
@@ -86,7 +89,7 @@ const EDGE_HIT_WIDTH = 8; // constant screen-space px
 
 export default function RefineCanvas({
   imageSrc, width, height, imgWidth, imgHeight, imageFilter,
-  instances, selectedIds, viewBox, splitMode, splitPoints,
+  instances, selectedIds, viewBox, splitMode, splitPoints, mergeMode, mergeIds,
   boxDeleteMode = false,
   pasteMode = false,
   clipboard = null,
@@ -94,7 +97,7 @@ export default function RefineCanvas({
   stats = null,
   visibleTooltipFields = [],
   onSelect, onDeselect, onVertexDragEnd, onVertexDelete,
-  onEdgeClick, onSplitPointPlace, onPastePlace, onBoxDelete,
+  onEdgeClick, onSplitPointPlace, onMergeInstanceSelect, onPastePlace, onBoxDelete,
   onRotateStart, onRotateDrag, onRotateEnd,
   onViewBoxChange,
 }: Props) {
@@ -266,8 +269,8 @@ export default function RefineCanvas({
     }
     draggingVertex.current = null;
     panStart.current = null;
-    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : splitMode || boxDeleteMode ? "crosshair" : "default";
-  }, [onVertexDragEnd, setDragPos, onRotateEnd, pasteMode, splitMode, boxDeleteMode, boxDrag, s2i, onBoxDelete]);
+    if (svgRef.current) svgRef.current.style.cursor = isSpaceDown.current ? "grab" : pasteMode ? "copy" : splitMode || mergeMode || boxDeleteMode ? "crosshair" : "default";
+  }, [onVertexDragEnd, setDragPos, onRotateEnd, pasteMode, splitMode, mergeMode, boxDeleteMode, boxDrag, s2i, onBoxDelete]);
 
   const pointsStr = (contour: [number, number][]) =>
     contour.map(([x, y]) => `${x},${y}`).join(" ");
@@ -301,7 +304,7 @@ export default function RefineCanvas({
       width={width}
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      style={{ display: "block", userSelect: "none", cursor: pasteMode ? "copy" : splitMode || boxDeleteMode ? "crosshair" : "default" }}
+      style={{ display: "block", userSelect: "none", cursor: pasteMode ? "copy" : splitMode || mergeMode || boxDeleteMode ? "crosshair" : "default" }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -318,7 +321,7 @@ export default function RefineCanvas({
 
       {instances.map((inst) => {
         const color = COLORS[inst.id % COLORS.length];
-        const isSelected = selectedIds.includes(inst.id);
+        const isSelected = selectedIds.includes(inst.id) || mergeIds.includes(inst.id);
         const pts = getLivePointsStr(inst);
 
         return (
@@ -330,10 +333,11 @@ export default function RefineCanvas({
               stroke={color}
               strokeWidth={isSelected ? 2.5 * s2i : 1.5 * s2i}
               opacity={isSelected ? 1 : 0.7}
-              style={{ cursor: splitMode ? "crosshair" : "pointer" }}
+              style={{ cursor: splitMode || mergeMode ? "crosshair" : "pointer" }}
               onClick={e => {
                 e.stopPropagation();
-                if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
+                if (mergeMode) onMergeInstanceSelect(inst.id);
+                else if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
               }}
               onMouseMove={e => {
                 const rect = svgRef.current!.getBoundingClientRect();
@@ -352,10 +356,11 @@ export default function RefineCanvas({
                 stroke={color}
                 strokeWidth={isSelected ? 2.5 * s2i : 1.5 * s2i}
                 opacity={isSelected ? 1 : 0.7}
-                style={{ cursor: splitMode ? "crosshair" : "pointer" }}
+                style={{ cursor: splitMode || mergeMode ? "crosshair" : "pointer" }}
                 onClick={e => {
                   e.stopPropagation();
-                  if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
+                  if (mergeMode) onMergeInstanceSelect(inst.id);
+                  else if (!splitMode && !boxDeleteMode) onSelect(inst.id, e.shiftKey);
                 }}
                 pointerEvents="all"
               />
@@ -386,7 +391,7 @@ export default function RefineCanvas({
               );
             })()}
 
-            {inst.id === selectedId && !splitMode && !boxDeleteMode && (
+            {inst.id === selectedId && !splitMode && !mergeMode && !boxDeleteMode && (
               <>
                 {/* wider invisible stroke over edges — click to insert vertex */}
                 <polygon

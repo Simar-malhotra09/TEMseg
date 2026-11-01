@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { Instance, ParticleMetricField } from "@/lib/api";
-import { splitInstances } from "@/lib/api"
+import { Instance, mergeInstances, ParticleMetricField, splitInstances } from "@/lib/api";
 import { nextFreeId } from "@/lib/utils"
 
 export interface ViewBox {
@@ -40,6 +39,10 @@ export function useRefineState({
   const [splitMode, setSplitMode] = useState(false);
   const [splitPoints, setSplitPoints] = useState<[number, number][]>([]);
   const [splitInstanceId, setSplitInstanceId] = useState<number | null>(null);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeIds, setMergeIds] = useState<number[]>([]);
+  const [isMerging, setIsMerging] = useState(false);
+  const mergeRequestId = useRef(0);
   const [isSaving, setIsSaving] = useState(false);
 
   // copy-paste state
@@ -189,6 +192,69 @@ export function useRefineState({
     }
   }, [splitInstanceId, splitPoints, sessionId, commit]);
 
+  const handleEnterMerge = useCallback(() => {
+    mergeRequestId.current += 1;
+    setMergeMode(true);
+    setMergeIds([]);
+    setIsMerging(false);
+    setSelectedIds([]);
+    setBoxDeleteMode(false);
+    setSplitMode(false);
+    setSplitInstanceId(null);
+    setSplitPoints([]);
+    setPasteMode(false);
+  }, []);
+
+  const handleCancelMerge = useCallback(() => {
+    if (isMerging) return;
+    setMergeMode(false);
+    setMergeIds([]);
+  }, [isMerging]);
+
+  const handleMergeInstanceSelect = useCallback((id: number) => {
+    setMergeIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const handleConfirmMerge = useCallback(async () => {
+    if (isMerging) return;
+    const selected = mergeIds.flatMap((id) => {
+      const instance = instancesRef.current.find((item) => item.id === id);
+      return instance ? [instance] : [];
+    });
+    if (selected.length < 2) return;
+
+    const requestId = mergeRequestId.current + 1;
+    mergeRequestId.current = requestId;
+    setIsMerging(true);
+    try {
+      const primary = selected[0];
+      const selectedIdSet = new Set(mergeIds);
+      const { instance: merged } = await mergeInstances(sessionId, selected);
+      if (mergeRequestId.current !== requestId) return;
+      const primaryIndex = instancesRef.current.findIndex(
+        (instance) => instance.id === primary.id,
+      );
+      const retainedBeforePrimary = instancesRef.current
+        .slice(0, primaryIndex)
+        .filter((instance) => !selectedIdSet.has(instance.id)).length;
+      const remaining = instancesRef.current.filter(
+        (instance) => !selectedIdSet.has(instance.id),
+      );
+      const updated = [
+        ...remaining.slice(0, retainedBeforePrimary),
+        merged,
+        ...remaining.slice(retainedBeforePrimary),
+      ];
+
+      commit(updated);
+      setSelectedIds([primary.id]);
+      setMergeMode(false);
+      setMergeIds([]);
+    } finally {
+      if (mergeRequestId.current === requestId) setIsMerging(false);
+    }
+  }, [mergeIds, sessionId, isMerging, commit]);
+
   const handleSave = useCallback(async () => {
     setIsSaving(true);
     try { await onSave(instancesRef.current); }
@@ -302,12 +368,16 @@ export function useRefineState({
   }, []);
 
   const handleDiscard = useCallback(() => {
+    mergeRequestId.current += 1;
     commit(initialInstances);
     setSelectedIds([]);
     setBoxDeleteMode(false);
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
+    setMergeMode(false);
+    setMergeIds([]);
+    setIsMerging(false);
     setClipboard(null);
     setPasteMode(false);
     setRotationDeg(0);
@@ -317,6 +387,7 @@ export function useRefineState({
   }, [initialInstances, commit, onDiscard]);
 
   const reinit = useCallback((newInstances: Instance[]) => {
+    mergeRequestId.current += 1;
     instancesRef.current = newInstances;
     setInstances(newInstances);
     setSelectedIds([]);
@@ -324,6 +395,9 @@ export function useRefineState({
     setSplitMode(false);
     setSplitPoints([]);
     setSplitInstanceId(null);
+    setMergeMode(false);
+    setMergeIds([]);
+    setIsMerging(false);
     setClipboard(null);
     setPasteMode(false);
     setRotationDeg(0);
@@ -341,6 +415,9 @@ export function useRefineState({
     splitMode,
     splitPoints,
     splitInstanceId,
+    mergeMode,
+    mergeIds,
+    isMerging,
     isSaving,
     clipboard,
     pasteMode,
@@ -361,6 +438,10 @@ export function useRefineState({
     handleCancelSplit,
     handleSplitPointPlace,
     handleConfirmSplit,
+    handleEnterMerge,
+    handleCancelMerge,
+    handleMergeInstanceSelect,
+    handleConfirmMerge,
     setViewBox,
     handleSave,
     handleCopy,

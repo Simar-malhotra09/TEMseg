@@ -69,6 +69,16 @@ class SplitRequest(BaseModel):
     points: list[list[float]]  # [[x, y], [x, y], ...]
 
 
+class MergeInstanceInput(BaseModel):
+    id: int
+    contour: list[tuple[float, float]]
+    extra_contours: list[list[tuple[float, float]]] | None = None
+
+
+class MergeRequest(BaseModel):
+    instances: list[MergeInstanceInput]
+
+
 class InstancesResponse(BaseModel):
     instances: List[Instance]
 
@@ -532,6 +542,69 @@ async def split_instance(session_id: str, body: SplitRequest, request: Request):
         "instances": new_instances,
         "mask_url": f"/images/{session_id}/mask",
     }
+
+
+@router.post("/{session_id}/merge")
+async def merge_instances(session_id: str, body: MergeRequest):
+    """Return one instance outline for the union of the submitted outlines."""
+    if len(body.instances) < 2:
+        raise HTTPException(
+            status_code=400, detail="Select at least two particles to merge."
+        )
+    if len({instance.id for instance in body.instances}) != len(body.instances):
+        raise HTTPException(
+            status_code=400, detail="Each selected particle must be unique."
+        )
+
+    cached = load_instances(_session_dir(session_id))
+    if cached is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No instances found — run segmentation and enter refine mode first",
+        )
+    _, labeled = cached
+    merged_mask = np.zeros(labeled.shape, dtype=np.uint8)
+    for instance in body.instances:
+        contours = [instance.contour, *(instance.extra_contours or [])]
+        for points in contours:
+            if len(points) < 3:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Particle {instance.id} has an outline with fewer than three points.",
+                )
+            polygon = np.asarray(points, dtype=np.int32)
+            cv.fillPoly(merged_mask, [polygon], color=1)
+
+    contours, _ = cv.findContours(
+        merged_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+    )
+    if not contours:
+        raise HTTPException(
+            status_code=400, detail="The selected particles have no mask pixels."
+        )
+
+    ordered_contours = sorted(contours, key=cv.contourArea, reverse=True)
+    all_points = np.concatenate(ordered_contours)
+    x, y, width, height = cv.boundingRect(all_points)
+    outline_mask = np.zeros_like(merged_mask)
+    cv.fillPoly(outline_mask, ordered_contours, color=1)
+    primary = body.instances[0]
+    merged_instance = {
+        "id": primary.id,
+        "contour": ordered_contours[0].reshape(-1, 2).tolist(),
+        "extra_contours": [
+            contour.reshape(-1, 2).tolist() for contour in ordered_contours[1:]
+        ],
+        "bbox": {"x": x, "y": y, "w": width, "h": height},
+        "area": int(np.count_nonzero(outline_mask)),
+    }
+    logger.info(
+        "Merged %s particles for session %s into particle %s",
+        len(body.instances),
+        session_id,
+        primary.id,
+    )
+    return {"instance": merged_instance}
 
 
 # /masks/{session_id}/from-boxes

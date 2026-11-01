@@ -1024,6 +1024,27 @@ export async function splitInstances(
   return res.json();
 }
 
+export async function mergeInstances(
+  sessionId: string,
+  instances: Instance[],
+): Promise<{ instance: Instance }> {
+  const res = await trackedFetch(`${BASE_URL}/masks/${sessionId}/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      instances: instances.map(({ id, contour, extra_contours }) => ({
+        id,
+        contour,
+        extra_contours,
+      })),
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Merge failed (HTTP ${res.status}): ${await res.text()}`);
+  }
+  return res.json();
+}
+
 export interface RFProposeResponse {
   proposals: Instance[];
   message?: string;

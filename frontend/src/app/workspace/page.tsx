@@ -1162,16 +1162,17 @@ export default function Workspace() {
       if (e.key === "Backspace" || e.key === "Delete") {
         refine.handleDeleteSelected();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+      if (!refine.mergeMode && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
         e.preventDefault();
         refine.handleCopy();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+      if (!refine.mergeMode && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
         e.preventDefault();
         refine.handleEnterPaste();
       }
       if (e.key === "Escape") {
         if (refine.pasteMode) refine.handleCancelPaste();
+        if (refine.mergeMode) refine.handleCancelMerge();
         if (refine.boxDeleteMode) refine.setBoxDeleteMode(false);
       }
       if (e.key === "[") {
@@ -1189,7 +1190,9 @@ export default function Workspace() {
     refine.handleCopy,
     refine.handleEnterPaste,
     refine.handleCancelPaste,
+    refine.handleCancelMerge,
     refine.pasteMode,
+    refine.mergeMode,
     refine.boxDeleteMode,
     refine.setBoxDeleteMode,
     refine.polygonOpacity,
@@ -3239,7 +3242,7 @@ export default function Workspace() {
                 <button
                   type="button"
                   className={styles.actionBtn}
-                  disabled={!seg.segDone}
+                  disabled={!seg.segDone || (refineMode && refine.mergeMode)}
                   onClick={
                     refineMode
                       ? () => {
@@ -3271,6 +3274,7 @@ export default function Workspace() {
                   <button
                     type="button"
                     className={styles.actionBtn}
+                    disabled={refine.isMerging}
                     onClick={refine.handleDiscard}
                   >
                     Discard
@@ -3342,6 +3346,7 @@ export default function Workspace() {
                     <button
                       type="button"
                       className={`${styles.actionBtn} ${refine.boxDeleteMode ? styles.actionBtnPrimary : ""}`}
+                      disabled={refine.mergeMode || refine.isMerging}
                       onClick={() =>
                         refine.setBoxDeleteMode(!refine.boxDeleteMode)
                       }
@@ -3361,8 +3366,22 @@ export default function Workspace() {
                       the selection.
                     </p>
 
+                    {!refine.mergeMode &&
+                      !refine.splitMode &&
+                      !refine.pasteMode && (
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          disabled={refine.instances.length < 2}
+                          onClick={refine.handleEnterMerge}
+                        >
+                          Merge Instances
+                        </button>
+                      )}
+
                     {refine.selectedId !== null &&
                       !refine.splitMode &&
+                      !refine.mergeMode &&
                       !refine.pasteMode && (
                         <>
                           {samBlockNote && (
@@ -3395,7 +3414,8 @@ export default function Workspace() {
 
                     {refine.clipboard &&
                       !refine.pasteMode &&
-                      !refine.splitMode && (
+                      !refine.splitMode &&
+                      !refine.mergeMode && (
                         <button
                           type="button"
                           className={styles.actionBtn}
@@ -3453,6 +3473,43 @@ export default function Workspace() {
                           onClick={refine.handleCancelSplit}
                         >
                           Cancel Split
+                        </button>
+                      </>
+                    )}
+
+                    {refine.mergeMode && (
+                      <>
+                        <p className={styles.sidebarHint}>
+                          {refine.mergeIds.length} particle
+                          {refine.mergeIds.length === 1 ? "" : "s"} selected.
+                          Click distinct particles, confirm the union, then
+                          save refinements. Escape cancels.
+                        </p>
+                        <button
+                          type="button"
+                          className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                          disabled={refine.mergeIds.length < 2 || refine.isMerging}
+                          onClick={() =>
+                            refine.handleConfirmMerge().catch((err) =>
+                              pushToast(
+                                "err",
+                                "Merge failed",
+                                (err as Error).message,
+                              ),
+                            )
+                          }
+                        >
+                          {refine.isMerging
+                            ? "Merging..."
+                            : `Merge ${refine.mergeIds.length} Instances`}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.actionBtn}
+                          disabled={refine.isMerging}
+                          onClick={refine.handleCancelMerge}
+                        >
+                          Cancel Merge
                         </button>
                       </>
                     )}
@@ -4512,6 +4569,8 @@ export default function Workspace() {
                       viewBox={refine.viewBox}
                       splitMode={refine.splitMode}
                       splitPoints={refine.splitPoints}
+                      mergeMode={refine.mergeMode}
+                      mergeIds={refine.mergeIds}
                       boxDeleteMode={refine.boxDeleteMode}
                       pasteMode={refine.pasteMode}
                       clipboard={refine.clipboard}
@@ -4524,6 +4583,7 @@ export default function Workspace() {
                       onVertexDelete={refine.handleVertexDelete}
                       onEdgeClick={refine.handleEdgeClick}
                       onSplitPointPlace={refine.handleSplitPointPlace}
+                      onMergeInstanceSelect={refine.handleMergeInstanceSelect}
                       onPastePlace={refine.handlePastePlace}
                       onBoxDelete={refine.handleBoxDelete}
                       onRotateStart={refine.handleRotateStart}
