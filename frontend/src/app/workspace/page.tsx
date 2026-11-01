@@ -126,11 +126,6 @@ import SessionManager from "./components/SessionManager";
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
 
-// TODO(analysis): measure mode currently disables zoom/pan and uses the same
-// fit-to-viewport coordinate mapping as the scale-bar calibration. Reuse the
-// refine canvas' pan/zoom viewBox pattern so points can be placed precisely
-// while zoomed in.
-
 interface ImgSize {
   width: number;
   height: number;
@@ -899,10 +894,11 @@ export default function Workspace() {
   }
 
   // zoom/pan
-  // only active in `normal` mode. (outside blackout/refine.. modes)
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
+  const spaceHeld = useRef(false);
+  const panClick = useRef(false);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
 
@@ -925,22 +921,20 @@ export default function Workspace() {
   } | null>(null);
   const scaleBarStart = useRef<{ x: number; y: number } | null>(null);
 
-  // analysis: point-to-point distance measurement. Vertices are image-space
-  // points; edges are created explicitly by activating a vertex and then
-  // clicking another vertex (or empty space to create a new one).
+  // analysis: distance measurements are independent image-space line segments.
   const [measureMode, setMeasureMode] = useState(false);
+  const [aspectRatioMode, setAspectRatioMode] = useState(false);
   const [measureVertices, setMeasureVertices] = useState<
     { x: number; y: number }[]
   >([]);
   const [measureEdges, setMeasureEdges] = useState<{ a: number; b: number }[]>(
     [],
   );
-  const [activeMeasureVertex, setActiveMeasureVertex] = useState<number | null>(
-    null,
-  );
-  const [lastMeasureVertex, setLastMeasureVertex] = useState<number | null>(
-    null,
-  );
+  const [measureDrag, setMeasureDrag] = useState<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  } | null>(null);
+  const measureDragRef = useRef<{ x: number; y: number } | null>(null);
 
   // analysis: angle measurement. Each committed measurement is a triple of
   // image-space points (a, vertex, c); the angle is reported at the vertex.
@@ -960,6 +954,34 @@ export default function Workspace() {
     x: number;
     y: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!analysisMode) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.code === "Space" &&
+        viewportRef.current?.matches(":hover")
+      ) {
+        spaceHeld.current = true;
+        event.preventDefault();
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") spaceHeld.current = false;
+    };
+    const handleBlur = () => {
+      spaceHeld.current = false;
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+      spaceHeld.current = false;
+    };
+  }, [analysisMode]);
 
   const analysisMode = measureMode || angleMode;
 
@@ -1199,8 +1221,8 @@ export default function Workspace() {
     setMeasureMode(false);
     setMeasureVertices([]);
     setMeasureEdges([]);
-    setActiveMeasureVertex(null);
-    setLastMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
     setAngleMode(false);
     setAnglePoints([]);
     setAngleMeasurements([]);
@@ -1905,16 +1927,17 @@ export default function Workspace() {
     setStatus("Regions applied — ready to segment.");
   }
 
-  // css zoom/pan handlers. disabled when blackout or refine active
-  const zoomBy = (delta: number) =>
-    setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
+  // CSS zoom and pan handlers.
+  const zoomBy = (delta: number) => {
+    const nextZoom = Math.min(Math.max(zoom * delta, 0.5), 5);
+    setZoom(nextZoom);
+    if (nextZoom <= 1) setPan({ x: 0, y: 0 });
+  };
 
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    if (analysisMode || scaleBarMode) return;
+    if (scaleBarMode) return;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    // center the img if zoomed out
-    // if (next <= 1) setPan({ x: 0, y: 0 });
     zoomBy(delta);
   }
 
@@ -1927,7 +1950,7 @@ export default function Workspace() {
       boxMode ||
       rfBgMode ||
       rfFgMode ||
-      analysisMode ||
+      (analysisMode && !spaceHeld.current) ||
       scaleBarMode
     )
       return;
@@ -1946,6 +1969,7 @@ export default function Workspace() {
 
   function handleMouseMove(e: React.MouseEvent) {
     if (imgSize.width > 0) {
+    panClick.current = analysisMode && spaceHeld.current;
       const now = performance.now();
       if (now - cursorPosThrottle.current > 50) {
         cursorPosThrottle.current = now;
@@ -1961,8 +1985,8 @@ export default function Workspace() {
     if (!isPanning.current) return;
     const rawX = e.clientX - panStart.current.x;
     const rawY = e.clientY - panStart.current.y;
-    const excessW = (viewportSize.width * (zoom - 1)) / 2;
-    const excessH = (viewportSize.height * (zoom - 1)) / 2;
+    const excessW = Math.max(0, (viewportSize.width * (zoom - 1)) / 2);
+    const excessH = Math.max(0, (viewportSize.height * (zoom - 1)) / 2);
     setPan({
       x: Math.min(excessW, Math.max(-excessW, rawX)),
       y: Math.min(excessH, Math.max(-excessH, rawY)),
@@ -2050,7 +2074,8 @@ export default function Workspace() {
       handleScaleBarCancel();
     } else {
       setMeasureMode(false);
-      setActiveMeasureVertex(null);
+      measureDragRef.current = null;
+      setMeasureDrag(null);
       setAngleMode(false);
       setAnglePoints([]);
       setAngleCursor(null);
@@ -2206,79 +2231,70 @@ export default function Workspace() {
     setAngleCursor(null);
     setMeasureVertices([]);
     setMeasureEdges([]);
-    setActiveMeasureVertex(null);
-    setLastMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
     setMeasureMode(true);
   }
 
   function cancelMeasure() {
     setMeasureMode(false);
-    setActiveMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
   }
 
   function clearMeasurements() {
     setMeasureVertices([]);
     setMeasureEdges([]);
-    setActiveMeasureVertex(null);
-    setLastMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
   }
 
-  function handleMeasureClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (imgSize.width === 0 || imgSize.height === 0) return;
+  function measurePoint(e: React.PointerEvent<HTMLDivElement>): {
+    x: number;
+    y: number;
+  } {
     const rect = e.currentTarget.getBoundingClientRect();
-    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
-    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * imgSize.width,
+      y: ((e.clientY - rect.top) / rect.height) * imgSize.height,
+    };
+  }
 
-    // Hit-test existing vertices in screen-space so selection feels consistent
-    // regardless of image resolution.
-    let hitIdx: number | null = null;
-    let hitDist = Infinity;
-    measureVertices.forEach((v, i) => {
-      const d = Math.hypot(imgX - v.x, imgY - v.y);
-      if (d < hitDist) {
-        hitDist = d;
-        hitIdx = i;
-      }
-    });
-
-    if (hitIdx !== null && hitDist <= measureHitR) {
-      // A vertex exists here.
-      if (activeMeasureVertex === null) {
-        // Make its edge active.
-        setActiveMeasureVertex(hitIdx);
-      } else if (activeMeasureVertex === hitIdx) {
-        // Clicking the active vertex again deselects it.
-        setActiveMeasureVertex(null);
-      } else {
-        // Connect the active vertex to this existing vertex.
-        const a = activeMeasureVertex;
-        const b = hitIdx;
-        setMeasureEdges((prev) => {
-          const exists = prev.some(
-            (e) => (e.a === a && e.b === b) || (e.a === b && e.b === a),
-          );
-          return exists ? prev : [...prev, { a, b }];
-        });
-        setActiveMeasureVertex(null);
-        setLastMeasureVertex(b);
-      }
+  function handleMeasurePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (
+      e.button !== 0 ||
+      spaceHeld.current ||
+      imgSize.width === 0 ||
+      imgSize.height === 0
+    )
       return;
-    }
+    const point = measurePoint(e);
+    measureDragRef.current = point;
+    setMeasureDrag({ start: point, end: point });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
 
-    // No vertex here: draw one and (when possible) auto-chain it from the last
-    // vertex, unless an explicit edge is currently active.
-    const newIdx = measureVertices.length;
-    setMeasureVertices((prev) => [...prev, { x: imgX, y: imgY }]);
-    if (activeMeasureVertex !== null) {
-      setMeasureEdges((prev) => [
-        ...prev,
-        { a: activeMeasureVertex, b: newIdx },
-      ]);
-      setActiveMeasureVertex(null);
-    } else if (lastMeasureVertex !== null) {
-      setMeasureEdges((prev) => [...prev, { a: lastMeasureVertex, b: newIdx }]);
-    }
-    setLastMeasureVertex(newIdx);
+  function handleMeasurePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const start = measureDragRef.current;
+    if (!start) return;
+    setMeasureDrag({ start, end: measurePoint(e) });
+  }
+
+  function handleMeasurePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const start = measureDragRef.current;
+    if (!start) return;
+    const end = measurePoint(e);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
+    if (Math.hypot(end.x - start.x, end.y - start.y) === 0) return;
+    const firstIndex = measureVertices.length;
+    setMeasureVertices((prev) => [...prev, start, end]);
+    setMeasureEdges((prev) => [...prev, { a: firstIndex, b: firstIndex + 1 }]);
+  }
+
+  function handleMeasurePointerCancel() {
+    measureDragRef.current = null;
+    setMeasureDrag(null);
   }
 
   function deleteMeasureVertex(del: number) {
@@ -2290,12 +2306,6 @@ export default function Workspace() {
           a: e.a > del ? e.a - 1 : e.a,
           b: e.b > del ? e.b - 1 : e.b,
         })),
-    );
-    setActiveMeasureVertex((prev) =>
-      prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
-    );
-    setLastMeasureVertex((prev) =>
-      prev === null ? null : prev === del ? null : prev > del ? prev - 1 : prev,
     );
   }
 
@@ -2364,8 +2374,8 @@ export default function Workspace() {
     setMeasureMode(false);
     setMeasureVertices([]);
     setMeasureEdges([]);
-    setActiveMeasureVertex(null);
-    setLastMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
     setAnglePoints([]);
     setAngleMeasurements([]);
     setAngleCursor(null);
@@ -2377,6 +2387,88 @@ export default function Workspace() {
     setAnglePoints([]);
     setAngleCursor(null);
   }
+  function exportDistanceMeasurementsCsv() {
+    const pixelSize = metadata?.pixel_size;
+    const pixelUnit =
+      metadata?.pixel_unit && metadata.pixel_unit !== "-"
+        ? metadata.pixel_unit
+        : "";
+    const hasCalibration = typeof pixelSize === "number" && pixelSize > 0;
+    const csvCell = (value: string | number): string => {
+      const text = String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    };
+    const rows: (string | number)[][] = [
+      [
+        "Pair",
+        "Line 1 length (px)",
+        "Line 2 length (px)",
+        "Line 1 calibrated length",
+        "Line 2 calibrated length",
+        "Calibration unit",
+        "Aspect ratio (longer / shorter)",
+      ],
+    ];
+
+    for (let index = 0; index < measureEdges.length; index += 2) {
+      const firstEdge = measureEdges[index];
+      const secondEdge = measureEdges[index + 1];
+      const firstStart = measureVertices[firstEdge.a];
+      const firstEnd = measureVertices[firstEdge.b];
+      if (!firstStart || !firstEnd) {
+        throw new Error(`Distance measurement ${index + 1} has no endpoints.`);
+      }
+      const firstLength = Math.hypot(
+        firstEnd.x - firstStart.x,
+        firstEnd.y - firstStart.y,
+      );
+      const secondStart = secondEdge ? measureVertices[secondEdge.a] : null;
+      const secondEnd = secondEdge ? measureVertices[secondEdge.b] : null;
+      if (secondEdge && (!secondStart || !secondEnd)) {
+        throw new Error(`Distance measurement ${index + 2} has no endpoints.`);
+      }
+      const secondLength =
+        secondStart && secondEnd
+          ? Math.hypot(secondEnd.x - secondStart.x, secondEnd.y - secondStart.y)
+          : null;
+      const ratio =
+        secondLength === null
+          ? ""
+          : (Math.max(firstLength, secondLength) /
+              Math.min(firstLength, secondLength)).toFixed(3);
+      rows.push([
+        `Pair ${Math.floor(index / 2) + 1}`,
+        firstLength.toFixed(3),
+        secondLength === null ? "" : secondLength.toFixed(3),
+        hasCalibration ? (firstLength * pixelSize).toFixed(3) : "",
+        hasCalibration && secondLength !== null
+          ? (secondLength * pixelSize).toFixed(3)
+          : "",
+        hasCalibration ? pixelUnit : "",
+        ratio,
+      ]);
+    }
+
+    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const defaultFilename = `distance-measurements-${metadata?.file_name ?? "image"}-${sessionId ?? "session"}.csv`;
+    const requestedFilename = window.prompt(
+      "Save distance measurements as:",
+      defaultFilename,
+    );
+    if (requestedFilename === null || requestedFilename.trim() === "") return;
+    const trimmedFilename = requestedFilename.trim();
+    const filename = trimmedFilename.toLowerCase().endsWith(".csv")
+      ? trimmedFilename
+      : `${trimmedFilename}.csv`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
 
   function clearAngleMeasurements() {
     setAnglePoints([]);
@@ -2410,6 +2502,10 @@ export default function Workspace() {
     if (imgSize.width === 0 || imgSize.height === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
+    if (panClick.current) {
+      panClick.current = false;
+      return;
+    }
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
     setAngleCursor({ x: imgX, y: imgY });
   }
@@ -2426,6 +2522,10 @@ export default function Workspace() {
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
 
     // In-progress points: right-click removes the point.
+    if (spaceHeld.current || isPanning.current) {
+      setAngleCursor(null);
+      return;
+    }
     let pointIdx: number | null = null;
     let pointDist = Infinity;
     anglePoints.forEach((p, i) => {
@@ -2552,7 +2652,8 @@ export default function Workspace() {
     setRfBgMode(false);
     setRfFgMode(false);
     setMeasureMode(false);
-    setActiveMeasureVertex(null);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
     setAngleMode(false);
     setAnglePoints([]);
     setAngleCursor(null);
@@ -3877,9 +3978,24 @@ export default function Workspace() {
                   </button>
                   {measureMode && (
                     <p className={styles.sidebarHint}>
-                      Click empty space to chain a new vertex from the last one.
-                      Click an existing vertex to branch/connect from it
-                      instead.
+                      Click and drag to draw each line segment.
+                    </p>
+                  )}
+                  {measureMode && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={aspectRatioMode}
+                      className={`${styles.actionBtn} ${aspectRatioMode ? styles.actionBtnPrimary : ""}`}
+                      onClick={() => setAspectRatioMode((value) => !value)}
+                    >
+                      Aspect Ratio {aspectRatioMode ? "On" : "Off"}
+                    </button>
+                  )}
+                  {measureMode && aspectRatioMode && (
+                    <p className={styles.sidebarHint}>
+                      Draw two lines per ratio. Each pair uses the longer line
+                      divided by the shorter line.
                     </p>
                   )}
                   <button
@@ -3899,7 +4015,18 @@ export default function Workspace() {
                   {(measureEdges.length > 0 ||
                     angleMeasurements.length > 0) && (
                     <div className={styles.subWindow}>
-                      <p className={styles.subWindowTitle}>Measurements</p>
+                      <p className={styles.subWindowTitle}>
+                        <span>Measurements</span>
+                        {measureEdges.length > 0 && (
+                          <button
+                            type="button"
+                            className={styles.miniBtn}
+                            onClick={exportDistanceMeasurementsCsv}
+                          >
+                            Export CSV
+                          </button>
+                        )}
+                      </p>
                       {measureEdges.map((e, i) => {
                         const p = measureVertices[e.a];
                         const q = measureVertices[e.b];
@@ -4019,6 +4146,11 @@ export default function Workspace() {
                     className={styles.folderBtn}
                     onClick={(e) => {
                       e.stopPropagation();
+                  {analysisMode && (
+                    <p className={styles.sidebarHint}>
+                      Scroll to zoom. Hold Space and drag to pan.
+                    </p>
+                  )}
                       if (isFolderImportAvailable()) handleFolderImport();
                       else folderRef.current?.click();
                     }}
@@ -4048,6 +4180,28 @@ export default function Workspace() {
                         <button
                           type="button"
                           onClick={() => setSessionManagerOpen(true)}
+                      {aspectRatioMode &&
+                        Array.from({ length: Math.floor(measureEdges.length / 2) }, (_, pairIndex) => {
+                          const first = measureEdges[pairIndex * 2];
+                          const second = measureEdges[pairIndex * 2 + 1];
+                          const firstStart = measureVertices[first.a];
+                          const firstEnd = measureVertices[first.b];
+                          const secondStart = measureVertices[second.a];
+                          const secondEnd = measureVertices[second.b];
+                          if (!firstStart || !firstEnd || !secondStart || !secondEnd) return null;
+                          const firstLength = Math.hypot(firstEnd.x - firstStart.x, firstEnd.y - firstStart.y);
+                          const secondLength = Math.hypot(secondEnd.x - secondStart.x, secondEnd.y - secondStart.y);
+                          const ratio = Math.max(firstLength, secondLength) / Math.min(firstLength, secondLength);
+                          return (
+                            <div key={`ratio-${pairIndex}`} className={styles.measureRow}>
+                              <span className={styles.measureNum}>AR {pairIndex + 1}</span>
+                              <span className={styles.measureVal}>{ratio.toFixed(3)}</span>
+                            </div>
+                          );
+                        })}
+                      {aspectRatioMode && measureEdges.length % 2 === 1 && (
+                        <p className={styles.sidebarHint}>Draw one more line to complete the next pair.</p>
+                      )}
                         >
                           Manage sessions
                         </button>
@@ -4234,8 +4388,7 @@ export default function Workspace() {
                     boxMode ||
                     scaleBarMode ||
                     rfBgMode ||
-                    rfFgMode ||
-                    analysisMode
+                    rfFgMode
                       ? "none"
                       : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
@@ -4250,8 +4403,7 @@ export default function Workspace() {
                     boxMode ||
                     scaleBarMode ||
                     rfBgMode ||
-                    rfFgMode ||
-                    analysisMode
+                    rfFgMode
                       ? "default"
                       : panning
                         ? "grabbing"
@@ -4588,7 +4740,7 @@ export default function Workspace() {
 
                 {/* analysis measurement overlay. Vertices + explicit edges,
                     each edge labeled with its distance; stays visible after Done. */}
-                {(measureVertices.length > 0 || measureEdges.length > 0) &&
+                {(measureVertices.length > 0 || measureEdges.length > 0 || measureDrag !== null) &&
                   imgSize.width > 0 &&
                   !refineMode &&
                   !seg.isBlackoutMode &&
@@ -4609,20 +4761,17 @@ export default function Workspace() {
                         zIndex: 13,
                       }}
                     >
-                      {measureVertices.map((p, i) => {
-                        const active = i === activeMeasureVertex;
-                        return (
-                          <circle
-                            key={`mv-${i}`}
-                            cx={p.x}
-                            cy={p.y}
-                            r={active ? measureMarkerR * 1.5 : measureMarkerR}
-                            fill={active ? "#0d0d0d" : "#5ad1ff"}
-                            stroke={active ? "#5ad1ff" : "#0d0d0d"}
-                            strokeWidth={measureStroke}
-                          />
-                        );
-                      })}
+                      {measureVertices.map((p, i) => (
+                        <circle
+                          key={`mv-${i}`}
+                          cx={p.x}
+                          cy={p.y}
+                          r={measureMarkerR}
+                          fill="#5ad1ff"
+                          stroke="#0d0d0d"
+                          strokeWidth={measureStroke}
+                        />
+                      ))}
                       {measureEdges.map((edge, i) => {
                         const p = measureVertices[edge.a];
                         const q = measureVertices[edge.b];
@@ -4692,7 +4841,10 @@ export default function Workspace() {
                 {/* analysis mouse capture to place measurement points */}
                 {measureMode && imgSize.width > 0 && (
                   <div
-                    onClick={handleMeasureClick}
+                    onPointerDown={handleMeasurePointerDown}
+                    onPointerMove={handleMeasurePointerMove}
+                    onPointerUp={handleMeasurePointerUp}
+                    onPointerCancel={handleMeasurePointerCancel}
                     onContextMenu={handleMeasureContextMenu}
                     style={{
                       position: "absolute",
@@ -4700,7 +4852,7 @@ export default function Workspace() {
                       left: 0,
                       width: "100%",
                       height: "100%",
-                      cursor: "crosshair",
+                      cursor: panning ? "grabbing" : "crosshair",
                       background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
                     }}
@@ -4809,6 +4961,17 @@ export default function Workspace() {
                           );
                         })()}
 
+                      {measureDrag && (
+                        <line
+                          x1={measureDrag.start.x}
+                          y1={measureDrag.start.y}
+                          x2={measureDrag.end.x}
+                          y2={measureDrag.end.y}
+                          stroke="#5ad1ff"
+                          strokeWidth={measureStroke}
+                          strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                        />
+                      )}
                       {angleMeasurements.map((m, i) => {
                         const { a, b, c } = m;
                         const g = angleArcGeometry(a, b, c, m.reflex);
@@ -4826,6 +4989,7 @@ export default function Workspace() {
                             />
                             <line
                               x1={b.x}
+                      touchAction: "none",
                               y1={b.y}
                               x2={c.x}
                               y2={c.y}
@@ -4896,7 +5060,7 @@ export default function Workspace() {
                       left: 0,
                       width: "100%",
                       height: "100%",
-                      cursor: "crosshair",
+                      cursor: panning ? "grabbing" : "crosshair",
                       background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
                     }}
@@ -5144,7 +5308,7 @@ export default function Workspace() {
                   type="button"
                   className={styles.toolBtn}
                   title="Fit to view"
-                  disabled={analysisMode || scaleBarMode}
+                  disabled={scaleBarMode}
                   onClick={() => {
                     setZoom(1);
                     setPan({ x: 0, y: 0 });
@@ -5156,7 +5320,7 @@ export default function Workspace() {
                   type="button"
                   className={styles.toolBtn}
                   title="Zoom out"
-                  disabled={analysisMode || scaleBarMode}
+                  disabled={scaleBarMode}
                   onClick={() => zoomBy(0.9)}
                 >
                   <Minus size={13} />
@@ -5168,7 +5332,7 @@ export default function Workspace() {
                   type="button"
                   className={styles.toolBtn}
                   title="Zoom in"
-                  disabled={analysisMode || scaleBarMode}
+                  disabled={scaleBarMode}
                   onClick={() => zoomBy(1.1)}
                 >
                   <Plus size={13} />
