@@ -419,10 +419,12 @@ export default function RefineCanvas({
                       strokeWidth={1.5 * s2i}
                       style={{ cursor: "move" }}
                       onMouseDown={e => {
+                        if (e.button !== 0) return;
                         e.stopPropagation();
                         draggingVertex.current = { instId: inst.id, vi, pos: pt };
                       }}
-                      onDoubleClick={e => {
+                      onContextMenu={e => {
+                        e.preventDefault();
                         e.stopPropagation();
                         onVertexDelete(inst.id, vi);
                       }}
