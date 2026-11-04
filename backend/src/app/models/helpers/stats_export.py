@@ -22,6 +22,8 @@ def build_stats_csv(stats: dict) -> bytes:
             "circularity",
             "solidity",
             "aspect_ratio",
+            "aspect_ratio_pca",
+            "aspect_ratio_min_rect",
             "n_vertices",
             "shape",
             f"nearest_neighbor_{unit}",
@@ -66,6 +68,12 @@ def build_stats_csv(stats: dict) -> bytes:
                 f"{particle['circularity']:.4f}",
                 f"{particle.get('solidity', 0):.4f}",
                 f"{particle['aspect_ratio']:.4f}",
+                f"{particle['aspect_ratio_pca']:.4f}"
+                if "aspect_ratio_pca" in particle
+                else "",
+                f"{particle['aspect_ratio_min_rect']:.4f}"
+                if "aspect_ratio_min_rect" in particle
+                else "",
                 particle.get("n_vertices", 0),
                 _safe_spreadsheet_text(str(particle["shape"])),
                 f"{nearest:.4f}" if nearest is not None else "",

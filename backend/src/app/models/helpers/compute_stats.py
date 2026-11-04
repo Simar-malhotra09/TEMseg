@@ -59,6 +59,36 @@ def _fit_ellipse_safe(cnt):
     return (major, minor)
 
 
+def _pca_aspect_ratio(cnt: np.ndarray, component: np.ndarray | None) -> float:
+    """Return the square root of the major/minor covariance eigenvalue ratio."""
+    moments = (
+        cv.moments(component, binaryImage=True)
+        if component is not None
+        else cv.moments(cnt)
+    )
+    if moments["m00"] <= 0:
+        return 1.0
+
+    covariance_xx = moments["mu20"] / moments["m00"]
+    covariance_yy = moments["mu02"] / moments["m00"]
+    covariance_xy = moments["mu11"] / moments["m00"]
+    eigenvalue_gap = math.sqrt(
+        (covariance_xx - covariance_yy) ** 2 + 4 * covariance_xy**2
+    )
+    major_eigenvalue = (covariance_xx + covariance_yy + eigenvalue_gap) / 2
+    minor_eigenvalue = (covariance_xx + covariance_yy - eigenvalue_gap) / 2
+    if minor_eigenvalue <= 0:
+        return 1.0
+    return math.sqrt(major_eigenvalue / minor_eigenvalue)
+
+
+def _min_area_rect_aspect_ratio(cnt: np.ndarray) -> float:
+    """Return the long-to-short side ratio of the contour's minimum-area box."""
+    _, (width, height), _ = cv.minAreaRect(cnt)
+    minor = min(width, height)
+    return max(width, height) / minor if minor > 0 else 1.0
+
+
 def _border_distance_px(
     component: np.ndarray, sl: tuple, width: int, height: int
 ) -> tuple[float, str]:
@@ -380,14 +410,16 @@ def compute_stats_from_instances(
         # get contour: prefer exact pixels from labeled mask
         exact_contours = []
         component_sl: tuple | None = None
+        component: np.ndarray | None = None
         if labeled_slices is not None and inst_id <= len(labeled_slices):
             sl = labeled_slices[inst_id - 1]
             if sl is not None:
-                component = (labeled_mask[sl] == inst_id).astype(np.uint8)
-                if np.any(component):
+                candidate_component = (labeled_mask[sl] == inst_id).astype(np.uint8)
+                if np.any(candidate_component):
+                    component = candidate_component
                     component_sl = sl
                 exact_contours, _ = cv.findContours(
-                    component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
+                    candidate_component, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE
                 )
 
         if exact_contours:
@@ -457,6 +489,8 @@ def compute_stats_from_instances(
         if ellipse is not None:
             major_px, minor_px = ellipse
             aspect_ratio = major_px / minor_px if minor_px > 0 else 1.0
+        aspect_ratio_pca = _pca_aspect_ratio(cnt, component)
+        aspect_ratio_min_rect = _min_area_rect_aspect_ratio(cnt)
 
         # vertex count from simplified contour (for faceted shape detection)
         epsilon = 0.02 * perimeter_px
@@ -479,6 +513,8 @@ def compute_stats_from_instances(
             "convexity": float(convexity),
             "rectangularity": float(rectangularity),
             "aspect_ratio": float(aspect_ratio),
+            "aspect_ratio_pca": float(aspect_ratio_pca),
+            "aspect_ratio_min_rect": float(aspect_ratio_min_rect),
             "n_vertices": n_vertices,
             "shape": shape,
             "bbox": inst["bbox"],

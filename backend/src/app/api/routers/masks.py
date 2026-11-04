@@ -137,13 +137,30 @@ class ProposeSimilarRequest(BaseModel):
 
 @router.get("/{session_id}/stats")
 async def get_stats(session_id: str):
-    """Return cached stats.json for this session. 404 if not yet computed."""
+    """Return cached stats, refreshing older records with missing shape metrics."""
     session_dir = _session_dir(session_id)
     stats_path = session_dir / "stats.json"
     if not stats_path.exists():
         raise HTTPException(status_code=404, detail="No stats — run /segment first")
     with open(stats_path) as f:
-        return json.load(f)
+        stats = json.load(f)
+
+    particles = stats.get("particles", [])
+    has_aspect_ratio_variants = all(
+        "aspect_ratio_pca" in particle and "aspect_ratio_min_rect" in particle
+        for particle in particles
+    )
+    if has_aspect_ratio_variants:
+        return stats
+
+    cached = load_instances(session_dir)
+    if cached is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Stats need the new aspect ratio metrics, but saved instance data is missing.",
+        )
+    instances, labeled = cached
+    return _recompute_stats(session_dir, instances, labeled)
 
 
 @router.get("/{session_id}/instance-labels")

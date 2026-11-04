@@ -27,7 +27,7 @@ interface Props {
   groundTruthScore: GTScores | null;
   sessionId: string;
   onBack: () => void;
-  onLocateParticle?: (particleIndex: number) => void;
+  onLocateParticle?: (particleId: number) => void;
   onLocateShape?:(shape: string)=> void;
 }
 
@@ -48,7 +48,9 @@ function columnLabel(key: SortKey, hasScale: boolean, unit: string): string {
     case "area": return `Area (${hasScale ? unit + "²" : "px²"})`;
     case "circularity": return "Circ.";
     case "solidity": return "Solidity";
-    case "aspect_ratio": return "Asp. Ratio";
+    case "aspect_ratio": return "Ellipse AR";
+    case "aspect_ratio_pca": return "PCA AR";
+    case "aspect_ratio_min_rect": return "Min Rect AR";
     case "shape": return "Shape";
     case "nearest_neighbor": return `NNI (${hasScale ? unit : "px"})`;
     case "border_distance": return `Border Dist. (${hasScale ? unit : "px"})`;
@@ -95,7 +97,7 @@ function scatterLabel(key: ScatterMetric, hasScale: boolean, unit: string): stri
     case "perimeter": return `Perimeter (${hasScale ? unit : "px"})`;
     case "major_axis": return `Major Axis (${hasScale ? unit : "px"})`;
     case "minor_axis": return `Minor Axis (${hasScale ? unit : "px"})`;
-    case "aspect_ratio": return "Aspect Ratio";
+    case "aspect_ratio": return "Ellipse AR";
     case "circularity": return "Circularity";
     case "solidity": return "Solidity";
     case "convexity": return "Convexity";
@@ -379,7 +381,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
 
   //  sortable table 
   const sortedParticles = useMemo(() => {
-    const indexed = particles.map((p, i) => ({ ...p, index: i + 1 }));
+    const indexed = particles.map((p) => ({ ...p, index: p.id }));
     indexed.sort((a, b) => {
       let va: number | string, vb: number | string;
       switch (sortKey) {
@@ -388,6 +390,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
         case "area": va = a.area_real ?? a.area_px; vb = b.area_real ?? b.area_px; break;
         case "circularity": va = a.circularity; vb = b.circularity; break;
         case "aspect_ratio": va = a.aspect_ratio; vb = b.aspect_ratio; break;
+        case "aspect_ratio_pca": va = a.aspect_ratio_pca; vb = b.aspect_ratio_pca; break;
+        case "aspect_ratio_min_rect": va = a.aspect_ratio_min_rect; vb = b.aspect_ratio_min_rect; break;
         case "shape": va = a.shape; vb = b.shape; break;
         case "solidity": va = a.solidity ?? 1; vb = b.solidity ?? 1; break;
         case "nearest_neighbor": va = a.nearest_neighbor_real ?? a.nearest_neighbor_px ?? Infinity; vb = b.nearest_neighbor_real ?? b.nearest_neighbor_px ?? Infinity; break;
@@ -736,7 +740,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
               : `${fmt(stats.avg_area_px)} px²`,
           },
           { label: "Avg Circularity", value: fmt(stats.avg_circularity) },
-          { label: "Avg Aspect Ratio", value: fmt(stats.avg_aspect_ratio) },
+          { label: "Avg Ellipse AR", value: fmt(stats.avg_aspect_ratio) },
           ...(groundTruthScore ? [
             { label: "IoU", value: groundTruthScore.iou?.toFixed(3) ?? "—" },
             { label: "Dice", value: groundTruthScore.dice?.toFixed(3) ?? "—" },
@@ -782,7 +786,7 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                     className={`${styles.tr} ${onLocateParticle ? styles.trClickable : ""} ${hoveredRow === p.index ? styles.trHighlighted : ""}`}
                     onMouseEnter={() => setHoveredRow(p.index)}
                     onMouseLeave={() => setHoveredRow(null)}
-                    onClick={() => onLocateParticle?.(p.index - 1)}
+                    onClick={() => onLocateParticle?.(p.id)}
                   >
                   <td className={styles.td}>
                     <span className={styles.particleId}>{p.index}</span>
@@ -792,6 +796,8 @@ export default function StatsDetailView({ stats, metadata, groundTruthScore, ses
                   <td className={styles.td}>{fmt(p.circularity)}</td>
                   <td className={styles.td}>{fmt(p.solidity ?? 1)}</td>
                   <td className={styles.td}>{fmt(p.aspect_ratio)}</td>
+                  <td className={styles.td}>{fmt(p.aspect_ratio_pca)}</td>
+                  <td className={styles.td}>{fmt(p.aspect_ratio_min_rect)}</td>
                   <td className={styles.td}>
                     <span
                       className={`${styles.shapeBadge} ${onLocateShape ? styles.shapeBadgeClickable : ""}`}

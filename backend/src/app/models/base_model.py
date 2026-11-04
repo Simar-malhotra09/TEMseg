@@ -66,6 +66,8 @@ class Particle(BaseModel):
     # shape
     circularity: float
     aspect_ratio: float
+    aspect_ratio_pca: float
+    aspect_ratio_min_rect: float
     shape: str
 
     bbox: dict

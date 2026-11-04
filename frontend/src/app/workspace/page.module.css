@@ -289,6 +289,9 @@ margin-bottom: 2px;
   padding: 8px;
 }
 .subWindowTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -297,6 +300,10 @@ margin-bottom: 2px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
+.samPromptTabs { display: flex; align-items: center; gap: 2px; }
+.samGuideButton { display: inline-flex; align-items: center; gap: 4px; padding: 2px 5px; border: 1px solid transparent; border-radius: 3px; color: var(--text-faint); background: transparent; font: inherit; font-size: 9px; letter-spacing: 0.02em; text-transform: none; cursor: pointer; }
+.samGuideButton:hover { border-color: var(--border); color: var(--accent); background: var(--bg-hover); }
+.samGuideQuestion { display: inline-grid; place-items: center; width: 13px; height: 13px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 700; line-height: 1; }
 
 .measureRow {
   display: flex;

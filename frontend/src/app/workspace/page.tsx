@@ -122,6 +122,7 @@ import SplitOutputSelector from "./components/SplitOutputSelector";
 import SplitWorkspaceView from "./components/SplitWorkspaceView";
 import ResetComparisonWarning from "./components/ResetComparisonWarning";
 import SessionManager from "./components/SessionManager";
+import SamPromptingGuide from "./components/SamPromptingGuide";
 
 import { useSegmentationState } from "./hooks/useSegmentationState";
 import { useRefineState } from "./hooks/useRefineState";
@@ -163,7 +164,9 @@ const TOOLTIP_FIELD_LABELS: Record<ParticleMetricField, string> = {
   area: "Area",
   circularity: "Circularity",
   solidity: "Solidity",
-  aspect_ratio: "Aspect Ratio",
+  aspect_ratio: "Ellipse Aspect Ratio",
+  aspect_ratio_pca: "PCA Aspect Ratio",
+  aspect_ratio_min_rect: "Min Rectangle Aspect Ratio",
   shape: "Shape",
   nearest_neighbor: "Nearest Neighbor (NNI)",
   border_distance: "Border Distance",
@@ -411,6 +414,7 @@ export default function Workspace() {
   const isBlocked = activeRequestCount > 0; // true while any backend request is in flight
   const [activityOpen, setActivityOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [samGuideTopic, setSamGuideTopic] = useState<AugmentMethod | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // yolo detection thresholds, tuned from the settings modal and sent with
@@ -897,10 +901,10 @@ export default function Workspace() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panning, setPanning] = useState(false);
-  const spaceHeld = useRef(false);
-  const panClick = useRef(false);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
+  const spaceHeld = useRef(false);
+  const panClick = useRef(false);
 
   // image-space cursor position for the footer statusbar. Throttled state
   // update so mousemove doesn't re-render the whole page every event.
@@ -955,6 +959,8 @@ export default function Workspace() {
     y: number;
   } | null>(null);
 
+  const analysisMode = measureMode || angleMode;
+
   useEffect(() => {
     if (!analysisMode) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -982,8 +988,6 @@ export default function Workspace() {
       spaceHeld.current = false;
     };
   }, [analysisMode]);
-
-  const analysisMode = measureMode || angleMode;
 
   // blackout region refs. written by BlackoutCanvas.onChange, read on seg/gt
   // exclusion and inclusion operations can only be perf one at a time
@@ -1945,6 +1949,7 @@ export default function Workspace() {
   }
 
   function handleMouseDown(e: React.MouseEvent) {
+    panClick.current = analysisMode && spaceHeld.current;
     if (
       seg.isBlackoutMode ||
       refineMode ||
@@ -1972,7 +1977,6 @@ export default function Workspace() {
 
   function handleMouseMove(e: React.MouseEvent) {
     if (imgSize.width > 0) {
-    panClick.current = analysisMode && spaceHeld.current;
       const now = performance.now();
       if (now - cursorPosThrottle.current > 50) {
         cursorPosThrottle.current = now;
@@ -2001,9 +2005,8 @@ export default function Workspace() {
     setCursorPos(null);
   }
 
-  // locate particle give id
-  // used for detail view -> click id-> show particle mapping
-  async function handleLocateParticle(particleIndex: number) {
+  // Locate a particle by its saved instance ID from the stats detail view.
+  async function handleLocateParticle(particleId: number) {
     if (!sessionId) return;
     setHighlightShape(null); // clear shape highlight
 
@@ -2024,12 +2027,18 @@ export default function Workspace() {
       }
     }
 
+    const particleIndex = instances.findIndex((instance) => instance.id === particleId);
+    if (particleIndex < 0) {
+      setStatus(`Particle id ${particleId} was not found in the current instance data.`);
+      return;
+    }
+
     setHighlightParticleIdx(particleIndex);
     setShowStatsDetail(false); // pan back to workspace
     setZoom(1); // reset so the highlight isn't clipped by a stale pan/zoom
     setPan({ x: 0, y: 0 });
     seg.setMasksVisible(true);
-    setStatus(`Highlighting particle id: ${particleIndex + 1}`);
+    setStatus(`Highlighting particle id: ${particleId}`);
   }
 
   async function handleLocateShape(shape: string) {
@@ -2351,14 +2360,6 @@ export default function Workspace() {
     }
   }
 
-  function formatMeasureLabel(px: number): string {
-    const ps = metadata?.pixel_size;
-    if (typeof ps === "number" && ps > 0) {
-      return `${(px * ps).toFixed(2)} ${metadata?.pixel_unit ?? "nm"}`;
-    }
-    return `${px.toFixed(1)} px`;
-  }
-
   function formatMeasureListLabel(px: number): string {
     const unit =
       metadata?.pixel_unit && metadata.pixel_unit !== "-"
@@ -2371,25 +2372,6 @@ export default function Workspace() {
     return `${px.toFixed(1)} px`;
   }
 
-  // analysis: three-point angle measurement. The second click is the vertex.
-  function startAngle() {
-    handleScaleBarCancel();
-    setMeasureMode(false);
-    setMeasureVertices([]);
-    setMeasureEdges([]);
-    measureDragRef.current = null;
-    setMeasureDrag(null);
-    setAnglePoints([]);
-    setAngleMeasurements([]);
-    setAngleCursor(null);
-    setAngleMode(true);
-  }
-
-  function cancelAngle() {
-    setAngleMode(false);
-    setAnglePoints([]);
-    setAngleCursor(null);
-  }
   function exportDistanceMeasurementsCsv() {
     const pixelSize = metadata?.pixel_size;
     const pixelUnit =
@@ -2403,51 +2385,49 @@ export default function Workspace() {
     };
     const rows: (string | number)[][] = [
       [
-        "Pair",
-        "Line 1 length (px)",
-        "Line 2 length (px)",
-        "Line 1 calibrated length",
-        "Line 2 calibrated length",
+        "Line",
+        "Start (x, y) (image px)",
+        "End (x, y) (image px)",
+        "Length (px)",
+        "Calibrated length",
         "Calibration unit",
+        "Aspect ratio pair",
         "Aspect ratio (longer / shorter)",
       ],
     ];
 
-    for (let index = 0; index < measureEdges.length; index += 2) {
-      const firstEdge = measureEdges[index];
-      const secondEdge = measureEdges[index + 1];
-      const firstStart = measureVertices[firstEdge.a];
-      const firstEnd = measureVertices[firstEdge.b];
-      if (!firstStart || !firstEnd) {
+    for (let index = 0; index < measureEdges.length; index += 1) {
+      const edge = measureEdges[index];
+      const start = measureVertices[edge.a];
+      const end = measureVertices[edge.b];
+      if (!start || !end) {
         throw new Error(`Distance measurement ${index + 1} has no endpoints.`);
       }
-      const firstLength = Math.hypot(
-        firstEnd.x - firstStart.x,
-        firstEnd.y - firstStart.y,
-      );
-      const secondStart = secondEdge ? measureVertices[secondEdge.a] : null;
-      const secondEnd = secondEdge ? measureVertices[secondEdge.b] : null;
-      if (secondEdge && (!secondStart || !secondEnd)) {
-        throw new Error(`Distance measurement ${index + 2} has no endpoints.`);
+      const length = Math.hypot(end.x - start.x, end.y - start.y);
+      const pairIndex = Math.floor(index / 2);
+      const nextEdge = measureEdges[index % 2 === 0 ? index + 1 : index - 1];
+      const nextStart = nextEdge ? measureVertices[nextEdge.a] : null;
+      const nextEnd = nextEdge ? measureVertices[nextEdge.b] : null;
+      if (aspectRatioMode && nextEdge && (!nextStart || !nextEnd)) {
+        throw new Error(`Distance measurement ${index + 1} has an incomplete aspect ratio pair.`);
       }
-      const secondLength =
-        secondStart && secondEnd
-          ? Math.hypot(secondEnd.x - secondStart.x, secondEnd.y - secondStart.y)
+      const nextLength =
+        nextStart && nextEnd
+          ? Math.hypot(nextEnd.x - nextStart.x, nextEnd.y - nextStart.y)
           : null;
       const ratio =
-        secondLength === null
-          ? ""
-          : (Math.max(firstLength, secondLength) /
-              Math.min(firstLength, secondLength)).toFixed(3);
+        aspectRatioMode && nextLength !== null
+          ? (Math.max(length, nextLength) / Math.min(length, nextLength)).toFixed(3)
+          : "";
+      const hasPair = aspectRatioMode && nextLength !== null;
       rows.push([
-        `Pair ${Math.floor(index / 2) + 1}`,
-        firstLength.toFixed(3),
-        secondLength === null ? "" : secondLength.toFixed(3),
-        hasCalibration ? (firstLength * pixelSize).toFixed(3) : "",
-        hasCalibration && secondLength !== null
-          ? (secondLength * pixelSize).toFixed(3)
-          : "",
+        index + 1,
+        `(${start.x.toFixed(6)}, ${start.y.toFixed(6)})`,
+        `(${end.x.toFixed(6)}, ${end.y.toFixed(6)})`,
+        length.toFixed(3),
+        hasCalibration ? (length * pixelSize).toFixed(3) : "",
         hasCalibration ? pixelUnit : "",
+        hasPair ? pairIndex + 1 : "",
         ratio,
       ]);
     }
@@ -2472,6 +2452,25 @@ export default function Workspace() {
     URL.revokeObjectURL(url);
   }
 
+  // analysis: three-point angle measurement. The second click is the vertex.
+  function startAngle() {
+    handleScaleBarCancel();
+    setMeasureMode(false);
+    setMeasureVertices([]);
+    setMeasureEdges([]);
+    measureDragRef.current = null;
+    setMeasureDrag(null);
+    setAnglePoints([]);
+    setAngleMeasurements([]);
+    setAngleCursor(null);
+    setAngleMode(true);
+  }
+
+  function cancelAngle() {
+    setAngleMode(false);
+    setAnglePoints([]);
+    setAngleCursor(null);
+  }
 
   function clearAngleMeasurements() {
     setAnglePoints([]);
@@ -2486,6 +2485,10 @@ export default function Workspace() {
   }
 
   function handleAngleClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (panClick.current) {
+      panClick.current = false;
+      return;
+    }
     if (imgSize.width === 0 || imgSize.height === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
@@ -2502,13 +2505,13 @@ export default function Workspace() {
   }
 
   function handleAngleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (spaceHeld.current || isPanning.current) {
+      setAngleCursor(null);
+      return;
+    }
     if (imgSize.width === 0 || imgSize.height === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
-    if (panClick.current) {
-      panClick.current = false;
-      return;
-    }
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
     setAngleCursor({ x: imgX, y: imgY });
   }
@@ -2525,10 +2528,6 @@ export default function Workspace() {
     const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
 
     // In-progress points: right-click removes the point.
-    if (spaceHeld.current || isPanning.current) {
-      setAngleCursor(null);
-      return;
-    }
     let pointIdx: number | null = null;
     let pointDist = Infinity;
     anglePoints.forEach((p, i) => {
@@ -3521,7 +3520,8 @@ export default function Workspace() {
             {activeTab === "augment" && (
               <section className={styles.sidebarSection}>
                 <div className={styles.subWindow}>
-                  <p className={styles.subWindowTitle}>
+                <div className={styles.subWindowTitle}>
+                  <div className={styles.samPromptTabs}>
                     <button
                       type="button"
                       className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "click" ? styles.tabBtnActive : ""}`}
@@ -3538,14 +3538,25 @@ export default function Workspace() {
                       Box
                     </button>
                     {"/"}
-                    <button
+                    {/* Similar search stays in code while the UI is paused. */}
+                    {/* <button
                       type="button"
                       className={`${styles.tabBtn} ${styles.titleTab} ${augmentMethod === "similar" ? styles.tabBtnActive : ""}`}
                       onClick={() => switchAugmentMethod("similar")}
                     >
                       Similar
-                    </button>
-                  </p>
+                    </button> */}
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.samGuideButton}
+                    onClick={() => setSamGuideTopic(augmentMethod)}
+                    aria-label={`Open ${augmentMethod === "click" ? "point prompting" : augmentMethod === "box" ? "box prompting" : "similar search"} guide`}
+                    title="Open in-app guide"
+                  >
+                    <span className={styles.samGuideQuestion} aria-hidden="true">?</span> Guide
+                  </button>
+                </div>
                   {samBlockNote && (
                     <SamGateNote
                       note={samBlockNote}
@@ -3626,7 +3637,8 @@ export default function Workspace() {
                     </>
                   )}
 
-                  {augmentMethod === "similar" && (
+                  {/* Similar tool remains implemented but is hidden until it works reliably. */}
+                  {false && augmentMethod === "similar" && (
                     <>
                       {/* propose-similar: build a SAM-embedding prior from existing
                           annotations and find more candidates across the image. Needs
@@ -4069,6 +4081,11 @@ export default function Workspace() {
                       point.
                     </p>
                   )}
+                  {analysisMode && (
+                    <p className={styles.sidebarHint}>
+                      Scroll to zoom. Hold Space and drag to pan.
+                    </p>
+                  )}
                   {(measureEdges.length > 0 ||
                     angleMeasurements.length > 0) && (
                     <div className={styles.subWindow}>
@@ -4109,6 +4126,28 @@ export default function Workspace() {
                           </div>
                         );
                       })}
+                      {aspectRatioMode &&
+                        Array.from({ length: Math.floor(measureEdges.length / 2) }, (_, pairIndex) => {
+                          const first = measureEdges[pairIndex * 2];
+                          const second = measureEdges[pairIndex * 2 + 1];
+                          const firstStart = measureVertices[first.a];
+                          const firstEnd = measureVertices[first.b];
+                          const secondStart = measureVertices[second.a];
+                          const secondEnd = measureVertices[second.b];
+                          if (!firstStart || !firstEnd || !secondStart || !secondEnd) return null;
+                          const firstLength = Math.hypot(firstEnd.x - firstStart.x, firstEnd.y - firstStart.y);
+                          const secondLength = Math.hypot(secondEnd.x - secondStart.x, secondEnd.y - secondStart.y);
+                          const ratio = Math.max(firstLength, secondLength) / Math.min(firstLength, secondLength);
+                          return (
+                            <div key={`ratio-${pairIndex}`} className={styles.measureRow}>
+                              <span className={styles.measureNum}>AR {pairIndex + 1}</span>
+                              <span className={styles.measureVal}>{ratio.toFixed(3)}</span>
+                            </div>
+                          );
+                        })}
+                      {aspectRatioMode && measureEdges.length % 2 === 1 && (
+                        <p className={styles.sidebarHint}>Draw one more line to complete the next pair.</p>
+                      )}
                       {angleMeasurements.map((m, i) => {
                         const minor = angleMetrics(m.a, m.b, m.c).deg;
                         const shown = m.reflex ? 360 - minor : minor;
@@ -4203,11 +4242,6 @@ export default function Workspace() {
                     className={styles.folderBtn}
                     onClick={(e) => {
                       e.stopPropagation();
-                  {analysisMode && (
-                    <p className={styles.sidebarHint}>
-                      Scroll to zoom. Hold Space and drag to pan.
-                    </p>
-                  )}
                       if (isFolderImportAvailable()) handleFolderImport();
                       else folderRef.current?.click();
                     }}
@@ -4237,28 +4271,6 @@ export default function Workspace() {
                         <button
                           type="button"
                           onClick={() => setSessionManagerOpen(true)}
-                      {aspectRatioMode &&
-                        Array.from({ length: Math.floor(measureEdges.length / 2) }, (_, pairIndex) => {
-                          const first = measureEdges[pairIndex * 2];
-                          const second = measureEdges[pairIndex * 2 + 1];
-                          const firstStart = measureVertices[first.a];
-                          const firstEnd = measureVertices[first.b];
-                          const secondStart = measureVertices[second.a];
-                          const secondEnd = measureVertices[second.b];
-                          if (!firstStart || !firstEnd || !secondStart || !secondEnd) return null;
-                          const firstLength = Math.hypot(firstEnd.x - firstStart.x, firstEnd.y - firstStart.y);
-                          const secondLength = Math.hypot(secondEnd.x - secondStart.x, secondEnd.y - secondStart.y);
-                          const ratio = Math.max(firstLength, secondLength) / Math.min(firstLength, secondLength);
-                          return (
-                            <div key={`ratio-${pairIndex}`} className={styles.measureRow}>
-                              <span className={styles.measureNum}>AR {pairIndex + 1}</span>
-                              <span className={styles.measureVal}>{ratio.toFixed(3)}</span>
-                            </div>
-                          );
-                        })}
-                      {aspectRatioMode && measureEdges.length % 2 === 1 && (
-                        <p className={styles.sidebarHint}>Draw one more line to complete the next pair.</p>
-                      )}
                         >
                           Manage sessions
                         </button>
@@ -4837,36 +4849,6 @@ export default function Workspace() {
                         const q = measureVertices[edge.b];
                         if (!p || !q) return null;
 
-                        const dx = q.x - p.x;
-                        const dy = q.y - p.y;
-                        const px = Math.hypot(dx, dy);
-                        const mx = (p.x + q.x) / 2;
-                        const my = (p.y + q.y) / 2;
-
-                        // Rotate the label to run parallel to the edge, then flip
-                        // it 180° when it would otherwise read upside down.
-                        let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-                        if (angle > 90) angle -= 180;
-                        else if (angle < -90) angle += 180;
-
-                        // Place the label on the outside of the edge: pick the
-                        // perpendicular side farther from the image center, i.e.
-                        // the side facing the image boundary.
-                        const len = px || 1;
-                        const nx = -dy / len;
-                        const ny = dx / len;
-                        const offset = measureFontSize * 0.9;
-                        const cx = imgSize.width / 2;
-                        const cy = imgSize.height / 2;
-                        const p1x = mx + nx * offset;
-                        const p1y = my + ny * offset;
-                        const p2x = mx - nx * offset;
-                        const p2y = my - ny * offset;
-                        const d1 = (p1x - cx) ** 2 + (p1y - cy) ** 2;
-                        const d2 = (p2x - cx) ** 2 + (p2y - cy) ** 2;
-                        const lx = d1 >= d2 ? p1x : p2x;
-                        const ly = d1 >= d2 ? p1y : p2y;
-
                         return (
                           <g key={`me-${i}`}>
                             <line
@@ -4877,24 +4859,20 @@ export default function Workspace() {
                               stroke="#5ad1ff"
                               strokeWidth={measureStroke}
                             />
-                            <text
-                              x={lx}
-                              y={ly}
-                              transform={`rotate(${angle} ${lx} ${ly})`}
-                              textAnchor="middle"
-                              dominantBaseline="central"
-                              fill="#5ad1ff"
-                              stroke="#0d0d0d"
-                              strokeWidth={measureTextStroke}
-                              paintOrder="stroke"
-                              fontSize={measureFontSize}
-                              fontFamily="monospace"
-                            >
-                              {formatMeasureLabel(px)}
-                            </text>
                           </g>
                         );
                       })}
+                      {measureDrag && (
+                        <line
+                          x1={measureDrag.start.x}
+                          y1={measureDrag.start.y}
+                          x2={measureDrag.end.x}
+                          y2={measureDrag.end.y}
+                          stroke="#5ad1ff"
+                          strokeWidth={measureStroke}
+                          strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
+                        />
+                      )}
                     </svg>
                   )}
 
@@ -4915,6 +4893,7 @@ export default function Workspace() {
                       cursor: panning ? "grabbing" : "crosshair",
                       background: "rgba(90, 209, 255, 0.05)",
                       zIndex: 15,
+                      touchAction: "none",
                     }}
                   />
                 )}
@@ -5021,17 +5000,6 @@ export default function Workspace() {
                           );
                         })()}
 
-                      {measureDrag && (
-                        <line
-                          x1={measureDrag.start.x}
-                          y1={measureDrag.start.y}
-                          x2={measureDrag.end.x}
-                          y2={measureDrag.end.y}
-                          stroke="#5ad1ff"
-                          strokeWidth={measureStroke}
-                          strokeDasharray={`${measureFontSize * 0.8} ${measureFontSize * 0.4}`}
-                        />
-                      )}
                       {angleMeasurements.map((m, i) => {
                         const { a, b, c } = m;
                         const g = angleArcGeometry(a, b, c, m.reflex);
@@ -5049,7 +5017,6 @@ export default function Workspace() {
                             />
                             <line
                               x1={b.x}
-                      touchAction: "none",
                               y1={b.y}
                               x2={c.x}
                               y2={c.y}
@@ -5217,21 +5184,6 @@ export default function Workspace() {
                   />
                 )}
 
-                {/* particle highlight from stats table */}
-                {highlightParticleIdx !== null &&
-                  loadedInstances.length > highlightParticleIdx &&
-                  !refineMode &&
-                  !seg.isBlackoutMode && (
-                    <ParticleHighlight
-                      instance={loadedInstances[highlightParticleIdx]}
-                      imgWidth={imgSize.width}
-                      imgHeight={imgSize.height}
-                      viewportWidth={viewportSize.width}
-                      viewportHeight={viewportSize.height}
-                    />
-                  )}
-
-                {/* highlights all particles of that shape selected from stats table */}
                 {/* particle IDs in the Analyze workspace view */}
                 {activeTab === "analysis" &&
                   loadedInstances.length > 0 &&
@@ -5286,6 +5238,21 @@ export default function Workspace() {
                     </svg>
                   )}
 
+                {/* particle highlight from stats table */}
+                {highlightParticleIdx !== null &&
+                  loadedInstances.length > highlightParticleIdx &&
+                  !refineMode &&
+                  !seg.isBlackoutMode && (
+                    <ParticleHighlight
+                      instance={loadedInstances[highlightParticleIdx]}
+                      imgWidth={imgSize.width}
+                      imgHeight={imgSize.height}
+                      viewportWidth={viewportSize.width}
+                      viewportHeight={viewportSize.height}
+                    />
+                  )}
+
+                {/* highlights all particles of that shape selected from stats table */}
                 {highlightShape !== null &&
                   !refineMode &&
                   !seg.isBlackoutMode &&
@@ -5955,6 +5922,12 @@ export default function Workspace() {
                   ),
                 );
             }}
+          />
+        )}
+        {samGuideTopic && (
+          <SamPromptingGuide
+            initialTopic={samGuideTopic}
+            onClose={() => setSamGuideTopic(null)}
           />
         )}
       </div>
