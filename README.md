@@ -1,5 +1,29 @@
 ## Status Log
 
+### 2026-11-04
+- Add multiple aspect-ratio calculation methods and contextual guides in the workspace. The weight manifest now records which platforms can use each model weight.
+
+### 2026-11-01
+- Add distance and angle measurements to the Analyze view, with CSV export for distance measurements. Add particle IDs to Analyze and allow selected refine instances to be merged. Polygon vertices can be deleted with a right-click.
+
+### 2026-10-29
+- Add a multi-output comparison workspace. Save model outputs per image, compare particle and pixel differences by region, choose a reference model, and restore comparison layouts between launches.
+- Add live memory information and controls for model segmentors. Add session storage management and bulk session deletion.
+
+### 2026-10-28
+- Make MobileSAM the default pipeline and support SAM prompting after image encoding. Add micro-SAM EM and Core ML MobileSAM backends. The weight manifest includes platform-specific artifacts.
+- Let users choose the x, y, and size metrics shown in the dashboard scatter plot.
+
+### 2026-10-27
+- Add batch selection and deletion in refine mode. Show particle ID badges on the image and support SAM prompts after Mask R-CNN segmentation.
+
+### 2026-10-21
+- Add persistent batch random-forest examples for image groups. Use confirmed particle masks and marked background regions to find missed particles across a group, with SAM prompts to propose candidates for review.
+
+### 2026-10-06
+- Add persisted YOLO confidence, IoU, and detection-limit settings. Add a SAM prompt debug overlay and convex-hull options for random-forest proposals, and reduce random-forest training memory use.
+- Improve ground-truth scoring and export traceability. Preserve source-image fidelity and measurement context, and harden desktop storage and local API access.
+
 ### 2026-09-24
 - Fix YoloMaskRCNN output. Instead of keeping  instance identity, it was unioning all YOLO box masks into one binary blob and re-deriving instances with connected components. Each pasted mask now claims its pixels in a uint16 label map instead, so counts match YoloSAM and masks colour per instance. 
 - Refine saves with no edits are instant: posted instances are compared against what's on disk and, when identical (with an mtime guard so stale stats still rebuild), the whole rasterize/colorize/recompute chain is skipped **4.8 s → 0.03 s at 335 particles**, and it doesn't grow with particle count. 
