@@ -29,9 +29,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/best12x.mlpackage/Data/com.apple.CoreML/model.mlmodel",
       "sha256": "35c23e05635e6fe58e8f33e46a2d04b189de7408d53a30485dda98acbaded8dd",
       "size_mb": 0.2,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -39,9 +37,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/best12x.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
       "sha256": "6135ee915f0f114e725e47f84ca40f54e9e766456910be54b02e723df30f1623",
       "size_mb": 136.3,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -49,9 +45,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/best12x.mlpackage/Manifest.json",
       "sha256": "8d183ae984927971d19521f9a71a96ccc108237d42ecc7e9555ddfc6a6aa5955",
       "size_mb": 0.0,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -59,9 +53,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_vit_b_d12_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
       "sha256": "6b2994d0f3260c039d9b746e9acb87df52cf7f5cc7a6f72cb4e1b3816f79d6ed",
       "size_mb": 0.2,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -69,9 +61,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_vit_b_d12_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
       "sha256": "0d466699c6da6b950aee20cd4330e4cc65772291e1b62729ebdcd2d5b66e5b5a",
       "size_mb": 367.5,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -79,9 +69,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_vit_b_d12_fp32.mlpackage/Manifest.json",
       "sha256": "714eaf46650c29656f12fa7529c7bf17ff0b84afa90557cf7b59720b5d1ce512",
       "size_mb": 0.0,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -89,9 +77,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_head16_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
       "sha256": "4ccd95e6b31b2198528b2bc221dbb7893c9bf90565e2ebc50c238f1bf627049f",
       "size_mb": 0.1,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -99,9 +85,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_head16_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
       "sha256": "3b3cd90b83e601a45c33b7ae8b4f7a091b64b4da40177b7f754f0782cce85271",
       "size_mb": 20.5,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -109,9 +93,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_head16_fp32.mlpackage/Manifest.json",
       "sha256": "a2681ee2646d85ed6d5a0d570d31d38066cfce9f493b7bcd74062d45239d8a89",
       "size_mb": 0.0,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -131,9 +113,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_mobile_vit_t_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
       "sha256": "bf1c983daf85c7392817e921ec257473ba138526322e6388221345ea541faeef",
       "size_mb": 0.2,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -141,9 +121,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_mobile_vit_t_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
       "sha256": "ac7367ca2b8c4fdb17fc4f71c48af1b57e0f54ac676646e3b1dc21e7f66cc1a5",
       "size_mb": 27.8,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -151,9 +129,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_encoder_mobile_vit_t_fp32.mlpackage/Manifest.json",
       "sha256": "89451feb8dbed2f4f417d079dee628da4a98c1874cfd6693427123c1e053c16a",
       "size_mb": 0.0,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -161,9 +137,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_mobile_head16_fp32.mlpackage/Data/com.apple.CoreML/model.mlmodel",
       "sha256": "c9c043c8b2d2b2d7e3172058dbfbdffa07ceed64ee28bed767f78f1cc256ba4f",
       "size_mb": 0.1,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -171,9 +145,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_mobile_head16_fp32.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
       "sha256": "2d76f79e18b0104c0674b2f9b1119fbcb5c0e35e8b93a68620ff75e84fda97ac",
       "size_mb": 20.5,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     },
     {
@@ -181,9 +153,7 @@
       "url": "https://huggingface.co/0saker/TEMseg/resolve/main/sam_decoder_mobile_head16_fp32.mlpackage/Manifest.json",
       "sha256": "9c8719a4d670080e27d2357cc1a484601bcdcfaf738d105674cce4e794e34e89",
       "size_mb": 0.0,
-      "platforms": [
-        "darwin-arm64"
-      ],
+      "platforms": ["darwin-arm64"],
       "variant": "coreml"
     }
   ]
