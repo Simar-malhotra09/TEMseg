@@ -28,11 +28,12 @@ interface Props {
   initialStrokes?: Scribble[];
   brushSize?: number;  // brush diameter, in image-space px
   onBrushSizeChange?: (size: number) => void; // scroll-to-resize callback
+  onZoomBy: (factor: number) => void;
   onChange: (strokes: Scribble[]) => void;
 }
 
 export default function ScribbleCanvas({
-  imageSrc, imageBrightness, imageContrast, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onBrushSizeChange, onChange,
+  imageSrc, imageBrightness, imageContrast, imgWidth, imgHeight, width, height, initialStrokes, brushSize = 60, onBrushSizeChange, onZoomBy, onChange,
 }: Props) {
   const [image] = useImage(imageSrc);
   const [strokes, setStrokes] = useState<Scribble[]>(initialStrokes ?? []);
@@ -105,6 +106,10 @@ export default function ScribbleCanvas({
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     e.evt.stopPropagation();
+    if (e.evt.ctrlKey || e.evt.metaKey) {
+      onZoomBy(e.evt.deltaY > 0 ? 0.9 : 1.1);
+      return;
+    }
     if (!onBrushSizeChange) return;
     const factor = e.evt.deltaY > 0 ? 0.9 : 1.1;
     const next = Math.round(Math.min(MAX_BRUSH_SIZE, Math.max(MIN_BRUSH_SIZE, brushSize * factor)));

@@ -3898,7 +3898,7 @@ export default function Workspace() {
                         style={{ width: "100%", accentColor: "#7ee8a2" }}
                       />
                       <p className={styles.sidebarShortcuts}>
-                        · [scroll]: resize brush
+                        · [scroll]: resize brush · [Ctrl/⌘]+scroll: zoom
                       </p>
                     </>
                   ) : rfFgMode ? (
@@ -4475,9 +4475,7 @@ export default function Workspace() {
                     bootstrapMode ||
                     annotateMode ||
                     boxMode ||
-                    scaleBarMode ||
-                    rfBgMode ||
-                    rfFgMode
+                    scaleBarMode
                       ? "none"
                       : `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
                   transformOrigin: "center center",
@@ -4574,6 +4572,7 @@ export default function Workspace() {
                       initialStrokes={rfFgMode ? rfFgScribbles : rfBgScribbles}
                       brushSize={rfBgBrushSize}
                       onBrushSizeChange={setRfBgBrushSize}
+                      onZoomBy={zoomBy}
                       onChange={(scribbles) => {
                         if (rfFgMode) {
                           rfFgScribblesRef.current = scribbles;
