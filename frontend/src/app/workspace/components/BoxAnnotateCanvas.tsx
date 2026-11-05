@@ -294,35 +294,54 @@ export default function BoxAnnotateCanvas({
         if (!p.contour || p.contour.length < 3) return null;
         const pts = p.contour.map(([x, y]) => `${x},${y}`).join(" ");
         return (
-          <polygon
-            key={`pending-${p.id}`}
-            points={pts}
-            fill="rgba(255, 209, 102, 0.15)"
-            stroke="#ffd166"
-            strokeWidth={strokeW}
-            style={{ pointerEvents: "auto", cursor: "pointer" }}
-            onMouseDown={event => event.stopPropagation()}
-            onMouseUp={event => event.stopPropagation()}
-            onClick={event => {
-              event.stopPropagation();
-              onRejectProposal(p.id);
-            }}
-          >
-            <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
-          </polygon>
+          <g key={`pending-${p.id}`}>
+            <polygon
+              points={pts}
+              fill="none"
+              stroke="#17130a"
+              strokeWidth={4.5 * zoomScale}
+              pointerEvents="none"
+            />
+            <polygon
+              points={pts}
+              fill="rgba(255, 209, 102, 0.3)"
+              stroke="#fff0b5"
+              strokeWidth={2.5 * zoomScale}
+              style={{ pointerEvents: "auto", cursor: "pointer" }}
+              onMouseDown={event => event.stopPropagation()}
+              onMouseUp={event => event.stopPropagation()}
+              onClick={event => {
+                event.stopPropagation();
+                onRejectProposal(p.id);
+              }}
+            >
+              <title>Click to reject proposal #{p.id} (area {p.area}px)</title>
+            </polygon>
+          </g>
         );
       })}
       {drag && (
-        <rect
-          x={Math.min(drag.x0, drag.x1)}
-          y={Math.min(drag.y0, drag.y1)}
-          width={Math.abs(drag.x1 - drag.x0)}
-          height={Math.abs(drag.y1 - drag.y0)}
-          fill="rgba(255, 209, 102, 0.15)"
-          stroke="#ffd166"
-          strokeWidth={strokeW}
-          strokeDasharray={`${4 * zoomScale} ${4 * zoomScale}`}
-        />
+        <g pointerEvents="none">
+          <rect
+            x={Math.min(drag.x0, drag.x1)}
+            y={Math.min(drag.y0, drag.y1)}
+            width={Math.abs(drag.x1 - drag.x0)}
+            height={Math.abs(drag.y1 - drag.y0)}
+            fill="rgba(255, 209, 102, 0.22)"
+            stroke="#17130a"
+            strokeWidth={5 * zoomScale}
+          />
+          <rect
+            x={Math.min(drag.x0, drag.x1)}
+            y={Math.min(drag.y0, drag.y1)}
+            width={Math.abs(drag.x1 - drag.x0)}
+            height={Math.abs(drag.y1 - drag.y0)}
+            fill="none"
+            stroke="#fff0b5"
+            strokeWidth={2.5 * zoomScale}
+            strokeDasharray={`${6 * zoomScale} ${3 * zoomScale}`}
+          />
+        </g>
       )}
     </svg>
   );

@@ -199,17 +199,25 @@ export default function PointAnnotateCanvas({
         </g>
       ) : null)}
       {pendingProposals.map((proposal) => proposal.contour && proposal.contour.length >= 3 ? (
-        <polygon
-          key={`pending-${proposal.id}`}
-          points={proposal.contour.map(([x, y]) => `${x},${y}`).join(" ")}
-          fill="rgba(255, 209, 102, 0.15)"
-          stroke="#ffd166"
-          strokeWidth={strokeWidth}
-          style={{ cursor: "pointer" }}
-          onClick={(event) => { event.stopPropagation(); onRejectProposal(proposal.id); }}
-        >
-          <title>Click to reject proposal #{proposal.id} (area {proposal.area}px)</title>
-        </polygon>
+        <g key={`pending-${proposal.id}`}>
+          <polygon
+            points={proposal.contour.map(([x, y]) => `${x},${y}`).join(" ")}
+            fill="none"
+            stroke="#17130a"
+            strokeWidth={4.5 * zoomScale}
+            pointerEvents="none"
+          />
+          <polygon
+            points={proposal.contour.map(([x, y]) => `${x},${y}`).join(" ")}
+            fill="rgba(255, 209, 102, 0.3)"
+            stroke="#fff0b5"
+            strokeWidth={2.5 * zoomScale}
+            style={{ cursor: "pointer" }}
+            onClick={(event) => { event.stopPropagation(); onRejectProposal(proposal.id); }}
+          >
+            <title>Click to reject proposal #{proposal.id} (area {proposal.area}px)</title>
+          </polygon>
+        </g>
       ) : null)}
     </svg>
   );
