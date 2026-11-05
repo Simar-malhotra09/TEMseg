@@ -4001,25 +4001,23 @@ export default function Workspace() {
                     <PenTool size={14} />
                     {annotateMode ? "Stop Annotating" : "Annotate Manually"}
                   </button>
+                  <ExpandableHint summary="Manual trace tips">
+                    <p className={styles.sidebarHint}>
+                      Trace a particle by hand when SAM cannot separate it
+                      from its neighbors, since this does not depend on any
+                      model.
+                    </p>
+                  </ExpandableHint>
                   {annotateMode && (
-                    <>
-                      <ExpandableHint summary="Manual trace tips">
-                        <p className={styles.sidebarHint}>
-                          Trace a particle by hand when SAM cannot separate it
-                          from its neighbors, since this does not depend on any
-                          model.
-                        </p>
-                      </ExpandableHint>
-                      <p className={styles.sidebarShortcuts}>
-                        [Enter] or double-click close
-                        <br />
-                        [Backspace]: undo vertex
-                        <br />
-                        [Space]+drag: pan
-                        <br />
-                        [Esc]: cancel
-                      </p>
-                    </>
+                    <p className={styles.sidebarShortcuts}>
+                      [Enter] or double-click close
+                      <br />
+                      [Backspace]: undo vertex
+                      <br />
+                      [Space]+drag: pan
+                      <br />
+                      [Esc]: cancel
+                    </p>
                   )}
                 </div>
 
