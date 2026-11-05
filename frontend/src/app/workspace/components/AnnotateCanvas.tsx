@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Instance } from "@/lib/api";
+import type { CanvasZoomCommand } from "./PointAnnotateCanvas";
 
 interface Props {
   imageSrc: string;
@@ -19,6 +20,8 @@ interface Props {
   // pending proposal.
   onPolygonComplete: (contour: [number, number][]) => void;
   onRejectProposal: (id: number) => void;
+  zoomCommand: CanvasZoomCommand;
+  onZoomChange: (zoom: number) => void;
 }
 
 type ViewBox = { x: number; y: number; w: number; h: number };
@@ -44,6 +47,8 @@ export default function AnnotateCanvas({
   pendingProposals,
   onPolygonComplete,
   onRejectProposal,
+  zoomCommand,
+  onZoomChange,
 }: Props) {
   const [vertices, setVertices] = useState<[number, number][]>([]);
   const [cursor, setCursor] = useState<[number, number] | null>(null);
@@ -62,6 +67,11 @@ export default function AnnotateCanvas({
     vx: number;
     vy: number;
   } | null>(null);
+  const zoomRevisionRef = useRef(zoomCommand.revision);
+
+  useEffect(() => {
+    onZoomChange(viewBox.w / imgWidth);
+  }, [viewBox.w, imgWidth, onZoomChange]);
 
   function toImageCoords(
     clientX: number,
@@ -210,14 +220,29 @@ export default function AnnotateCanvas({
     return () => svg.removeEventListener("wheel", onWheel);
   }, [imgWidth, imgHeight]);
 
+  useEffect(() => {
+    if (zoomCommand.revision === zoomRevisionRef.current) return;
+    zoomRevisionRef.current = zoomCommand.revision;
+    setViewBox((current) => {
+      if (zoomCommand.action === "fit") {
+        return { x: 0, y: 0, w: imgWidth, h: imgHeight };
+      }
+      const factor = zoomCommand.action === "in" ? 0.9 : 1.1;
+      const w = Math.max(20, current.w * factor);
+      const h = Math.max(20, current.h * factor);
+      const cx = current.x + current.w / 2;
+      const cy = current.y + current.h / 2;
+      return clampViewBox({ x: cx - w / 2, y: cy - h / 2, w, h });
+    });
+  }, [zoomCommand, imgWidth, imgHeight]);
+
   const verticesStr = vertices.map(([x, y]) => `${x},${y}`).join(" ");
   const lastVertex = vertices.length > 0 ? vertices[vertices.length - 1] : null;
 
-  // Vertex marker radius / stroke widths scale with zoom so they stay visually
-  // consistent at any zoom level (since viewBox shrinks but render size stays).
-  const zoomScale = viewBox.w / imgWidth;
-  const vertexR = 5 * zoomScale;
-  const strokeW =  5 * zoomScale;
+  // Keep polygon edges and vertices at the same screen size as distance marks.
+  const measureScale = viewBox.w / viewportWidth;
+  const vertexR = 4 * measureScale;
+  const strokeW = 1.5 * measureScale;
 
   return (
     <svg
@@ -309,7 +334,7 @@ export default function AnnotateCanvas({
         <polyline
           points={verticesStr}
           fill="none"
-          stroke="#00f0ff"
+          stroke="#5ad1ff"
           strokeWidth={strokeW}
         />
       )}
@@ -319,9 +344,9 @@ export default function AnnotateCanvas({
           y1={lastVertex[1]}
           x2={cursor[0]}
           y2={cursor[1]}
-          stroke="#00f0ff"
+          stroke="#5ad1ff"
           strokeWidth={strokeW}
-          strokeDasharray={`${4 * zoomScale} ${4 * zoomScale}`}
+          strokeDasharray={`${9.6 * measureScale} ${4.8 * measureScale}`}
         />
       )}
       {vertices.map(([x, y], i) => (
@@ -330,9 +355,9 @@ export default function AnnotateCanvas({
           cx={x}
           cy={y}
           r={vertexR}
-          fill="#00f0ff"
+          fill="#5ad1ff"
           stroke="#0d0d0d"
-          strokeWidth={strokeW * 0.7}
+          strokeWidth={strokeW}
         />
       ))}
     </svg>

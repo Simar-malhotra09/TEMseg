@@ -1944,7 +1944,7 @@ export default function Workspace() {
   };
 
   function controlCanvasZoom(action: CanvasZoomCommand["action"]) {
-    if (bootstrapMode || boxMode) {
+    if (bootstrapMode || boxMode || annotateMode) {
       setCanvasZoomCommand((current) => ({ revision: current.revision + 1, action }));
       return;
     }
@@ -4682,6 +4682,8 @@ export default function Workspace() {
                     pendingProposals={pendingProposals}
                     onRejectProposal={handleRejectProposal}
                     onPolygonComplete={handlePolygonComplete}
+                    zoomCommand={canvasZoomCommand}
+                    onZoomChange={setPromptZoom}
                   />
                 )}
 
@@ -5324,7 +5326,7 @@ export default function Workspace() {
                   <Minus size={13} />
                 </button>
                 <span className={styles.toolZoomLabel}>
-                  {Math.round((bootstrapMode || boxMode ? 1 / promptZoom : zoom) * 100)}%
+                  {Math.round((bootstrapMode || boxMode || annotateMode ? 1 / promptZoom : zoom) * 100)}%
                 </span>
                 <button
                   type="button"
