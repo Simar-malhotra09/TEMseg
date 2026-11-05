@@ -218,6 +218,7 @@ export default function BoxAnnotateCanvas({
 
   const zoomScale = viewBox.w / imgWidth;
   const strokeW = 1.5 * zoomScale;
+  const existingStrokeW = 4.2 * zoomScale;
 
   return (
     <svg
@@ -273,7 +274,7 @@ export default function BoxAnnotateCanvas({
               points={pts}
               fill="rgba(126, 232, 162, 0.10)"
               stroke="#7ee8a2"
-              strokeWidth={strokeW * 0.7}
+              strokeWidth={existingStrokeW}
               pointerEvents="none"
             />
             {(inst.extra_contours ?? []).map((c, ci) => (
@@ -282,7 +283,7 @@ export default function BoxAnnotateCanvas({
                 points={c.map(([x, y]) => `${x},${y}`).join(" ")}
                 fill="rgba(126, 232, 162, 0.10)"
                 stroke="#7ee8a2"
-                strokeWidth={strokeW * 0.7}
+                strokeWidth={existingStrokeW}
                 pointerEvents="none"
               />
             ))}

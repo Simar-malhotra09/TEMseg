@@ -164,6 +164,7 @@ export default function PointAnnotateCanvas({
 
   const zoomScale = viewBox.w / imgWidth;
   const strokeWidth = 1.5 * zoomScale;
+  const existingStrokeWidth = 4.2 * zoomScale;
 
   return (
     <svg
@@ -191,9 +192,9 @@ export default function PointAnnotateCanvas({
       <rect x={0} y={0} width={imgWidth} height={imgHeight} fill="none" stroke="rgba(126, 232, 162, 0.5)" strokeWidth={2 * zoomScale} pointerEvents="none" />
       {existingInstances.map((instance) => instance.contour && instance.contour.length >= 3 ? (
         <g key={`existing-${instance.id}`} pointerEvents="none">
-          <polygon points={instance.contour.map(([x, y]) => `${x},${y}`).join(" ")} fill="rgba(126, 232, 162, 0.10)" stroke="#7ee8a2" strokeWidth={strokeWidth * 0.7} />
+          <polygon points={instance.contour.map(([x, y]) => `${x},${y}`).join(" ")} fill="rgba(126, 232, 162, 0.10)" stroke="#7ee8a2" strokeWidth={existingStrokeWidth} />
           {(instance.extra_contours ?? []).map((contour, index) => (
-            <polygon key={`extra-${index}`} points={contour.map(([x, y]) => `${x},${y}`).join(" ")} fill="rgba(126, 232, 162, 0.10)" stroke="#7ee8a2" strokeWidth={strokeWidth * 0.7} />
+            <polygon key={`extra-${index}`} points={contour.map(([x, y]) => `${x},${y}`).join(" ")} fill="rgba(126, 232, 162, 0.10)" stroke="#7ee8a2" strokeWidth={existingStrokeWidth} />
           ))}
         </g>
       ) : null)}
