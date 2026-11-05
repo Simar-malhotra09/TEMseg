@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Instance } from "@/lib/api";
+import { CanvasZoomCommand } from "./PointAnnotateCanvas";
 
 interface Props {
   imageSrc: string;
@@ -18,6 +19,8 @@ interface Props {
   // a new box prompt.
   pendingProposals: Instance[];
   onRejectProposal: (id: number) => void;
+  zoomCommand: CanvasZoomCommand;
+  onZoomChange: (zoom: number) => void;
   // Called on mouseup with the finalized box in image coords. The caller is
   // responsible for sending it to /from-boxes and adding the result to
   // pendingProposals.
@@ -43,6 +46,8 @@ export default function BoxAnnotateCanvas({
   pendingProposals,
   onRejectProposal,
   onBoxDrawn,
+  zoomCommand,
+  onZoomChange,
 }: Props) {
   const [viewBox, setViewBox] = useState<ViewBox>({
     x: 0,
@@ -64,6 +69,11 @@ export default function BoxAnnotateCanvas({
     vx: number;
     vy: number;
   } | null>(null);
+  const zoomRevisionRef = useRef(zoomCommand.revision);
+
+  useEffect(() => {
+    onZoomChange(viewBox.w / imgWidth);
+  }, [viewBox.w, imgWidth, onZoomChange]);
 
   function toImageCoords(
     clientX: number,
@@ -136,6 +146,22 @@ export default function BoxAnnotateCanvas({
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, [imgWidth, imgHeight]);
+
+  useEffect(() => {
+    if (zoomCommand.revision === zoomRevisionRef.current) return;
+    zoomRevisionRef.current = zoomCommand.revision;
+    setViewBox((current) => {
+      if (zoomCommand.action === "fit") {
+        return { x: 0, y: 0, w: imgWidth, h: imgHeight };
+      }
+      const factor = zoomCommand.action === "in" ? 0.9 : 1.1;
+      const w = Math.max(20, current.w * factor);
+      const h = Math.max(20, current.h * factor);
+      const cx = current.x + current.w / 2;
+      const cy = current.y + current.h / 2;
+      return clampViewBox({ x: cx - w / 2, y: cy - h / 2, w, h });
+    });
+  }, [zoomCommand, imgWidth, imgHeight, onZoomChange]);
 
   function handleMouseDown(e: React.MouseEvent) {
     if (busy) return;

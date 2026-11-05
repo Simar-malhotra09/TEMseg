@@ -111,6 +111,8 @@ import ScribbleCanvas, { Scribble } from "./components/ScribbleCanvas";
 import RefineCanvas from "./components/RefineCanvas";
 import AnnotateCanvas from "./components/AnnotateCanvas";
 import BoxAnnotateCanvas from "./components/BoxAnnotateCanvas";
+import PointAnnotateCanvas from "./components/PointAnnotateCanvas";
+import type { CanvasZoomCommand } from "./components/PointAnnotateCanvas";
 import ExportPanel from "./components/ExportPanel";
 import StatusPanel from "./components/StatusPanel";
 import StatsPanel from "./components/StatsPanel";
@@ -900,6 +902,8 @@ export default function Workspace() {
   // zoom/pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [promptZoom, setPromptZoom] = useState(1);
+  const [canvasZoomCommand, setCanvasZoomCommand] = useState<CanvasZoomCommand>({ revision: 0, action: "fit" });
   const [panning, setPanning] = useState(false);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
@@ -1583,12 +1587,10 @@ export default function Workspace() {
 
   // Bootstrap click → POST /from-points, append returned proposal(s) to
   // pendingProposals. Nothing is committed until the user hits Accept.
-  async function handleBootstrapClick(e: React.MouseEvent<HTMLDivElement>) {
+  async function handleBootstrapClick(point: [number, number]) {
     if (!sessionId || bootstrapBusy) return;
     if (imgSize.width === 0 || imgSize.height === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const imgX = ((e.clientX - rect.left) / rect.width) * imgSize.width;
-    const imgY = ((e.clientY - rect.top) / rect.height) * imgSize.height;
+    const [imgX, imgY] = point;
 
     setBootstrapBusy(true);
     setStatus(
@@ -1941,9 +1943,22 @@ export default function Workspace() {
     if (nextZoom <= 1) setPan({ x: 0, y: 0 });
   };
 
+  function controlCanvasZoom(action: CanvasZoomCommand["action"]) {
+    if (bootstrapMode || boxMode) {
+      setCanvasZoomCommand((current) => ({ revision: current.revision + 1, action }));
+      return;
+    }
+    if (action === "fit") {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    } else {
+      zoomBy(action === "in" ? 1.1 : 0.9);
+    }
+  }
+
   function handleWheel(e: React.WheelEvent) {
     e.preventDefault();
-    if (scaleBarMode) return;
+    if (scaleBarMode || refineMode || seg.isBlackoutMode || bootstrapMode || annotateMode || boxMode) return;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     zoomBy(delta);
   }
@@ -3597,6 +3612,11 @@ export default function Workspace() {
                           sit clearly apart from their neighbors.
                         </p>
                       </ExpandableHint>
+                      {bootstrapMode && (
+                        <p className={styles.sidebarShortcuts}>
+                          [Space]+drag pan · [wheel] zoom
+                        </p>
+                      )}
                     </>
                   )}
 
@@ -4489,6 +4509,7 @@ export default function Workspace() {
                     visibility:
                       seg.isBlackoutMode ||
                       refineMode ||
+                      bootstrapMode ||
                       annotateMode ||
                       boxMode ||
                       rfBgMode ||
@@ -4679,74 +4700,28 @@ export default function Workspace() {
                     pendingProposals={pendingProposals}
                     onRejectProposal={handleRejectProposal}
                     onBoxDrawn={handleBoxDrawn}
+                    zoomCommand={canvasZoomCommand}
+                    onZoomChange={setPromptZoom}
                   />
                 )}
 
-                {/* bootstrap click capture.sits on top, transparent, catches clicks */}
+                {/* point-prompt canvas with image-space zoom and pan */}
                 {bootstrapMode && !refineMode && imgSize.width > 0 && (
-                  <>
-                    {/* already-segmented boundaries as green context */}
-                    <svg
-                      viewBox={`0 0 ${imgSize.width} ${imgSize.height}`}
-                      preserveAspectRatio="none"
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        pointerEvents: "none",
-                        zIndex: 11,
-                      }}
-                    >
-                      {loadedInstances.map((inst) => {
-                        if (!inst.contour || inst.contour.length < 3)
-                          return null;
-                        const pts = inst.contour
-                          .map(([x, y]) => `${x},${y}`)
-                          .join(" ");
-                        return (
-                          <g key={`existing-${inst.id}`}>
-                            <polygon
-                              points={pts}
-                              fill="rgba(126, 232, 162, 0.10)"
-                              stroke="#7ee8a2"
-                              strokeWidth={1.5}
-                              pointerEvents="none"
-                            />
-                            {(inst.extra_contours ?? []).map((c, ci) => (
-                              <polygon
-                                key={`xe-${ci}`}
-                                points={c
-                                  .map(([x, y]) => `${x},${y}`)
-                                  .join(" ")}
-                                fill="rgba(126, 232, 162, 0.10)"
-                                stroke="#7ee8a2"
-                                strokeWidth={1.5}
-                                pointerEvents="none"
-                              />
-                            ))}
-                          </g>
-                        );
-                      })}
-                    </svg>
-                    <div
-                      onClick={handleBootstrapClick}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        height: "100%",
-                        cursor: bootstrapBusy ? "wait" : "crosshair",
-                        // thin accent outline so the user knows the mode is
-                        // active — no colour wash over the image itself
-                        boxShadow: "inset 0 0 0 2px rgba(126, 232, 162, 0.5)",
-                        borderRadius: 2,
-                        pointerEvents: "auto",
-                      }}
-                    />
-                  </>
+                  <PointAnnotateCanvas
+                    imageSrc={image}
+                    imageFilter={imgFilter}
+                    imgWidth={imgSize.width}
+                    imgHeight={imgSize.height}
+                    viewportWidth={viewportSize.width}
+                    viewportHeight={viewportSize.height}
+                    busy={bootstrapBusy}
+                    existingInstances={loadedInstances}
+                    pendingProposals={pendingProposals}
+                    onPointClick={handleBootstrapClick}
+                    onRejectProposal={handleRejectProposal}
+                    zoomCommand={canvasZoomCommand}
+                    onZoomChange={setPromptZoom}
+                  />
                 )}
 
                 {/* scale bar line. rendered under the mouse capture overlay */}
@@ -5336,10 +5311,7 @@ export default function Workspace() {
                   className={styles.toolBtn}
                   title="Fit to view"
                   disabled={scaleBarMode}
-                  onClick={() => {
-                    setZoom(1);
-                    setPan({ x: 0, y: 0 });
-                  }}
+                  onClick={() => controlCanvasZoom("fit")}
                 >
                   <Maximize size={13} />
                 </button>
@@ -5348,19 +5320,19 @@ export default function Workspace() {
                   className={styles.toolBtn}
                   title="Zoom out"
                   disabled={scaleBarMode}
-                  onClick={() => zoomBy(0.9)}
+                  onClick={() => controlCanvasZoom("out")}
                 >
                   <Minus size={13} />
                 </button>
                 <span className={styles.toolZoomLabel}>
-                  {Math.round(zoom * 100)}%
+                  {Math.round((bootstrapMode || boxMode ? 1 / promptZoom : zoom) * 100)}%
                 </span>
                 <button
                   type="button"
                   className={styles.toolBtn}
                   title="Zoom in"
                   disabled={scaleBarMode}
-                  onClick={() => zoomBy(1.1)}
+                  onClick={() => controlCanvasZoom("in")}
                 >
                   <Plus size={13} />
                 </button>
